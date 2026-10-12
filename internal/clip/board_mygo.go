@@ -1,0 +1,70 @@
+package clip
+
+import (
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
+)
+
+// MyGoBoard reads and writes the system clipboard through MyGo.
+// Call it only after App.Run has started; other goroutines may call it.
+type MyGoBoard struct{}
+
+func (MyGoBoard) Sequence() (uint64, error) { return platformSequence() }
+
+func (MyGoBoard) Snapshot() (Item, error) {
+	raw := mygo.Clipboard.AvailableFormats()
+	portable := make([]string, 0, 4)
+	for _, f := range mygo.Clipboard.Formats() {
+		portable = append(portable, string(f))
+	}
+	all := make([]string, 0, len(raw)+len(portable))
+	all = append(all, raw...)
+	all = append(all, portable...)
+
+	if sens, why := Sensitive(all, readFormat); sens {
+		return Item{Sensitive: true, Skip: why}, nil
+	}
+	if HasImage(all) {
+		png := mygo.Clipboard.ReadImage()
+		if len(png) == 0 {
+			return Item{Skip: "剪贴板有图片格式，但没有读出 PNG"}, nil
+		}
+		item, err := FromPNG(png)
+		if err != nil {
+			return Item{Skip: err.Error()}, nil
+		}
+		return item, nil
+	}
+	if HasText(all) {
+		text := mygo.Clipboard.ReadText()
+		if text == "" {
+			return Item{}, nil
+		}
+		item, err := FromText(text)
+		if err != nil {
+			return Item{Skip: err.Error()}, nil
+		}
+		return item, nil
+	}
+	return Item{}, nil
+}
+
+func (MyGoBoard) Write(item Item) error {
+	switch item.Kind {
+	case KindText:
+		mygo.Clipboard.WriteText(item.Text)
+		return nil
+	case KindImage:
+		return mygo.Clipboard.WriteImage(item.PNG)
+	default:
+		return errEmptyWrite
+	}
+}
+
+func readFormat(name string) ([]byte, bool) {
+	buf, err := mygo.Clipboard.ReadFormat(transfer.Format(name))
+	if err != nil || len(buf) == 0 {
+		return nil, false
+	}
+	return buf, true
+}

@@ -1,0 +1,15 @@
+{
+  "name": "ClipBridge",
+  "identifier": "app.clipbridge.desktop",
+  "version": "0.1.0",
+  "main": "./cmd/clipbridge",
+  "icon": "resources/icon.png",
+  "out": "dist",
+  "macos": {
+    "minimumSystemVersion": "12.0",
+    "dmgTitle": "ClipBridge",
+    "infoPlist": {
+      "LSApplicationCategoryType": "public.app-category.utilities"
+    }
+  }
+}
