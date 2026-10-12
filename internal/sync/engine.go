@@ -31,6 +31,9 @@ type Engine struct {
 
 	clipMu      sync.Mutex
 	mu          sync.Mutex
+	paused      bool
+	textOnly    bool
+	maxImage    int
 	sess        *Session
 	link        Link
 	localActive time.Time
@@ -74,13 +77,13 @@ func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
 	e.haveLast = true
 	e.localActive = time.Now()
 	sess := e.sess
+	policy := e.policyLocked()
 	e.mu.Unlock()
 
-	msg := "已发送"
+	send, msg := localSend(policy, item, sess != nil)
 	switch {
-	case sess == nil:
-		e.Log.Info("未连接，未发送", "kind", item.Kind, "bytes", item.Size)
-		msg = "已复制，未连接"
+	case !send:
+		e.Log.Info(msg, "kind", item.Kind, "bytes", item.Size)
 	case !sess.enqueue(item):
 		e.Log.Info("发送队列已满，丢弃", "kind", item.Kind, "bytes", item.Size)
 		msg = "发送队列已满"
@@ -90,10 +93,52 @@ func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
 	e.notify(Notice{Kind: NoticeLocal, Item: item, Message: msg})
 }
 
+// SetPolicy updates the options the settings page can change.
+func (e *Engine) SetPolicy(paused, textOnly bool, maxImage int) {
+	e.mu.Lock()
+	e.paused = paused
+	e.textOnly = textOnly
+	e.maxImage = maxImage
+	e.mu.Unlock()
+}
+
+func (e *Engine) policyLocked() policy {
+	return policy{Paused: e.paused, TextOnly: e.textOnly, MaxImage: e.maxImage}
+}
+
+type policy struct {
+	Paused   bool
+	TextOnly bool
+	MaxImage int
+}
+
+// localSend decides whether a local clipboard item is pushed to the peer.
+// Items that are not sent are still recorded in history by the caller.
+func localSend(p policy, item clip.Item, connected bool) (bool, string) {
+	switch {
+	case p.Paused:
+		return false, "已暂停，未发送"
+	case p.TextOnly && item.Kind == clip.KindImage:
+		return false, "只同步文本，图片未发送"
+	case item.Kind == clip.KindImage && p.MaxImage > 0 && item.Size > p.MaxImage:
+		return false, "图片超过上限，已记入历史，未同步"
+	case !connected:
+		return false, "已复制，未连接"
+	default:
+		return true, "已发送"
+	}
+}
+
 func (e *Engine) deliver(item clip.Item) {
 	e.mu.Lock()
+	paused := e.paused
 	active := time.Since(e.localActive) < localPriority
 	e.mu.Unlock()
+	if paused {
+		e.Log.Info("已暂停，忽略对端内容", "kind", item.Kind, "bytes", item.Size)
+		e.notify(Notice{Kind: NoticeStatus, Message: "已暂停，忽略对端内容"})
+		return
+	}
 	if active {
 		e.Log.Info("本地刚复制过，不覆盖剪贴板", "kind", item.Kind, "bytes", item.Size)
 		e.notify(Notice{Kind: NoticeStatus, Message: "本地刚复制过，未覆盖剪贴板"})

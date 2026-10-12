@@ -27,6 +27,23 @@ func TestKeepTieBreak(t *testing.T) {
 	}
 }
 
+func TestLocalSendPolicy(t *testing.T) {
+	item := mustText(t, "hi")
+	if send, msg := localSend(policy{}, item, true); !send || msg != "已发送" {
+		t.Fatalf("send=%v %s", send, msg)
+	}
+	if send, _ := localSend(policy{Paused: true}, item, true); send {
+		t.Fatal("paused should not send")
+	}
+	img := mustPNG(t)
+	if send, _ := localSend(policy{TextOnly: true}, img, true); send {
+		t.Fatal("text-only should keep images local")
+	}
+	if send, _ := localSend(policy{MaxImage: 1}, img, true); send {
+		t.Fatal("over the image cap should stay local")
+	}
+}
+
 func TestLocalCopyNotifiesWithoutPeer(t *testing.T) {
 	e := testEngine(t, &memBoard{})
 	var got []Notice
