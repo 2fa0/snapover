@@ -1,12 +1,12 @@
 package history
 
 import (
-	"bytes"
+	"bufio"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"image"
-	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -35,6 +35,7 @@ type Entry struct {
 	Dir       string    `json:"dir"`
 	Kind      string    `json:"kind"`
 	Text      string    `json:"text,omitempty"`
+	TextFile  string    `json:"text_file,omitempty"`
 	Width     int       `json:"width,omitempty"`
 	Height    int       `json:"height,omitempty"`
 	Size      int       `json:"size,omitempty"`
@@ -42,6 +43,7 @@ type Entry struct {
 	ImageFile string    `json:"image,omitempty"`
 	ThumbFile string    `json:"thumb,omitempty"`
 	Pinned    bool      `json:"pinned,omitempty"`
+	SourceApp string    `json:"source_app,omitempty"`
 }
 
 // Store keeps the newest clipboard items on disk.
@@ -58,24 +60,28 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "thumbs"), 0o700); err != nil {
 		return nil, err
 	}
+	if err := os.MkdirAll(filepath.Join(dir, "texts"), 0o700); err != nil {
+		return nil, err
+	}
 	s := &Store{dir: dir}
-	buf, err := os.ReadFile(s.indexPath())
+	f, err := os.Open(s.indexPath())
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if len(bytes.TrimSpace(buf)) == 0 {
-		return s, nil
-	}
-	var file struct {
-		Items []Entry `json:"items"`
-	}
-	if err := json.Unmarshal(buf, &file); err != nil {
+	defer f.Close()
+	migrated, err := s.loadIndex(json.NewDecoder(f))
+	if err != nil {
 		return nil, err
 	}
-	s.entries = file.Items
+	if migrated {
+		// Publish the new index only after every text body is safely on disk.
+		if err := s.saveLocked(); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -86,22 +92,30 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 	}
 	id := ulid.MustNew(ulid.Now(), rand.Reader).String()
 	entry := Entry{
-		ID:     id,
-		At:     time.Now(),
-		Dir:    dir,
-		Kind:   string(item.Kind),
-		Text:   item.Text,
-		Width:  item.Width,
-		Height: item.Height,
-		Size:   item.Size,
-		Peer:   peer,
+		ID:        id,
+		At:        time.Now(),
+		Dir:       dir,
+		Kind:      string(item.Kind),
+		Text:      item.Text,
+		Width:     item.Width,
+		Height:    item.Height,
+		Size:      item.Size,
+		Peer:      peer,
+		SourceApp: clip.CleanSource(item.SourceApp),
+	}
+	if err := s.offloadText(&entry); err != nil {
+		return Entry{}, err
 	}
 	if item.Kind == clip.KindImage {
 		entry.ImageFile = id + ".png"
 		if err := os.WriteFile(filepath.Join(s.dir, "blobs", entry.ImageFile), item.PNG, 0o600); err != nil {
 			return Entry{}, err
 		}
-		if thumb, err := thumbPNG(item.PNG, 160); err == nil {
+		thumb := item.Thumbnail
+		if len(thumb) == 0 {
+			thumb, _ = thumbPNG(item.PNG, 160)
+		}
+		if len(thumb) > 0 {
 			entry.ThumbFile = id + ".png"
 			if err := os.WriteFile(filepath.Join(s.dir, "thumbs", entry.ThumbFile), thumb, 0o600); err != nil {
 				entry.ThumbFile = ""
@@ -110,11 +124,15 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	before := s.entries
 	s.entries = append([]Entry{entry}, s.entries...)
-	s.trimLocked()
+	drop := s.trimLocked()
 	if err := s.saveLocked(); err != nil {
+		s.entries = before
+		s.removeFiles([]Entry{entry})
 		return Entry{}, err
 	}
+	s.removeFiles(drop)
 	return entry, nil
 }
 
@@ -145,6 +163,22 @@ func (s *Store) Item(id string) (clip.Item, error) {
 		return clip.Item{}, os.ErrNotExist
 	}
 	if entry.Kind == string(clip.KindText) {
+		if entry.TextFile != "" {
+			path, err := s.textPath(entry.TextFile)
+			if err != nil {
+				return clip.Item{}, err
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				return clip.Item{}, err
+			}
+			defer f.Close()
+			raw, err := io.ReadAll(io.LimitReader(f, clip.MaxTextBytes+1))
+			if err != nil {
+				return clip.Item{}, err
+			}
+			return clip.FromText(string(raw))
+		}
 		return clip.FromText(entry.Text)
 	}
 	data, err := os.ReadFile(filepath.Join(s.dir, "blobs", entry.ImageFile))
@@ -152,6 +186,21 @@ func (s *Store) Item(id string) (clip.Item, error) {
 		return clip.Item{}, err
 	}
 	return clip.FromPNG(data)
+}
+
+// Image decodes an original for display without hashing or making another copy.
+func (s *Store) Image(id string) (image.Image, error) {
+	s.mu.Lock()
+	entry, ok := s.findLocked(id)
+	s.mu.Unlock()
+	if !ok || entry.Kind != string(clip.KindImage) || entry.ImageFile == "" {
+		return nil, os.ErrNotExist
+	}
+	data, err := os.ReadFile(filepath.Join(s.dir, "blobs", entry.ImageFile))
+	if err != nil {
+		return nil, err
+	}
+	return clip.DecodePNG(data)
 }
 
 func (s *Store) findLocked(id string) (Entry, bool) {
@@ -169,8 +218,13 @@ func (s *Store) SetPinned(id string, on bool) error {
 	defer s.mu.Unlock()
 	for i := range s.entries {
 		if s.entries[i].ID == id {
+			before := s.entries[i].Pinned
 			s.entries[i].Pinned = on
-			return s.saveLocked()
+			if err := s.saveLocked(); err != nil {
+				s.entries[i].Pinned = before
+				return err
+			}
+			return nil
 		}
 	}
 	return os.ErrNotExist
@@ -184,9 +238,17 @@ func (s *Store) Delete(id string) error {
 		if s.entries[i].ID != id {
 			continue
 		}
-		s.removeFiles([]Entry{s.entries[i]})
-		s.entries = append(s.entries[:i], s.entries[i+1:]...)
-		return s.saveLocked()
+		before := s.entries
+		entry := before[i]
+		s.entries = make([]Entry, 0, len(before)-1)
+		s.entries = append(s.entries, before[:i]...)
+		s.entries = append(s.entries, before[i+1:]...)
+		if err := s.saveLocked(); err != nil {
+			s.entries = before
+			return err
+		}
+		s.removeFiles([]Entry{entry})
+		return nil
 	}
 	return os.ErrNotExist
 }
@@ -195,7 +257,8 @@ func (s *Store) Delete(id string) error {
 func (s *Store) Clear() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	kept := s.entries[:0]
+	before := s.entries
+	var kept []Entry
 	var drop []Entry
 	for _, entry := range s.entries {
 		if entry.Pinned {
@@ -204,16 +267,20 @@ func (s *Store) Clear() error {
 		}
 		drop = append(drop, entry)
 	}
-	s.entries = append([]Entry(nil), kept...)
+	s.entries = kept
+	if err := s.saveLocked(); err != nil {
+		s.entries = before
+		return err
+	}
 	s.removeFiles(drop)
-	return s.saveLocked()
+	return nil
 }
 
-func (s *Store) trimLocked() {
-	s.trimAtLocked(time.Now())
+func (s *Store) trimLocked() []Entry {
+	return s.trimAtLocked(time.Now())
 }
 
-func (s *Store) trimAtLocked(now time.Time) {
+func (s *Store) trimAtLocked(now time.Time) []Entry {
 	kept := make([]Entry, 0, len(s.entries))
 	var drop []Entry
 	unpinned := 0
@@ -230,11 +297,16 @@ func (s *Store) trimAtLocked(now time.Time) {
 		kept = append(kept, entry)
 	}
 	s.entries = kept
-	s.removeFiles(drop)
+	return drop
 }
 
 func (s *Store) removeFiles(entries []Entry) {
 	for _, entry := range entries {
+		if entry.TextFile != "" {
+			if path, err := s.textPath(entry.TextFile); err == nil {
+				_ = os.Remove(path)
+			}
+		}
 		if entry.ImageFile != "" {
 			_ = os.Remove(filepath.Join(s.dir, "blobs", entry.ImageFile))
 		}
@@ -245,16 +317,39 @@ func (s *Store) removeFiles(entries []Entry) {
 }
 
 func (s *Store) saveLocked() error {
-	buf, err := json.MarshalIndent(struct {
-		Items []Entry `json:"items"`
-	}{Items: s.entries}, "", "  ")
+	tmp := s.indexPath() + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
-	buf = append(buf, '\n')
-	tmp := s.indexPath() + ".tmp"
-	if err := os.WriteFile(tmp, buf, 0o600); err != nil {
-		return err
+	defer os.Remove(tmp)
+	writeErr := func() error {
+		w := bufio.NewWriter(f)
+		if _, err := w.WriteString("{\"items\":[\n"); err != nil {
+			return err
+		}
+		enc := json.NewEncoder(w)
+		for i := range s.entries {
+			if i > 0 {
+				if err := w.WriteByte(','); err != nil {
+					return err
+				}
+			}
+			if err := enc.Encode(&s.entries[i]); err != nil {
+				return err
+			}
+		}
+		if _, err := w.WriteString("]}\n"); err != nil {
+			return err
+		}
+		return w.Flush()
+	}()
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return closeErr
 	}
 	return os.Rename(tmp, s.indexPath())
 }
@@ -264,42 +359,9 @@ func (s *Store) indexPath() string {
 }
 
 func thumbPNG(data []byte, maxSide int) ([]byte, error) {
-	img, err := png.Decode(bytes.NewReader(data))
+	img, err := clip.DecodePNG(data)
 	if err != nil {
 		return nil, err
 	}
-	b := img.Bounds()
-	w, h := b.Dx(), b.Dy()
-	if w < 1 || h < 1 {
-		return nil, errors.New("空图片")
-	}
-	tw, th := w, h
-	if w > maxSide || h > maxSide {
-		if w >= h {
-			th = h * maxSide / w
-			tw = maxSide
-		} else {
-			tw = w * maxSide / h
-			th = maxSide
-		}
-		if tw < 1 {
-			tw = 1
-		}
-		if th < 1 {
-			th = 1
-		}
-	}
-	dst := image.NewNRGBA(image.Rect(0, 0, tw, th))
-	for y := 0; y < th; y++ {
-		sy := b.Min.Y + y*h/th
-		for x := 0; x < tw; x++ {
-			sx := b.Min.X + x*w/tw
-			dst.Set(x, y, img.At(sx, sy))
-		}
-	}
-	var out bytes.Buffer
-	if err := png.Encode(&out, dst); err != nil {
-		return nil, err
-	}
-	return out.Bytes(), nil
+	return clip.ThumbnailPNG(img, maxSide)
 }

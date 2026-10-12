@@ -2,6 +2,7 @@ package clip
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -59,7 +60,7 @@ func (MyGoBoard) Write(item Item) error {
 	crashlog.Breadcrumb(fmt.Sprintf("写入剪贴板 kind=%s bytes=%d", item.Kind, item.Size))
 	switch item.Kind {
 	case KindText:
-		mygo.Clipboard.WriteText(item.Text)
+		mygo.Clipboard.WriteText(clipboardText(item.Text, runtime.GOOS))
 		return nil
 	case KindImage:
 		return mygo.Clipboard.WriteImage(item.PNG)

@@ -131,6 +131,7 @@ type fakeBoard struct {
 	seq    uint64
 	item   Item
 	writes []Item
+	snaps  int
 }
 
 func (f *fakeBoard) Sequence() (uint64, error) {
@@ -141,6 +142,7 @@ func (f *fakeBoard) Sequence() (uint64, error) {
 func (f *fakeBoard) Snapshot() (Item, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.snaps++
 	return f.item, nil
 }
 func (f *fakeBoard) Write(item Item) error {

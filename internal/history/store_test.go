@@ -5,6 +5,8 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -20,6 +22,7 @@ func TestAddListAndRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	text.SourceApp = "微信\n"
 	if _, err := s.Add(DirLocal, "", text); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +50,7 @@ func TestAddListAndRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := again.List(); len(got) != 2 || got[1].Text != "你好" {
+	if got := again.List(); len(got) != 2 || got[1].Text != "你好" || got[1].SourceApp != "微信" {
 		t.Fatalf("reload = %+v", got)
 	}
 }
@@ -100,6 +103,42 @@ func TestPinDeleteAndAge(t *testing.T) {
 	}
 	if n := len(s.List()); n != 0 {
 		t.Fatalf("delete left %d", n)
+	}
+}
+
+func TestImagePreservesPixelsAndRejectsInvalidOriginal(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := mustPNG(t)
+	entry, err := s.Add(DirLocal, "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := s.Image(entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img.Bounds().Dx() != item.Width || img.Bounds().Dy() != item.Height || clip.HashImage(img) != item.Hash {
+		t.Fatal("original image pixels changed")
+	}
+	if err := os.WriteFile(filepath.Join(s.dir, "blobs", entry.ImageFile), []byte("invalid PNG"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Image(entry.ID); err == nil {
+		t.Fatal("accepted invalid original")
+	}
+	if _, err := s.Image("missing"); !os.IsNotExist(err) {
+		t.Fatalf("missing image: %v", err)
+	}
+	text, _ := clip.FromText("text")
+	textEntry, err := s.Add(DirLocal, "", text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Image(textEntry.ID); !os.IsNotExist(err) {
+		t.Fatalf("text entry was treated as an image: %v", err)
 	}
 }
 
