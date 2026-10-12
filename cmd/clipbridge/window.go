@@ -3,13 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/clipbridge/internal/clip"
 	"github.com/2fa0/clipbridge/internal/history"
 	"github.com/2fa0/clipbridge/internal/identity"
+	"github.com/2fa0/clipbridge/internal/paste"
+	"github.com/2fa0/clipbridge/internal/settings"
 	clipsync "github.com/2fa0/clipbridge/internal/sync"
 )
 
@@ -31,11 +36,18 @@ type app struct {
 	listen      string
 	addrs       []string
 
-	page    string
-	peer    string
-	status  string
-	flash   string
-	confirm bool
+	cfg          *settings.File
+	paused       bool
+	textOnly     bool
+	maxImageText string
+
+	page         string
+	peer         string
+	query        string
+	status       string
+	flash        string
+	confirm      bool
+	confirmClear bool
 
 	devices  []clipsync.Device
 	entries  []history.Entry
@@ -43,41 +55,75 @@ type app struct {
 	histList ui.ListState
 	thumbs   map[string]*ui.Bitmap
 
-	win        *mygo.Window
-	dialCancel context.CancelFunc
+	win         *mygo.Window
+	tray        *mygo.Tray
+	picker      *mygo.Window
+	openAtLogin bool
+	pickQuery   string
+	pickSel     int
+	pickList    ui.ListState
+	pickFlash   string
+	pickBusy    bool
+	pasteTo     paste.Target
+	dialCancel  context.CancelFunc
 }
 
-func newApp(engine *clipsync.Engine, hist *history.Store, id *identity.Identity, listen string, addrs []string, peer string) *app {
+func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id *identity.Identity, listen string, addrs []string, peer string) *app {
+	if cfg == nil {
+		cfg = &settings.File{Values: settings.Values{MaxImageMB: settings.DefaultMaxImageMB}}
+	}
 	a := &app{
-		engine:      engine,
-		hist:        hist,
-		board:       engine.Board,
-		deviceID:    id.DeviceID,
-		fingerprint: identity.FormatFingerprint(id.Fingerprint),
-		name:        engine.Name,
-		listen:      listen,
-		addrs:       addrs,
-		page:        pageSettings,
-		peer:        peer,
-		status:      "未连接",
-		histSel:     -1,
-		thumbs:      map[string]*ui.Bitmap{},
-		entries:     hist.List(),
-		devices:     engine.Peers.List(),
+		engine:       engine,
+		hist:         hist,
+		cfg:          cfg,
+		board:        engine.Board,
+		deviceID:     id.DeviceID,
+		fingerprint:  identity.FormatFingerprint(id.Fingerprint),
+		name:         engine.Name,
+		listen:       listen,
+		addrs:        addrs,
+		paused:       cfg.Values.Paused,
+		textOnly:     cfg.Values.TextOnly,
+		maxImageText: strconv.Itoa(cfg.Values.MaxImageMB),
+		page:         pageSettings,
+		peer:         peer,
+		status:       "未连接",
+		histSel:      -1,
+		pickSel:      -1,
+		thumbs:       map[string]*ui.Bitmap{},
+		entries:      hist.List(),
+		devices:      engine.Peers.List(),
 	}
 	a.histList.Key = func(i int) any {
-		if i < 0 || i >= len(a.entries) {
+		shown := a.shown()
+		if i < 0 || i >= len(shown) {
 			return i
 		}
-		return a.entries[i].ID
+		return shown[i].ID
 	}
 	a.histList.Label = func(i int) string {
-		if i < 0 || i >= len(a.entries) {
+		shown := a.shown()
+		if i < 0 || i >= len(shown) {
 			return ""
 		}
-		return entryTitle(a.entries[i])
+		return entryTitle(shown[i])
 	}
 	a.histList.Selected = &a.histSel
+	a.pickList.Key = func(i int) any {
+		shown := a.filtered(a.pickQuery)
+		if i < 0 || i >= len(shown) {
+			return i
+		}
+		return shown[i].ID
+	}
+	a.pickList.Label = func(i int) string {
+		shown := a.filtered(a.pickQuery)
+		if i < 0 || i >= len(shown) {
+			return ""
+		}
+		return entryTitle(shown[i])
+	}
+	a.pickList.Selected = &a.pickSel
 	return a
 }
 
@@ -89,7 +135,12 @@ func (a *app) open(ctx context.Context, peerAddr string) {
 		Height:    560,
 		MinWidth:  720,
 		MinHeight: 440,
+		Hidden:    mygo.App.WasOpenedAtLogin(),
 		Content:   ui.View(a.view),
+	})
+	a.win.OnClose(func(e *mygo.CloseEvent) {
+		e.PreventDefault()
+		a.win.Hide()
 	})
 	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 		{Role: mygo.RoleAppMenu},
@@ -98,6 +149,14 @@ func (a *app) open(ctx context.Context, peerAddr string) {
 		{Label: "复制历史", Accelerator: "CmdOrCtrl+3", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageHistory) }},
 		{Role: mygo.RoleEditMenu},
 	}))
+	a.restoreLogin()
+	a.startTray()
+	a.rememberPasteTarget()
+	go a.watchPasteTarget(ctx)
+	mygo.App.OnDidResignActive(func() {
+		time.AfterFunc(80*time.Millisecond, func() { mygo.RunOnMain(a.rememberPasteTarget) })
+	})
+	a.registerPickerShortcut()
 	if peerAddr != "" {
 		a.peer = peerAddr
 		a.connect()
@@ -109,17 +168,19 @@ func (a *app) show(page string) {
 		a.page = page
 		return
 	}
-	a.win.Update(func() { a.page = page })
+	a.win.Update(func() { a.reveal(page) })
 }
 
 func (a *app) onNotice(n clipsync.Notice) {
 	var added *history.Entry
 	if (n.Kind == clipsync.NoticeLocal || n.Kind == clipsync.NoticeRemote) && n.Item.Kind != "" {
 		dir := history.DirLocal
+		peer := a.name
 		if n.Kind == clipsync.NoticeRemote {
 			dir = history.DirRemote
+			peer = n.PeerName
 		}
-		entry, err := a.hist.Add(dir, n.PeerName, n.Item)
+		entry, err := a.hist.Add(dir, peer, n.Item)
 		if err != nil {
 			n.Kind = clipsync.NoticeError
 			n.Message = "写入历史失败"
@@ -148,6 +209,7 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 			a.entries = a.hist.List()
 		}
 	}
+	a.refreshTray()
 }
 
 func (a *app) view(c *ui.Context) {
@@ -180,7 +242,7 @@ func (a *app) view(c *ui.Context) {
 func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
 	ui.Text(c, "设置").FontSize(22).Bold()
-	ui.Text(c, "配对在这里。开机启动、快捷键和同步范围以后也加在这一页。").TextColor(t.TextMuted)
+	ui.Text(c, "配对、同步和开机启动在这里。关掉窗口不会退出，从托盘可以再打开。").TextColor(t.TextMuted)
 
 	section(c, "本机")
 	kv(c, "名称", a.name)
@@ -208,6 +270,30 @@ func (a *app) settingsPage(c *ui.Context) {
 	})
 	if connect {
 		a.connect()
+	}
+
+	section(c, "同步")
+	if ui.Checkbox(c, &a.openAtLogin, "开机启动").Changed() {
+		a.setOpenAtLogin(a.openAtLogin)
+	}
+	if ui.Checkbox(c, &a.paused, "暂停同步").Changed() {
+		a.saveSettings()
+	}
+	if ui.Checkbox(c, &a.textOnly, "只同步文本").Changed() {
+		a.saveSettings()
+	}
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "图片上限").TextColor(t.TextMuted)
+		if ui.TextInput(c.Key("maxmb"), &a.maxImageText).Width(56).Changed() {
+			a.saveSettings()
+		}
+		ui.Text(c, "MB，最大 20。超过上限的图片只留在本机历史里。").TextColor(t.TextMuted)
+	})
+
+	section(c, "诊断")
+	ui.Text(c, "连不上时，先确认对端已经启动，再让 Windows 防火墙放行入站 TCP 47821。虚拟网卡上的地址通常不是局域网地址。").TextColor(t.TextMuted)
+	if ui.Button(c, "测试连接").Clicked() {
+		a.probe()
 	}
 
 	section(c, "信任")
@@ -273,13 +359,29 @@ func (a *app) devicesPage(c *ui.Context) {
 
 func (a *app) historyPage(c *ui.Context) {
 	t := c.Theme()
-	ui.Row(c).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).Gap(4).Children(func() {
-			ui.Text(c, "复制历史").FontSize(22).Bold()
-			ui.Text(c, "本机复制和对端同步过来的文字、图片。双击一条，或选中后写回剪贴板。").TextColor(t.TextMuted)
-		})
-		if ui.PrimaryButton(c, "写回剪贴板").Disabled(a.histSel < 0 || a.histSel >= len(a.entries)).Clicked() {
+	shown := a.shown()
+	if a.histSel >= len(shown) {
+		a.histSel = -1
+	}
+	ui.Text(c, "复制历史").FontSize(22).Bold()
+	ui.Text(c, pickerHint()+". 双击一条写回剪贴板。未置顶的记录保留 1000 条或 30 天。").TextColor(t.TextMuted)
+	ui.TextInput(c.Key("query"), &a.query).Placeholder("搜索文字")
+	ui.Row(c).Gap(8).Children(func() {
+		if ui.PrimaryButton(c, "写回剪贴板").Disabled(a.histSel < 0).Clicked() {
 			a.pasteHistory()
+		}
+		if ui.Button(c, "置顶").Disabled(a.histSel < 0).Clicked() {
+			a.pinSelected()
+		}
+		if ui.Button(c, "删除").Disabled(a.histSel < 0).Clicked() {
+			a.deleteSelected()
+		}
+		label := "清空"
+		if a.confirmClear {
+			label = "再点一次，清空未置顶"
+		}
+		if ui.Button(c, label).Clicked() {
+			a.clearHistory()
 		}
 	})
 	if a.flash != "" {
@@ -289,8 +391,12 @@ func (a *app) historyPage(c *ui.Context) {
 		ui.Text(c, "还没有记录。在这台电脑上复制一段文字，或等对端同步过来。").Padding(8, 0)
 		return
 	}
-	if ui.List(c, &a.histList, len(a.entries), func(i int) {
-		entry := a.entries[i]
+	if len(shown) == 0 {
+		ui.Text(c, "没有匹配的记录。").TextColor(t.TextMuted)
+		return
+	}
+	if ui.List(c, &a.histList, len(shown), func(i int) {
+		entry := shown[i]
 		ui.Row(c).Padding(8, 4).Gap(10).AlignItems(ui.Center).Children(func() {
 			if entry.Kind == string(clip.KindImage) {
 				if bmp := a.thumb(entry.ID); bmp != nil {
@@ -300,7 +406,11 @@ func (a *app) historyPage(c *ui.Context) {
 				}
 			}
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
-				ui.Text(c, entryTitle(entry)).SingleLine()
+				title := entryTitle(entry)
+				if entry.Pinned {
+					title = "置顶  ·  " + title
+				}
+				ui.Text(c, title).SingleLine()
 				ui.Text(c, entryMeta(entry)).FontSize(12).TextColor(t.TextMuted).SingleLine()
 			})
 		})
@@ -338,11 +448,127 @@ func (a *app) forget(id string) {
 	a.status = "已移除设备。若它还在线，断开后不会再自动信任"
 }
 
-func (a *app) pasteHistory() {
-	if a.histSel < 0 || a.histSel >= len(a.entries) {
+func (a *app) shown() []history.Entry { return a.filtered(a.query) }
+
+func (a *app) filtered(query string) []history.Entry {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return a.entries
+	}
+	var out []history.Entry
+	for _, entry := range a.entries {
+		hay := strings.ToLower(entry.Text + " " + entry.Peer + " " + entryTitle(entry))
+		if strings.Contains(hay, q) {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+func (a *app) selected() (history.Entry, bool) {
+	shown := a.shown()
+	if a.histSel < 0 || a.histSel >= len(shown) {
+		return history.Entry{}, false
+	}
+	return shown[a.histSel], true
+}
+
+func (a *app) saveSettings() {
+	n, err := strconv.Atoi(strings.TrimSpace(a.maxImageText))
+	if err != nil {
+		n = a.cfg.Values.MaxImageMB
+	}
+	if n < 1 {
+		n = 1
+	}
+	if n > settings.DefaultMaxImageMB {
+		n = settings.DefaultMaxImageMB
+	}
+	a.maxImageText = strconv.Itoa(n)
+	a.cfg.Values.Paused = a.paused
+	a.cfg.Values.TextOnly = a.textOnly
+	a.cfg.Values.MaxImageMB = n
+	if err := a.cfg.Save(); err != nil {
+		a.status = "保存设置失败"
 		return
 	}
-	entry := a.entries[a.histSel]
+	a.engine.SetPolicy(a.paused, a.textOnly, n<<20)
+	if a.paused {
+		a.status = "已暂停同步"
+	}
+	a.refreshTray()
+}
+
+func (a *app) probe() {
+	addr, err := normalizePeer(a.peer)
+	if err != nil || addr == "" {
+		a.status = "先填写对端地址"
+		return
+	}
+	a.status = "正在测试 " + addr
+	go func() {
+		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+		msg := "端口通了。若仍不同步，核对两边指纹，并确认防火墙放行了入站 TCP " + defaultPort
+		if err != nil {
+			msg = "连不上 " + addr + "。对端可能没启动，或防火墙没放行入站 TCP " + defaultPort
+		} else {
+			_ = conn.Close()
+		}
+		if a.win != nil {
+			a.win.Update(func() { a.status = msg })
+		}
+	}()
+}
+
+func (a *app) pinSelected() {
+	entry, ok := a.selected()
+	if !ok {
+		return
+	}
+	if err := a.hist.SetPinned(entry.ID, !entry.Pinned); err != nil {
+		a.flash = "置顶失败"
+		return
+	}
+	a.entries = a.hist.List()
+	a.flash = "已更新置顶"
+}
+
+func (a *app) deleteSelected() {
+	entry, ok := a.selected()
+	if !ok {
+		return
+	}
+	if err := a.hist.Delete(entry.ID); err != nil {
+		a.flash = "删除失败"
+		return
+	}
+	delete(a.thumbs, entry.ID)
+	a.entries = a.hist.List()
+	a.histSel = -1
+	a.flash = "已删除"
+}
+
+func (a *app) clearHistory() {
+	if !a.confirmClear {
+		a.confirmClear = true
+		return
+	}
+	a.confirmClear = false
+	if err := a.hist.Clear(); err != nil {
+		a.flash = "清空失败"
+		return
+	}
+	a.thumbs = map[string]*ui.Bitmap{}
+	a.entries = a.hist.List()
+	a.histSel = -1
+	a.flash = "已清空未置顶的记录"
+}
+
+func (a *app) pasteHistory() {
+	entry, ok := a.selected()
+	if !ok {
+		return
+	}
 	item, err := a.hist.Item(entry.ID)
 	if err != nil {
 		a.flash = "读历史失败"
@@ -408,11 +634,25 @@ func entryMeta(e history.Entry) string {
 	from := "本机"
 	if e.Dir == history.DirRemote {
 		from = "对端"
-		if e.Peer != "" {
-			from = e.Peer
-		}
 	}
-	return e.At.Format("01-02 15:04") + "  ·  " + from + "  ·  " + formatSize(e.Size)
+	if e.Peer != "" {
+		from += " " + e.Peer
+	}
+	return relTime(e.At) + "  ·  " + from + "  ·  " + formatSize(e.Size)
+}
+
+func relTime(at time.Time) string {
+	d := time.Since(at)
+	switch {
+	case d < time.Minute:
+		return "刚刚"
+	case d < time.Hour:
+		return fmt.Sprintf("%d 分钟前", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%d 小时前", int(d.Hours()))
+	default:
+		return at.Format("01-02 15:04")
+	}
 }
 
 func formatSize(n int) string {
@@ -455,7 +695,21 @@ func lanAddrs(listen string) []string {
 	port := portOf(listen)
 	var out []string
 	for _, addr := range lanIPv4() {
-		out = append(out, addr.name+"  "+addr.ip+":"+port)
+		label := addr.name + "  " + addr.ip + ":" + port
+		if virtualNIC(addr.name) {
+			label += "  ·  虚拟网卡"
+		}
+		out = append(out, label)
 	}
 	return out
+}
+
+func virtualNIC(name string) bool {
+	n := strings.ToLower(name)
+	for _, part := range []string{"utun", "tun", "tap", "wg", "tailscale", "docker", "vmnet", "vethernet", "bridge", "clash", "awdl", "llw", "ppp"} {
+		if strings.Contains(n, part) {
+			return true
+		}
+	}
+	return false
 }

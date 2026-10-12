@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/2fa0/clipbridge/internal/clip"
 	"github.com/2fa0/clipbridge/internal/history"
 	"github.com/2fa0/clipbridge/internal/identity"
+	"github.com/2fa0/clipbridge/internal/settings"
 	clipsync "github.com/2fa0/clipbridge/internal/sync"
 )
 
@@ -61,6 +63,7 @@ func main() {
 		log.Error("创建数据目录失败", "dir", dataDir, "err", err)
 		os.Exit(1)
 	}
+	log = newLogger(dataDir, level)
 
 	id, err := identity.LoadOrCreate(dataDir)
 	if err != nil {
@@ -100,11 +103,18 @@ func main() {
 	defer cancel()
 
 	mygo.App.SetName("ClipBridge")
+	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+	mygo.App.OnWindowAllClosed(func() {})
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { cancel() })
 
 	hist, err := history.Open(filepath.Join(dataDir, "history"))
 	if err != nil {
 		log.Error("加载复制历史失败", "err", err)
+		os.Exit(1)
+	}
+	cfg, err := settings.Load(dataDir)
+	if err != nil {
+		log.Error("加载设置失败", "err", err)
 		os.Exit(1)
 	}
 	engine := &clipsync.Engine{
@@ -118,7 +128,8 @@ func main() {
 		Guard:       clip.NewEchoGuard(5 * time.Second),
 		Log:         log,
 	}
-	uiApp := newApp(engine, hist, id, *listen, lanAddrs(*listen), peerAddr)
+	engine.SetPolicy(cfg.Values.Paused, cfg.Values.TextOnly, cfg.Values.MaxImageMB<<20)
+	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
 	engine.OnNotice = uiApp.onNotice
 
 	mygo.App.WhenReady(func() {
@@ -184,6 +195,9 @@ func runCheck(log *slog.Logger, board clip.Board) {
 }
 
 func defaultDataDir() (string, error) {
+	if dir, ok := portableDataDir(); ok {
+		return dir, nil
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		home, err := os.UserHomeDir()
@@ -252,6 +266,42 @@ func lanIPv4() []ifaceIP {
 		}
 	}
 	return out
+}
+
+func portableDataDir() (string, bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	dir := filepath.Dir(exe)
+	if _, err := os.Stat(filepath.Join(dir, "portable.flag")); err != nil {
+		return "", false
+	}
+	return filepath.Join(dir, "data"), true
+}
+
+func newLogger(dataDir string, level slog.Level) *slog.Logger {
+	w := io.Writer(os.Stdout)
+	dir := filepath.Join(dataDir, "logs")
+	if err := os.MkdirAll(dir, 0o700); err == nil {
+		path := filepath.Join(dir, "clipbridge.log")
+		rotateLog(path)
+		if f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+			w = io.MultiWriter(os.Stdout, f)
+		}
+	}
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level}))
+}
+
+func rotateLog(path string) {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() < 1<<20 {
+		return
+	}
+	_ = os.Rename(path, path+".1")
 }
 
 func hostname() string {
