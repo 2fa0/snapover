@@ -54,6 +54,20 @@ go run ./cmd/clipbridge -check
 
 依赖钉在 MyGo v0.4.5。本机需要 Go 1.27。
 
+在 Mac 上双击 `build.command`，或在项目目录运行：
+
+```sh
+./build.command
+```
+
+一键生成 Windows 11 x64 和 Mac M 系列（arm64）的包：
+
+- `dist/ClipBridge-0.1.0-windows11-x64.zip`：解压后运行文件夹里的 `ClipBridge.exe`，保留旁边的资源文件
+- `dist/darwin-arm64/ClipBridge.app`
+- `dist/darwin-arm64/ClipBridge 0.1.0 arm64.dmg`：打开后拖入 Applications
+
+文件名中的版本号自动读取 `mygo.json`。脚本的 Windows 步骤会避开 NSIS，生成 ZIP 包，不生成 Setup 安装器；macOS 沿用当前签名配置。
+
 macOS 安装包（Universal `.app` + `.dmg`）：
 
 ```sh
