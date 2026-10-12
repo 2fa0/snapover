@@ -35,6 +35,7 @@ func main() {
 	reset := flag.Bool("reset-peers", false, "清除已信任的对端，下次连接重新信任")
 	check := flag.Bool("check", false, "打印当前剪贴板后退出，不建立连接")
 	debug := flag.Bool("debug", false, "输出调试日志")
+	sendFile := flag.String("send-file", "", "Windows：直接发送一个文件到已连接的设备")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Snapover 第一批：局域网同步文字和图片。\n\n")
 		fmt.Fprintf(os.Stderr, "两边都运行，并且至少一边带 -peer。建议两边都带，断线后才能互相重连。\n\n")
@@ -47,6 +48,15 @@ func main() {
 		level = slog.LevelDebug
 	}
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	mygo.App.SetName("Snapover")
+	if *sendFile != "" && runtime.GOOS != "windows" {
+		log.Error("--send-file 是 Windows 专属入口，请从「发送文件」窗口选择文件")
+		die(2)
+	}
+	// Forward shell requests before touching the running instance's data or logs.
+	if runtime.GOOS == "windows" && !*check && !mygo.App.RequestSingleInstanceLock() {
+		return
+	}
 
 	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
 		log.Error("这一批只支持 Windows 10/11 和 macOS", "os", runtime.GOOS)
@@ -115,7 +125,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mygo.App.SetName("Snapover")
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	mygo.App.OnWindowAllClosed(func() {})
 
@@ -148,6 +157,18 @@ func main() {
 	}
 	engine.SetReceiveDir(receiveDir)
 	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
+	if runtime.GOOS == "windows" {
+		if *sendFile != "" {
+			uiApp.pendingFileRequest = &fileRequest{paths: append([]string{*sendFile}, flag.Args()...), cold: true}
+		}
+		mygo.App.OnSecondInstance(func(args []string, workingDir string) {
+			if paths, requested := sendToPaths(args, workingDir); requested {
+				uiApp.handleFileRequest(paths, false)
+			} else if uiApp.win != nil {
+				uiApp.reveal(uiApp.page)
+			}
+		})
+	}
 	engine.OnNotice = uiApp.onNotice
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		uiApp.quitting = true

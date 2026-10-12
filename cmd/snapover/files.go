@@ -38,6 +38,9 @@ func (a *app) filesView(c *ui.Context) {
 		if online && !link.FileTransfer {
 			ui.Text(c, "对方版本不支持发送文件，请更新两边的 Snapover。").TextColor(t.TextMuted)
 		}
+		if a.fileCommandHint != "" {
+			ui.Text(c, a.fileCommandHint).MaxLines(3)
+		}
 		zone := ui.Column(c.Key("file-drop")).FillWidth().Height(126).Padding(18).Gap(8).Border(1, t.Border).Radius(8).Disabled(a.fileBusy || a.fileChoosing)
 		if zone.FileDragOver() {
 			zone.Border(2, t.Accent)
@@ -64,6 +67,9 @@ func (a *app) filesView(c *ui.Context) {
 			}
 			if a.fileBusy {
 				label = "正在发送…"
+			}
+			if a.fileWaiting {
+				label = "正在连接…"
 			}
 			if ui.PrimaryButton(c, label).Disabled(!online || !link.FileTransfer || a.filePath == "" || a.fileBusy || a.fileChoosing).Clicked() {
 				a.sendSelectedFile()
@@ -111,6 +117,7 @@ func (a *app) updateFiles(fn func()) {
 }
 
 func (a *app) selectFile(paths []string) {
+	a.fileCommandHint = ""
 	if len(paths) != 1 {
 		a.filePath = ""
 		a.fileMessage = "一次只能发送一个文件，请重新选择"
@@ -148,6 +155,7 @@ func (a *app) sendSelectedFile() {
 	if a.fileBusy || a.filePath == "" {
 		return
 	}
+	a.fileCommandHint = ""
 	a.fileBusy, a.fileDone, a.fileMessage = true, 0, "正在等待对方接收…"
 	path := a.filePath
 	link, _ := a.engine.Link()
@@ -253,4 +261,5 @@ func (a *app) receiveSettings(c *ui.Context) {
 			a.openReceiveFolder()
 		}
 	})
+	a.sendToSettings(c)
 }

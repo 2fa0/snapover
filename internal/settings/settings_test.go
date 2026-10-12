@@ -15,6 +15,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	f.Values.TextOnly = true
 	f.Values.MaxImageMB = 8
 	f.Values.ReceiveDir = dir
+	f.Values.DisableSendTo = true
 	if err := f.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +23,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !again.Values.Paused || !again.Values.TextOnly || again.Values.MaxImageMB != 8 || again.Values.ReceiveDir != dir {
+	if !again.Values.Paused || !again.Values.TextOnly || again.Values.MaxImageMB != 8 || again.Values.ReceiveDir != dir || !again.Values.DisableSendTo {
 		t.Fatalf("%+v", again.Values)
 	}
 }

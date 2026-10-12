@@ -58,31 +58,35 @@ type app struct {
 	historySearch historySearch
 	pickerSearch  historySearch
 
-	win            *mygo.Window
-	tray           *mygo.Tray
-	picker         *mygo.Window
-	pickPreview    pickerPreview
-	pickLoading    bool
-	pickOriginal   *mygo.Window
-	quitting       bool
-	openAtLogin    bool
-	pickQuery      string
-	pickSel        int
-	pickList       ui.ListState
-	pickFlash      string
-	pickBusy       bool
-	pasteTo        paste.Target
-	dialCancel     context.CancelFunc
-	dialAddr       string
-	fileWin        *mygo.Window
-	filePath       string
-	fileSize       int64
-	fileBusy       bool
-	fileChoosing   bool
-	fileDone       int64
-	fileMessage    string
-	receiveMessage string
-	lastReceived   string
+	win                *mygo.Window
+	tray               *mygo.Tray
+	picker             *mygo.Window
+	pickPreview        pickerPreview
+	pickLoading        bool
+	pickOriginal       *mygo.Window
+	quitting           bool
+	openAtLogin        bool
+	pickQuery          string
+	pickSel            int
+	pickList           ui.ListState
+	pickFlash          string
+	pickBusy           bool
+	pasteTo            paste.Target
+	dialCancel         context.CancelFunc
+	dialAddr           string
+	fileWin            *mygo.Window
+	filePath           string
+	fileSize           int64
+	fileBusy           bool
+	fileChoosing       bool
+	fileDone           int64
+	fileMessage        string
+	receiveMessage     string
+	lastReceived       string
+	fileCommandHint    string
+	fileWaiting        bool
+	pendingFileRequest *fileRequest
+	sendToBusy         bool
 }
 
 func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id *identity.Identity, listen string, addrs []string, peer string) *app {
@@ -180,6 +184,7 @@ func (a *app) open(ctx context.Context) {
 		{Role: mygo.RoleEditMenu},
 	}))
 	a.restoreLogin()
+	a.initSendTo()
 	a.startTray()
 	a.rememberPasteTarget()
 	go a.watchPasteTarget(ctx)
@@ -189,6 +194,10 @@ func (a *app) open(ctx context.Context) {
 	a.registerPickerShortcut()
 	if a.peer != "" {
 		a.connect()
+	}
+	if request := a.pendingFileRequest; request != nil {
+		a.pendingFileRequest = nil
+		a.handleFileRequest(request.paths, request.cold)
 	}
 }
 
