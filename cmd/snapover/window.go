@@ -3,16 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/lan"
 	"github.com/2fa0/snapover/internal/paste"
 	"github.com/2fa0/snapover/internal/settings"
 	clipsync "github.com/2fa0/snapover/internal/sync"
@@ -49,25 +50,39 @@ type app struct {
 	confirm      bool
 	confirmClear bool
 
-	devices  []clipsync.Device
-	entries  []history.Entry
-	histSel  int
-	histList ui.ListState
-	thumbs   map[string]*ui.Bitmap
+	devices       []clipsync.Device
+	entries       []history.Entry
+	histSel       int
+	histList      ui.ListState
+	thumbs        *simplelru.LRU[string, *ui.Bitmap]
+	historySearch historySearch
+	pickerSearch  historySearch
 
-	win         *mygo.Window
-	tray        *mygo.Tray
-	picker      *mygo.Window
-	quitting    bool
-	openAtLogin bool
-	pickQuery   string
-	pickSel     int
-	pickList    ui.ListState
-	pickFlash   string
-	pickBusy    bool
-	pasteTo     paste.Target
-	dialCancel  context.CancelFunc
-	dialAddr    string
+	win            *mygo.Window
+	tray           *mygo.Tray
+	picker         *mygo.Window
+	pickPreview    pickerPreview
+	pickLoading    bool
+	pickOriginal   *mygo.Window
+	quitting       bool
+	openAtLogin    bool
+	pickQuery      string
+	pickSel        int
+	pickList       ui.ListState
+	pickFlash      string
+	pickBusy       bool
+	pasteTo        paste.Target
+	dialCancel     context.CancelFunc
+	dialAddr       string
+	fileWin        *mygo.Window
+	filePath       string
+	fileSize       int64
+	fileBusy       bool
+	fileChoosing   bool
+	fileDone       int64
+	fileMessage    string
+	receiveMessage string
+	lastReceived   string
 }
 
 func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id *identity.Identity, listen string, addrs []string, peer string) *app {
@@ -101,9 +116,9 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		status:       "未连接",
 		histSel:      -1,
 		pickSel:      -1,
-		thumbs:       map[string]*ui.Bitmap{},
-		entries:      hist.List(),
-		devices:      devices,
+
+		entries: hist.List(),
+		devices: devices,
 	}
 	a.histList.Key = func(i int) any {
 		shown := a.shown()
@@ -161,6 +176,7 @@ func (a *app) open(ctx context.Context) {
 		{Label: "设置", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageSettings) }},
 		{Label: "连接设备", Accelerator: "CmdOrCtrl+2", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageDevices) }},
 		{Label: "复制历史", Accelerator: "CmdOrCtrl+3", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageHistory) }},
+		{Label: "发送文件…", Accelerator: "CmdOrCtrl+4", Click: func(*mygo.MenuItem, *mygo.Window) { a.openFiles() }},
 		{Role: mygo.RoleEditMenu},
 	}))
 	a.restoreLogin()
@@ -219,8 +235,18 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 			a.flash = n.Message
 		}
 		if added != nil {
-			a.entries = a.hist.List()
+			a.refreshEntries()
 		}
+	case clipsync.NoticeFile:
+		a.receiveMessage = receivedMessage(n)
+		if n.FileState == "complete" {
+			a.lastReceived = n.FilePath
+			a.flash = a.receiveMessage
+			a.receivedNotification(n)
+		}
+	}
+	if a.fileWin != nil {
+		a.fileWin.Invalidate()
 	}
 	a.refreshTray()
 }
@@ -238,6 +264,9 @@ func (a *app) view(c *ui.Context) {
 				a.confirm = false
 			}
 			ui.Text(c, a.status).FontSize(12).TextColor(t.TextMuted).Padding(8, 14, 14, 14).MaxLines(3)
+			if ui.Button(c, "发送文件…").Margin(0, 14, 14, 14).Clicked() {
+				a.openFiles()
+			}
 		})
 		ui.Column(c).Grow(1).FillHeight().Padding(20, 24).Gap(14).Children(func() {
 			switch a.page {
@@ -246,7 +275,7 @@ func (a *app) view(c *ui.Context) {
 			case pageHistory:
 				a.historyPage(c)
 			default:
-				a.settingsPage(c)
+				ui.Scroll(c.Key("settings-scroll")).Grow(1).Gap(14).Children(func() { a.settingsPage(c) })
 			}
 		})
 	})
@@ -303,8 +332,9 @@ func (a *app) settingsPage(c *ui.Context) {
 		ui.Text(c, "MB，最大 20。超过上限的图片只留在本机历史里。").TextColor(t.TextMuted)
 	})
 
+	a.receiveSettings(c)
 	section(c, "诊断")
-	ui.Text(c, "连不上时，先确认对端已经启动，再让 Windows 防火墙放行入站 TCP 47821。虚拟网卡上的地址通常不是局域网地址。").TextColor(t.TextMuted)
+	ui.Text(c, "连不上时，先确认对端已经启动，再让 Windows 防火墙放行入站 TCP 47821。虚拟网卡上的地址不会用来发现或连接。请把上面没有「不用于连接」的地址发给对端。").TextColor(t.TextMuted)
 	if ui.Button(c, "测试连接").Clicked() {
 		a.probe()
 	}
@@ -373,13 +403,16 @@ func (a *app) devicesPage(c *ui.Context) {
 
 func (a *app) historyPage(c *ui.Context) {
 	t := c.Theme()
+	ui.Text(c, "复制历史").FontSize(22).Bold()
+	ui.Text(c, pickerHint()+". 双击一条写回剪贴板。未置顶的记录保留 1000 条或 30 天。").TextColor(t.TextMuted)
+	ui.TextInput(c.Key("query"), &a.query).Placeholder("搜索文字")
 	shown := a.shown()
 	if a.histSel >= len(shown) {
 		a.histSel = -1
 	}
-	ui.Text(c, "复制历史").FontSize(22).Bold()
-	ui.Text(c, pickerHint()+". 双击一条写回剪贴板。未置顶的记录保留 1000 条或 30 天。").TextColor(t.TextMuted)
-	ui.TextInput(c.Key("query"), &a.query).Placeholder("搜索文字")
+	if a.historySearch.pending != nil {
+		c.After(50 * time.Millisecond)
+	}
 	ui.Row(c).Gap(8).Children(func() {
 		if ui.PrimaryButton(c, "写回剪贴板").Disabled(a.histSel < 0).Clicked() {
 			a.pasteHistory()
@@ -406,7 +439,7 @@ func (a *app) historyPage(c *ui.Context) {
 		return
 	}
 	if len(shown) == 0 {
-		ui.Text(c, "没有匹配的记录。").TextColor(t.TextMuted)
+		ui.Text(c, a.historySearch.emptyMessage()).TextColor(t.TextMuted)
 		return
 	}
 	if ui.List(c, &a.histList, len(shown), func(i int) {
@@ -479,21 +512,32 @@ func (a *app) stopDial() {
 	a.dialAddr = ""
 }
 
-func (a *app) shown() []history.Entry { return a.filtered(a.query) }
+func (a *app) shown() []history.Entry {
+	return a.historySearch.filter(a.root, a.hist, a.entries, a.query)
+}
 
 func (a *app) filtered(query string) []history.Entry {
-	q := strings.ToLower(strings.TrimSpace(query))
-	if q == "" {
-		return a.entries
+	return a.pickerSearch.filter(a.root, a.hist, a.entries, query)
+}
+
+func matchesEntry(entry history.Entry, q string) bool { return history.Matches(entry, q) }
+
+func (a *app) refreshEntries() {
+	a.entries = a.hist.List()
+	a.historySearch.reset()
+	a.pickerSearch.reset()
+	if a.thumbs == nil {
+		return
 	}
-	var out []history.Entry
+	live := make(map[string]bool, len(a.entries))
 	for _, entry := range a.entries {
-		hay := strings.ToLower(entry.Text + " " + entry.Peer + " " + entryTitle(entry))
-		if strings.Contains(hay, q) {
-			out = append(out, entry)
+		live[entry.ID] = true
+	}
+	for _, id := range a.thumbs.Keys() {
+		if !live[id] {
+			a.thumbs.Remove(id)
 		}
 	}
-	return out
 }
 
 func (a *app) selected() (history.Entry, bool) {
@@ -538,10 +582,16 @@ func (a *app) probe() {
 	}
 	a.status = "正在测试 " + addr
 	go func() {
-		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+		conn, bind, err := lan.DialTimeout(addr, 3*time.Second)
 		msg := "端口通了。若仍不同步，核对两边指纹，并确认防火墙放行了入站 TCP " + defaultPort
+		if bind != nil {
+			msg = "已从 " + bind.String() + " 拨出，不走虚拟网卡。" + msg
+		}
 		if err != nil {
 			msg = "连不上 " + addr + "。对端可能没启动，或防火墙没放行入站 TCP " + defaultPort
+			if bind != nil {
+				msg += "。已避开虚拟网卡，请填局域网地址"
+			}
 		} else {
 			_ = conn.Close()
 		}
@@ -560,7 +610,7 @@ func (a *app) pinSelected() {
 		a.flash = "置顶失败"
 		return
 	}
-	a.entries = a.hist.List()
+	a.refreshEntries()
 	a.flash = "已更新置顶"
 }
 
@@ -573,8 +623,10 @@ func (a *app) deleteSelected() {
 		a.flash = "删除失败"
 		return
 	}
-	delete(a.thumbs, entry.ID)
-	a.entries = a.hist.List()
+	if a.thumbs != nil {
+		a.thumbs.Remove(entry.ID)
+	}
+	a.refreshEntries()
 	a.histSel = -1
 	a.flash = "已删除"
 }
@@ -589,8 +641,10 @@ func (a *app) clearHistory() {
 		a.flash = "清空失败"
 		return
 	}
-	a.thumbs = map[string]*ui.Bitmap{}
-	a.entries = a.hist.List()
+	if a.thumbs != nil {
+		a.thumbs.Purge()
+	}
+	a.refreshEntries()
 	a.histSel = -1
 	a.flash = "已清空未置顶的记录"
 }
@@ -612,21 +666,26 @@ func (a *app) pasteHistory() {
 	a.flash = "已写回剪贴板"
 }
 
+const maxThumbCache = 128
+
 func (a *app) thumb(id string) *ui.Bitmap {
-	if bmp, ok := a.thumbs[id]; ok {
+	if a.thumbs == nil {
+		a.thumbs, _ = simplelru.NewLRU[string, *ui.Bitmap](maxThumbCache, nil)
+	}
+	if bmp, ok := a.thumbs.Get(id); ok {
 		return bmp
 	}
 	raw, err := a.hist.Thumb(id)
 	if err != nil || len(raw) == 0 {
-		a.thumbs[id] = nil
+		a.thumbs.Add(id, nil)
 		return nil
 	}
 	bmp, err := ui.DecodeBitmap(raw)
 	if err != nil {
-		a.thumbs[id] = nil
+		a.thumbs.Add(id, nil)
 		return nil
 	}
-	a.thumbs[id] = bmp
+	a.thumbs.Add(id, bmp)
 	return bmp
 }
 
@@ -642,24 +701,7 @@ func kv(c *ui.Context, k, v string) {
 	})
 }
 
-func entryTitle(e history.Entry) string {
-	if e.Kind == string(clip.KindImage) {
-		if e.Width > 0 {
-			return fmt.Sprintf("图片  %d×%d", e.Width, e.Height)
-		}
-		return "图片"
-	}
-	text := strings.TrimSpace(e.Text)
-	text = strings.ReplaceAll(text, "\n", " ")
-	if text == "" {
-		return "空文本"
-	}
-	runes := []rune(text)
-	if len(runes) > 80 {
-		return string(runes[:80]) + "…"
-	}
-	return text
-}
+func entryTitle(e history.Entry) string { return history.Title(e) }
 
 func entryMeta(e history.Entry) string {
 	from := "本机"
@@ -669,7 +711,12 @@ func entryMeta(e history.Entry) string {
 	if e.Peer != "" {
 		from += " " + e.Peer
 	}
-	return relTime(e.At) + "  ·  " + from + "  ·  " + formatSize(e.Size)
+	parts := []string{relTime(e.At), from}
+	if e.SourceApp != "" {
+		parts = append(parts, e.SourceApp)
+	}
+	parts = append(parts, formatSize(e.Size))
+	return strings.Join(parts, "  ·  ")
 }
 
 func relTime(at time.Time) string {
@@ -724,23 +771,14 @@ func platformLabel(p string) string {
 
 func lanAddrs(listen string) []string {
 	port := portOf(listen)
-	var out []string
-	for _, addr := range lanIPv4() {
-		label := addr.name + "  " + addr.ip + ":" + port
-		if virtualNIC(addr.name) {
-			label += "  ·  虚拟网卡"
+	var physical, virtual []string
+	for _, addr := range lan.IPv4() {
+		label := addr.Name + "  " + addr.IP.String() + ":" + port
+		if addr.Virtual {
+			virtual = append(virtual, label+"  ·  不用于连接")
+			continue
 		}
-		out = append(out, label)
+		physical = append(physical, label)
 	}
-	return out
-}
-
-func virtualNIC(name string) bool {
-	n := strings.ToLower(name)
-	for _, part := range []string{"utun", "tun", "tap", "wg", "tailscale", "docker", "vmnet", "vethernet", "bridge", "clash", "awdl", "llw", "ppp"} {
-		if strings.Contains(n, part) {
-			return true
-		}
-	}
-	return false
+	return append(physical, virtual...)
 }

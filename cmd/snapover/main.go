@@ -18,8 +18,10 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/crashlog"
+	"github.com/2fa0/snapover/internal/front"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/lan"
 	"github.com/2fa0/snapover/internal/settings"
 	clipsync "github.com/2fa0/snapover/internal/sync"
 )
@@ -102,8 +104,12 @@ func main() {
 		"data", dataDir,
 		"platform", platformName(),
 	)
-	for _, addr := range lanIPv4() {
-		log.Info("本机地址", "iface", addr.name, "suggest", net.JoinHostPort(addr.ip, portOf(*listen)))
+	for _, addr := range lan.IPv4() {
+		if addr.Virtual {
+			log.Info("跳过虚拟网卡", "iface", addr.Name, "ip", addr.IP)
+			continue
+		}
+		log.Info("本机地址", "iface", addr.Name, "suggest", net.JoinHostPort(addr.IP.String(), portOf(*listen)))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -136,6 +142,11 @@ func main() {
 		Log:         log,
 	}
 	engine.SetPolicy(cfg.Values.Paused, cfg.Values.TextOnly, cfg.Values.MaxImageMB<<20)
+	receiveDir := cfg.Values.ReceiveDir
+	if receiveDir == "" {
+		receiveDir = defaultReceiveDir()
+	}
+	engine.SetReceiveDir(receiveDir)
 	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
 	engine.OnNotice = uiApp.onNotice
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
@@ -156,7 +167,12 @@ func main() {
 				uiApp.onNotice(clipsync.Notice{Kind: clipsync.NoticeError, Message: "监听失败：" + err.Error()})
 			}
 		}()
-		go clip.Watch(ctx, engine.Board, 300*time.Millisecond, engine.HandleLocal)
+		go clip.Watch(ctx, engine.Board, clip.PollEvery, func(seq uint64, item clip.Item) {
+			if item.Kind != "" && !item.Sensitive && item.Skip == "" && item.SourceApp == "" {
+				item.SourceApp = clip.CleanSource(front.Current())
+			}
+			engine.HandleLocal(seq, item)
+		})
 	})
 
 	sig := make(chan os.Signal, 1)
@@ -253,36 +269,6 @@ func portOf(listen string) string {
 		return defaultPort
 	}
 	return port
-}
-
-type ifaceIP struct {
-	name string
-	ip   string
-}
-
-func lanIPv4() []ifaceIP {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil
-	}
-	var out []ifaceIP
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			ipnet, ok := addr.(*net.IPNet)
-			if !ok || ipnet.IP.To4() == nil || ipnet.IP.IsLoopback() {
-				continue
-			}
-			out = append(out, ifaceIP{name: iface.Name, ip: ipnet.IP.String()})
-		}
-	}
-	return out
 }
 
 func portableDataDir() (string, bool) {

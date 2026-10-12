@@ -61,7 +61,7 @@ func (a *app) openPicker(atCaret bool) {
 		a.pasteTo = t
 	}
 	if a.hist != nil {
-		a.entries = a.hist.List()
+		a.refreshEntries()
 	}
 	a.pickQuery = ""
 	a.pickFlash = ""
@@ -103,6 +103,8 @@ func (a *app) openPicker(atCaret bool) {
 		})
 	}
 	a.picker.OnClosed(func() {
+		a.pickerSearch.reset()
+		a.closePickPreview()
 		a.picker = nil
 		a.pickBusy = false
 	})
@@ -144,12 +146,15 @@ func (a *app) watchPasteTarget(ctx context.Context) {
 }
 
 func (a *app) closePicker() {
+	a.pickerSearch.reset()
 	if a.picker != nil {
 		a.picker.Close()
 	}
 }
 
 func (a *app) pickerView(c *ui.Context) {
+	var hoverID string
+	var hoverBounds ui.Rect
 	if c.Shortcut(0, ui.KeyEscape) {
 		a.finishPick()
 	}
@@ -192,6 +197,12 @@ func (a *app) pickerView(c *ui.Context) {
 			a.pickList.ScrollTo(0, ui.Start)
 		}
 		shown = a.filtered(a.pickQuery)
+		if a.pickerSearch.pending != nil {
+			c.After(50 * time.Millisecond)
+		}
+		if a.pickSel < 0 && len(shown) > 0 {
+			a.pickSel = 0
+		}
 		if field.Submitted() {
 			a.pastePicked()
 		}
@@ -199,11 +210,14 @@ func (a *app) pickerView(c *ui.Context) {
 		case len(a.entries) == 0:
 			ui.Text(c, "还没有记录。先复制一段文字。").TextColor(t.TextMuted)
 		case len(shown) == 0:
-			ui.Text(c, "没有匹配的记录。").TextColor(t.TextMuted)
+			ui.Text(c, a.pickerSearch.emptyMessage()).TextColor(t.TextMuted)
 		default:
 			list := ui.List(c, &a.pickList, len(shown), func(i int) {
 				entry := shown[i]
 				row := ui.Row(c).Padding(6, 4).Gap(8).AlignItems(ui.Center)
+				if row.Hovered() && entry.Kind == string(clip.KindImage) {
+					hoverID, hoverBounds = entry.ID, row.Bounds()
+				}
 				if row.DoubleClicked() {
 					a.pickSel = i
 					a.pastePicked()
@@ -235,6 +249,7 @@ func (a *app) pickerView(c *ui.Context) {
 		}
 		ui.Text(c, hint).FontSize(11).TextColor(t.TextMuted)
 	})
+	a.updatePickPreview(c, hoverID, hoverBounds)
 }
 
 func (a *app) movePick(delta int) {
