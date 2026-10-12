@@ -9,9 +9,9 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/2fa0/clipbridge/internal/clip"
-	"github.com/2fa0/clipbridge/internal/history"
-	"github.com/2fa0/clipbridge/internal/paste"
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/history"
+	"github.com/2fa0/snapover/internal/paste"
 )
 
 func pickerShortcuts() []string {
@@ -231,7 +231,7 @@ func (a *app) pickerView(c *ui.Context) {
 		}
 		hint := "↑↓ 选择，回车或双击粘贴到光标处，Esc 关闭"
 		if runtime.GOOS == "darwin" && !paste.Allowed() {
-			hint = "首次粘贴需要在辅助功能里允许 ClipBridge"
+			hint = "首次粘贴需要在辅助功能里允许 Snapover"
 		}
 		ui.Text(c, hint).FontSize(11).TextColor(t.TextMuted)
 	})
@@ -314,7 +314,7 @@ func (a *app) notePaste(msg string) {
 func pasteFailure(err error) string {
 	switch {
 	case errors.Is(err, paste.ErrNeedAccess):
-		return "已复制。要直接粘贴，请在系统设置 → 隐私与安全性 → 辅助功能里允许 ClipBridge，然后再试一次"
+		return "已复制。要直接粘贴，请在系统设置 → 隐私与安全性 → 辅助功能里允许 Snapover，然后再试一次"
 	case errors.Is(err, paste.ErrNoTarget):
 		return "已复制。刚才的窗口已经不在了，请再按一次粘贴"
 	default:

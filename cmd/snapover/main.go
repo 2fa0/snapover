@@ -16,11 +16,12 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
-	"github.com/2fa0/clipbridge/internal/clip"
-	"github.com/2fa0/clipbridge/internal/history"
-	"github.com/2fa0/clipbridge/internal/identity"
-	"github.com/2fa0/clipbridge/internal/settings"
-	clipsync "github.com/2fa0/clipbridge/internal/sync"
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/crashlog"
+	"github.com/2fa0/snapover/internal/history"
+	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/settings"
+	clipsync "github.com/2fa0/snapover/internal/sync"
 )
 
 const defaultPort = "47821"
@@ -28,12 +29,12 @@ const defaultPort = "47821"
 func main() {
 	listen := flag.String("listen", ":"+defaultPort, "监听地址")
 	peer := flag.String("peer", "", "对端地址，例如 192.168.1.20:47821。只写 IP 时端口用 47821")
-	data := flag.String("data", "", "数据目录。默认 macOS 用 ~/Library/Application Support/ClipBridge，Windows 用 %AppData%\\ClipBridge")
+	data := flag.String("data", "", "数据目录。默认 macOS 用 ~/Library/Application Support/Snapover，Windows 用 %AppData%\\Snapover")
 	reset := flag.Bool("reset-peers", false, "清除已信任的对端，下次连接重新信任")
 	check := flag.Bool("check", false, "打印当前剪贴板后退出，不建立连接")
 	debug := flag.Bool("debug", false, "输出调试日志")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "ClipBridge 第一批：局域网同步文字和图片。\n\n")
+		fmt.Fprintf(os.Stderr, "Snapover 第一批：局域网同步文字和图片。\n\n")
 		fmt.Fprintf(os.Stderr, "两边都运行，并且至少一边带 -peer。建议两边都带，断线后才能互相重连。\n\n")
 		flag.PrintDefaults()
 	}
@@ -47,7 +48,7 @@ func main() {
 
 	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
 		log.Error("这一批只支持 Windows 10/11 和 macOS", "os", runtime.GOOS)
-		os.Exit(2)
+		die(2)
 	}
 
 	dataDir := *data
@@ -56,29 +57,35 @@ func main() {
 		dataDir, err = defaultDataDir()
 		if err != nil {
 			log.Error("无法确定数据目录", "err", err)
-			os.Exit(1)
+			die(1)
 		}
 	}
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		log.Error("创建数据目录失败", "dir", dataDir, "err", err)
-		os.Exit(1)
+		die(1)
 	}
+	crashPath, crashErr := crashlog.Install(dataDir)
 	log = newLogger(dataDir, level)
+	if crashErr != nil {
+		log.Error("崩溃日志不可用", "err", crashErr)
+	} else {
+		log.Info("崩溃日志", "path", crashPath)
+	}
 
 	id, err := identity.LoadOrCreate(dataDir)
 	if err != nil {
 		log.Error("加载本机身份失败", "err", err)
-		os.Exit(1)
+		die(1)
 	}
 	peers, err := clipsync.OpenStore(dataDir)
 	if err != nil {
 		log.Error("加载信任列表失败", "err", err)
-		os.Exit(1)
+		die(1)
 	}
 	if *reset {
 		if err := peers.Reset(); err != nil {
 			log.Error("清除信任列表失败", "err", err)
-			os.Exit(1)
+			die(1)
 		}
 		log.Info("已清除信任列表")
 	}
@@ -86,10 +93,10 @@ func main() {
 	peerAddr, err := normalizePeer(*peer)
 	if err != nil {
 		log.Error("对端地址无效", "err", err)
-		os.Exit(2)
+		die(2)
 	}
 
-	log.Info("ClipBridge",
+	log.Info("Snapover",
 		"device", id.DeviceID,
 		"fingerprint", identity.FormatFingerprint(id.Fingerprint),
 		"data", dataDir,
@@ -102,26 +109,26 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mygo.App.SetName("ClipBridge")
+	mygo.App.SetName("Snapover")
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	mygo.App.OnWindowAllClosed(func() {})
-	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { cancel() })
 
 	hist, err := history.Open(filepath.Join(dataDir, "history"))
 	if err != nil {
 		log.Error("加载复制历史失败", "err", err)
-		os.Exit(1)
+		die(1)
 	}
 	cfg, err := settings.Load(dataDir)
 	if err != nil {
 		log.Error("加载设置失败", "err", err)
-		os.Exit(1)
+		die(1)
 	}
 	engine := &clipsync.Engine{
 		LocalID:     id.DeviceID,
 		Name:        hostname(),
 		Platform:    platformName(),
 		Fingerprint: id.Fingerprint,
+		ListenPort:  portOf(*listen),
 		TLS:         identity.TLSConfig(id),
 		Peers:       peers,
 		Board:       clip.MyGoBoard{},
@@ -131,6 +138,10 @@ func main() {
 	engine.SetPolicy(cfg.Values.Paused, cfg.Values.TextOnly, cfg.Values.MaxImageMB<<20)
 	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
 	engine.OnNotice = uiApp.onNotice
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
+		uiApp.quitting = true
+		cancel()
+	})
 
 	mygo.App.WhenReady(func() {
 		if *check {
@@ -138,7 +149,7 @@ func main() {
 			mygo.App.Quit()
 			return
 		}
-		uiApp.open(ctx, peerAddr)
+		uiApp.open(ctx)
 		go func() {
 			if err := clipsync.Listen(ctx, *listen, engine); err != nil && ctx.Err() == nil {
 				log.Error("监听失败", "addr", *listen, "err", err)
@@ -161,8 +172,14 @@ func main() {
 
 	if err := mygo.App.Run(); err != nil {
 		log.Error("退出", "err", err)
-		os.Exit(1)
+		die(1)
 	}
+	crashlog.MarkClean()
+}
+
+func die(code int) {
+	crashlog.MarkClean()
+	os.Exit(code)
 }
 
 func runCheck(log *slog.Logger, board clip.Board) {
@@ -204,13 +221,13 @@ func defaultDataDir() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(home, "Library", "Application Support", "ClipBridge"), nil
+		return filepath.Join(home, "Library", "Application Support", "Snapover"), nil
 	case "windows":
 		base := os.Getenv("APPDATA")
 		if base == "" {
 			return "", fmt.Errorf("APPDATA 未设置")
 		}
-		return filepath.Join(base, "ClipBridge"), nil
+		return filepath.Join(base, "Snapover"), nil
 	default:
 		return "", fmt.Errorf("不支持 %s", runtime.GOOS)
 	}
@@ -287,7 +304,7 @@ func newLogger(dataDir string, level slog.Level) *slog.Logger {
 	w := io.Writer(os.Stdout)
 	dir := filepath.Join(dataDir, "logs")
 	if err := os.MkdirAll(dir, 0o700); err == nil {
-		path := filepath.Join(dir, "clipbridge.log")
+		path := filepath.Join(dir, "snapover.log")
 		rotateLog(path)
 		if f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
 			w = io.MultiWriter(os.Stdout, f)
@@ -307,7 +324,7 @@ func rotateLog(path string) {
 func hostname() string {
 	name, err := os.Hostname()
 	if err != nil || name == "" {
-		return "clipbridge"
+		return "snapover"
 	}
 	return name
 }

@@ -1,7 +1,12 @@
 package clip
 
-import "context"
-import "time"
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/2fa0/snapover/internal/crashlog"
+)
 
 // Board is the clipboard as the sync engine sees it. Tests use a fake.
 // The MyGo implementation lives in board_mygo.go.
@@ -41,6 +46,7 @@ func Watch(ctx context.Context, b Board, every time.Duration, fn func(seq uint64
 				continue
 			}
 			last = seq
+			crashlog.Breadcrumb(fmt.Sprintf("剪贴板变化 seq=%d", seq))
 			item, err := b.Snapshot()
 			if err != nil {
 				continue

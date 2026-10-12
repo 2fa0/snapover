@@ -4,12 +4,14 @@ import (
 	"crypto/tls"
 	"errors"
 	"log/slog"
+	"net"
+	"strconv"
 	"sync"
 	"time"
 
-	"github.com/2fa0/clipbridge/internal/clip"
-	"github.com/2fa0/clipbridge/internal/identity"
-	"github.com/2fa0/clipbridge/internal/wire"
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/wire"
 )
 
 const localPriority = 2 * time.Second
@@ -20,6 +22,7 @@ type Engine struct {
 	Name        string
 	Platform    string
 	Fingerprint string
+	ListenPort  string
 	TLS         *tls.Config
 	Peers       *Store
 	Board       clip.Board
@@ -185,7 +188,7 @@ func (e *Engine) Attach(conn *tls.Conn, weDialed bool) error {
 		return err
 	}
 	addr := conn.RemoteAddr().String()
-	first, err := e.Peers.Allow(peer.id, peer.fp, hello.Name, hello.Platform, addr)
+	first, err := e.Peers.Allow(peer.id, peer.fp, hello.Name, hello.Platform, reconnectAddr(addr, weDialed, hello.ListenPort))
 	if err != nil {
 		if errors.Is(err, ErrFingerprintMismatch) {
 			e.Log.Error("对端证书变了，拒绝连接。若对端重装过，删除 peers.json 中该设备或加 -reset-peers", "peer", peer.id, "fp", identity.FormatFingerprint(peer.fp))
@@ -231,6 +234,7 @@ func (e *Engine) handshake(conn *tls.Conn) (*identityResult, wire.Hello, error) 
 		Platform:    e.Platform,
 		Proto:       wire.Proto,
 		Fingerprint: e.Fingerprint,
+		ListenPort:  e.ListenPort,
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- wire.WriteMsg(conn, wire.TypeHello, hello) }()
@@ -264,6 +268,26 @@ func (e *Engine) handshake(conn *tls.Conn) (*identityResult, wire.Hello, error) 
 		return nil, wire.Hello{}, errors.New("Hello 的设备 id 和证书不一致")
 	}
 	return peer, peerHello, nil
+}
+
+// Incoming connections use a temporary source port, not the peer's listener.
+// Older peers omit ListenPort and use the default port.
+func reconnectAddr(remote string, weDialed bool, listenPort string) string {
+	if weDialed {
+		return remote
+	}
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		return ""
+	}
+	if listenPort == "" {
+		listenPort = "47821"
+	}
+	port, err := strconv.Atoi(listenPort)
+	if err != nil || port < 1 || port > 65535 {
+		return ""
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 // adopt keeps a single session. When both sides dial, the connection opened

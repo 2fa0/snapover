@@ -10,12 +10,12 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/2fa0/clipbridge/internal/clip"
-	"github.com/2fa0/clipbridge/internal/history"
-	"github.com/2fa0/clipbridge/internal/identity"
-	"github.com/2fa0/clipbridge/internal/paste"
-	"github.com/2fa0/clipbridge/internal/settings"
-	clipsync "github.com/2fa0/clipbridge/internal/sync"
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/history"
+	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/paste"
+	"github.com/2fa0/snapover/internal/settings"
+	clipsync "github.com/2fa0/snapover/internal/sync"
 )
 
 const (
@@ -58,6 +58,7 @@ type app struct {
 	win         *mygo.Window
 	tray        *mygo.Tray
 	picker      *mygo.Window
+	quitting    bool
 	openAtLogin bool
 	pickQuery   string
 	pickSel     int
@@ -66,11 +67,21 @@ type app struct {
 	pickBusy    bool
 	pasteTo     paste.Target
 	dialCancel  context.CancelFunc
+	dialAddr    string
 }
 
 func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id *identity.Identity, listen string, addrs []string, peer string) *app {
 	if cfg == nil {
 		cfg = &settings.File{Values: settings.Values{MaxImageMB: settings.DefaultMaxImageMB}}
+	}
+	devices := engine.Peers.List()
+	if peer == "" {
+		for _, dev := range devices {
+			if dev.Peer.Addr != "" {
+				peer = dev.Peer.Addr
+				break
+			}
+		}
 	}
 	a := &app{
 		engine:       engine,
@@ -92,7 +103,7 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		pickSel:      -1,
 		thumbs:       map[string]*ui.Bitmap{},
 		entries:      hist.List(),
-		devices:      engine.Peers.List(),
+		devices:      devices,
 	}
 	a.histList.Key = func(i int) any {
 		shown := a.shown()
@@ -127,10 +138,10 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 	return a
 }
 
-func (a *app) open(ctx context.Context, peerAddr string) {
+func (a *app) open(ctx context.Context) {
 	a.root = ctx
 	a.win = mygo.NewWindow(mygo.WindowOptions{
-		Title:     "ClipBridge",
+		Title:     "Snapover",
 		Width:     880,
 		Height:    560,
 		MinWidth:  720,
@@ -139,6 +150,9 @@ func (a *app) open(ctx context.Context, peerAddr string) {
 		Content:   ui.View(a.view),
 	})
 	a.win.OnClose(func(e *mygo.CloseEvent) {
+		if a.quitting {
+			return
+		}
 		e.PreventDefault()
 		a.win.Hide()
 	})
@@ -157,8 +171,7 @@ func (a *app) open(ctx context.Context, peerAddr string) {
 		time.AfterFunc(80*time.Millisecond, func() { mygo.RunOnMain(a.rememberPasteTarget) })
 	})
 	a.registerPickerShortcut()
-	if peerAddr != "" {
-		a.peer = peerAddr
+	if a.peer != "" {
 		a.connect()
 	}
 }
@@ -216,7 +229,7 @@ func (a *app) view(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(t.Background).Children(func() {
 		ui.Column(c).Width(168).FillHeight().Background(t.Surface).Children(func() {
-			ui.Text(c, "ClipBridge").Bold().Padding(16, 14, 8, 14)
+			ui.Text(c, "Snapover").Bold().Padding(16, 14, 8, 14)
 			if ui.Sidebar(c, &a.page, func() {
 				ui.SidebarItem(c, pageSettings, nil, "设置")
 				ui.SidebarItem(c, pageDevices, nil, "连接设备")
@@ -258,7 +271,7 @@ func (a *app) settingsPage(c *ui.Context) {
 	}
 
 	section(c, "配对")
-	ui.Text(c, "填写另一台电脑的地址。只写 IP 时端口用 47821。第一次连上会信任对方证书，请和对端这一页的指纹核对。").TextColor(t.TextMuted)
+	ui.Text(c, "填写另一台电脑的地址。只写 IP 时端口用 47821。配对成功后会记住设备，下次启动自动重连。首次连接请核对两边的证书指纹。").TextColor(t.TextMuted)
 	var connect bool
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		if ui.TextInput(c.Key("peer"), &a.peer).Placeholder("192.168.1.20").Grow(1).Submitted() {
@@ -311,6 +324,7 @@ func (a *app) settingsPage(c *ui.Context) {
 			a.status = "清除信任失败"
 			return
 		}
+		a.stopDial()
 		a.devices = nil
 		a.status = "已清除信任。下次连接会重新核对指纹"
 	}
@@ -426,26 +440,43 @@ func (a *app) connect() {
 		return
 	}
 	a.peer = addr
-	if a.dialCancel != nil {
-		a.dialCancel()
-	}
+	a.stopDial()
 	parent := a.root
 	if parent == nil {
 		parent = context.Background()
 	}
 	ctx, cancel := context.WithCancel(parent)
 	a.dialCancel = cancel
+	a.dialAddr = addr
 	a.status = "正在连接 " + addr
 	go clipsync.Dial(ctx, addr, a.engine)
 }
 
 func (a *app) forget(id string) {
+	var addr string
+	for _, dev := range a.devices {
+		if dev.ID == id {
+			addr = dev.Peer.Addr
+			break
+		}
+	}
 	if err := a.engine.Peers.Forget(id); err != nil {
 		a.status = "移除设备失败"
 		return
 	}
+	if addr != "" && addr == a.dialAddr {
+		a.stopDial()
+	}
 	a.devices = a.engine.Peers.List()
 	a.status = "已移除设备。若它还在线，断开后不会再自动信任"
+}
+
+func (a *app) stopDial() {
+	if a.dialCancel != nil {
+		a.dialCancel()
+		a.dialCancel = nil
+	}
+	a.dialAddr = ""
 }
 
 func (a *app) shown() []history.Entry { return a.filtered(a.query) }

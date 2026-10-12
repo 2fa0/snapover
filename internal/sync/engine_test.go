@@ -2,6 +2,7 @@ package sync
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"image"
 	"image/color"
@@ -9,13 +10,14 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/2fa0/clipbridge/internal/clip"
-	"github.com/2fa0/clipbridge/internal/identity"
-	"github.com/2fa0/clipbridge/internal/wire"
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/wire"
 )
 
 func TestKeepTieBreak(t *testing.T) {
@@ -92,6 +94,82 @@ func TestExchangeTextAndImage(t *testing.T) {
 	img := mustPNG(t)
 	a.HandleLocal(2, img)
 	waitWrite(t, b.Board.(*memBoard), img.Hash)
+}
+
+func TestReconnectUsingSavedAddress(t *testing.T) {
+	left, right := newIdentities(t)
+	a := engineFor(t, left, &memBoard{})
+	b := engineFor(t, right, &memBoard{})
+	b.ListenPort = "49001"
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", a.TLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	_, a.ListenPort, _ = net.SplitHostPort(ln.Addr().String())
+	addr := ln.Addr().String()
+	for round, text := range []string{"paired", "reconnected"} {
+		accepted := make(chan struct{})
+		go func() {
+			defer close(accepted)
+			conn, err := ln.Accept()
+			if err == nil {
+				_ = a.Attach(conn.(*tls.Conn), false)
+			}
+		}()
+		ctx, cancel := context.WithCancel(context.Background())
+		dialed := make(chan struct{})
+		client := b
+		go func() {
+			defer close(dialed)
+			Dial(ctx, addr, client)
+		}()
+		stop := func() {
+			cancel()
+			for _, e := range []*Engine{a, client} {
+				e.mu.Lock()
+				sess := e.sess
+				e.mu.Unlock()
+				if sess != nil {
+					sess.Close()
+				}
+			}
+		}
+		t.Cleanup(stop)
+		deadline := time.Now().Add(3 * time.Second)
+		for !a.Connected() || !client.Connected() {
+			if time.Now().After(deadline) {
+				t.Fatal("saved address did not reconnect")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if got := a.Peers.List()[0].Peer.Addr; got != "127.0.0.1:49001" {
+			t.Fatalf("incoming peer address=%q", got)
+		}
+		item := mustText(t, text)
+		client.HandleLocal(1, item)
+		waitWrite(t, a.Board.(*memBoard), item.Hash)
+		stop()
+		for _, done := range []chan struct{}{accepted, dialed} {
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("connection did not stop")
+			}
+		}
+		if round == 1 {
+			break
+		}
+		// Reopen the client's trust file, as a fresh process would.
+		store, err := OpenStore(filepath.Dir(client.Peers.path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b = engineFor(t, right, &memBoard{})
+		b.Peers = store
+		b.ListenPort = "49001"
+		addr = store.List()[0].Peer.Addr
+	}
 }
 
 func TestRejectChangedFingerprint(t *testing.T) {

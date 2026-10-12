@@ -2,7 +2,7 @@ package sync
 
 import "time"
 
-import "github.com/2fa0/clipbridge/internal/clip"
+import "github.com/2fa0/snapover/internal/clip"
 
 const (
 	NoticeLocal  = "local"

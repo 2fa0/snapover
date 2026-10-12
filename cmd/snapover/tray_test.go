@@ -25,7 +25,7 @@ func TestPickerShortcuts(t *testing.T) {
 }
 
 func TestMenuJPGBecomesTrayIcon(t *testing.T) {
-	buf, err := os.ReadFile(filepath.Join("..", "..", "resources", "menu.jpg"))
+	buf, err := os.ReadFile(filepath.Join("..", "..", "resources", "icon.jpg"))
 	if err != nil {
 		t.Fatal(err)
 	}

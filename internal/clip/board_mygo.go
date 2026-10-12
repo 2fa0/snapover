@@ -1,8 +1,12 @@
 package clip
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
+	"github.com/2fa0/snapover/internal/crashlog"
 )
 
 // MyGoBoard reads and writes the system clipboard through MyGo.
@@ -12,6 +16,7 @@ type MyGoBoard struct{}
 func (MyGoBoard) Sequence() (uint64, error) { return platformSequence() }
 
 func (MyGoBoard) Snapshot() (Item, error) {
+	crashlog.Breadcrumb("开始读取剪贴板")
 	raw := mygo.Clipboard.AvailableFormats()
 	portable := make([]string, 0, 4)
 	for _, f := range mygo.Clipboard.Formats() {
@@ -20,6 +25,7 @@ func (MyGoBoard) Snapshot() (Item, error) {
 	all := make([]string, 0, len(raw)+len(portable))
 	all = append(all, raw...)
 	all = append(all, portable...)
+	crashlog.Breadcrumb("剪贴板格式 " + formatList(all))
 
 	if sens, why := Sensitive(all, readFormat); sens {
 		return Item{Sensitive: true, Skip: why}, nil
@@ -50,6 +56,7 @@ func (MyGoBoard) Snapshot() (Item, error) {
 }
 
 func (MyGoBoard) Write(item Item) error {
+	crashlog.Breadcrumb(fmt.Sprintf("写入剪贴板 kind=%s bytes=%d", item.Kind, item.Size))
 	switch item.Kind {
 	case KindText:
 		mygo.Clipboard.WriteText(item.Text)
@@ -59,6 +66,13 @@ func (MyGoBoard) Write(item Item) error {
 	default:
 		return errEmptyWrite
 	}
+}
+
+func formatList(all []string) string {
+	if len(all) == 0 {
+		return "(无)"
+	}
+	return strings.Join(all, ",")
 }
 
 func readFormat(name string) ([]byte, bool) {

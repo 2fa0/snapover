@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2fa0/clipbridge/internal/clip"
+	"github.com/2fa0/snapover/internal/clip"
 )
 
 func TestAddListAndRestore(t *testing.T) {

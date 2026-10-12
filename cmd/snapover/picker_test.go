@@ -6,8 +6,8 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/2fa0/clipbridge/internal/clip"
-	"github.com/2fa0/clipbridge/internal/history"
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/history"
 )
 
 func TestPickerKeyboardSelection(t *testing.T) {

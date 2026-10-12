@@ -23,6 +23,7 @@ var (
 	procSetForeground = user32.NewProc("SetForegroundWindow")
 	procThreadID      = user32.NewProc("GetWindowThreadProcessId")
 	procAttach        = user32.NewProc("AttachThreadInput")
+	procIsIconic      = user32.NewProc("IsIconic")
 	procShow          = user32.NewProc("ShowWindow")
 	procKey           = user32.NewProc("keybd_event")
 )
@@ -55,7 +56,10 @@ func (t Target) Paste() error {
 }
 
 func focus(hwnd uintptr) bool {
-	procShow.Call(hwnd, swRestore)
+	// SW_RESTORE also unmaximizes windows, so only use it for minimized targets.
+	if minimized, _, _ := procIsIconic.Call(hwnd); minimized != 0 {
+		procShow.Call(hwnd, swRestore)
+	}
 	ours := uintptr(windows.GetCurrentThreadId())
 	theirs, _, _ := procThreadID.Call(hwnd, 0)
 	attached := false

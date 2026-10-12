@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/2fa0/clipbridge/internal/clip"
-	"github.com/2fa0/clipbridge/internal/identity"
-	"github.com/2fa0/clipbridge/internal/wire"
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/wire"
 	"github.com/oklog/ulid/v2"
 )
 

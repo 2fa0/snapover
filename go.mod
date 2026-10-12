@@ -1,4 +1,4 @@
-module github.com/2fa0/clipbridge
+module github.com/2fa0/snapover
 
 go 1.27.2
 

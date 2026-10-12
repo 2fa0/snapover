@@ -23,7 +23,7 @@ func (a *app) startTray() {
 	tray, err := mygo.NewTray(mygo.TrayOptions{
 		Icon:           icon,
 		IconIsTemplate: template,
-		ToolTip:        "ClipBridge",
+		ToolTip:        "Snapover",
 	})
 	if err != nil {
 		if a.engine.Log != nil {
@@ -68,7 +68,7 @@ func (a *app) refreshTray() {
 		status = "已暂停"
 	}
 	if status == "" {
-		status = "ClipBridge"
+		status = "Snapover"
 	}
 	a.tray.SetToolTip(status)
 	if runtime.GOOS == "linux" {
@@ -82,7 +82,7 @@ func (a *app) trayMenu() *mygo.Menu {
 		status = "已暂停"
 	}
 	if status == "" {
-		status = "ClipBridge"
+		status = "Snapover"
 	}
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Label: status, Disabled: true},
@@ -164,16 +164,17 @@ func loginErr(err error) string {
 	s := err.Error()
 	switch {
 	case strings.Contains(s, "bundle"):
-		return "开机启动需要用打好的 ClipBridge.app，源码直接运行不行"
+		return "开机启动需要用打好的 Snapover.app，源码直接运行不行"
 	case strings.Contains(s, "Login Items"), strings.Contains(s, "allow"):
-		return "到系统设置的登录项里允许 ClipBridge"
+		return "到系统设置的登录项里允许 Snapover"
 	default:
 		return "开机启动没改成：" + s
 	}
 }
 
 func loadMenuIcon() []byte {
-	names := []string{"menu.jpg", "menu.png"}
+	// icon.jpg 是菜单栏图标。程序图标是 icon.png，由 app.jpg 转来，不要拿来做菜单。
+	names := []string{"icon.jpg"}
 	if dir, err := mygo.App.Path(mygo.PathResources); err == nil {
 		for _, name := range names {
 			if buf, err := os.ReadFile(filepath.Join(dir, name)); err == nil {

@@ -1,13 +1,13 @@
 {
-  "name": "ClipBridge",
-  "identifier": "app.clipbridge.desktop",
+  "name": "Snapover",
+  "identifier": "app.snapover.desktop",
   "version": "0.1.0",
-  "main": "./cmd/clipbridge",
+  "main": "./cmd/snapover",
   "icon": "resources/icon.png",
   "out": "dist",
   "macos": {
     "minimumSystemVersion": "12.0",
-    "dmgTitle": "ClipBridge",
+    "dmgTitle": "Snapover",
     "infoPlist": {
       "LSApplicationCategoryType": "public.app-category.utilities"
     }

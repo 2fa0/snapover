@@ -36,6 +36,7 @@ type Hello struct {
 	Platform    string `msgpack:"platform"`
 	Proto       uint16 `msgpack:"proto"`
 	Fingerprint string `msgpack:"fingerprint"`
+	ListenPort  string `msgpack:"listen_port,omitempty"`
 }
 
 type Text struct {
