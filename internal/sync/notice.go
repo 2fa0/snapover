@@ -9,27 +9,34 @@ const (
 	NoticeRemote = "remote"
 	NoticeStatus = "status"
 	NoticeError  = "error"
+	NoticeFile   = "file"
 )
 
 // Notice is a clipboard or connection change the window can show.
 // Item is set for local and remote clipboard events.
 type Notice struct {
-	At       time.Time
-	Kind     string
-	Message  string
-	Item     clip.Item
-	PeerID   string
-	PeerName string
-	Platform string
-	Addr     string
+	At        time.Time
+	Kind      string
+	Message   string
+	Item      clip.Item
+	PeerID    string
+	PeerName  string
+	Platform  string
+	Addr      string
+	FileName  string
+	FilePath  string
+	FileState string
+	FileDone  int64
+	FileTotal int64
 }
 
 // Link is the peer of the live session, if there is one.
 type Link struct {
-	ID       string
-	Name     string
-	Platform string
-	Addr     string
+	ID           string
+	Name         string
+	Platform     string
+	Addr         string
+	FileTransfer bool
 }
 
 func (e *Engine) notify(n Notice) {

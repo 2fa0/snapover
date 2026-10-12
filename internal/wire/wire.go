@@ -28,15 +28,46 @@ const (
 	TypePing       byte = 7
 	TypePong       byte = 8
 	TypeError      byte = 9
+	TypeFileBegin  byte = 10
+	TypeFileChunk  byte = 11
+	TypeFileEnd    byte = 12
+	TypeFileResult byte = 13
+	TypeFileCancel byte = 14
 )
 
 type Hello struct {
-	DeviceID    string `msgpack:"device_id"`
-	Name        string `msgpack:"name"`
-	Platform    string `msgpack:"platform"`
-	Proto       uint16 `msgpack:"proto"`
-	Fingerprint string `msgpack:"fingerprint"`
-	ListenPort  string `msgpack:"listen_port,omitempty"`
+	DeviceID     string   `msgpack:"device_id"`
+	Name         string   `msgpack:"name"`
+	Platform     string   `msgpack:"platform"`
+	Proto        uint16   `msgpack:"proto"`
+	Fingerprint  string   `msgpack:"fingerprint"`
+	ListenPort   string   `msgpack:"listen_port,omitempty"`
+	Capabilities []string `msgpack:"capabilities,omitempty"`
+}
+
+const FileCapability = "file-transfer-v1"
+
+type FileBegin struct {
+	ItemID    string `msgpack:"item_id"`
+	Name      string `msgpack:"name"`
+	TotalSize int64  `msgpack:"total_size"`
+}
+
+type FileChunk struct {
+	ItemID string `msgpack:"item_id"`
+	Offset int64  `msgpack:"offset"`
+	Data   []byte `msgpack:"data"`
+}
+
+type FileEnd struct {
+	ItemID string `msgpack:"item_id"`
+	Hash   []byte `msgpack:"hash"`
+}
+
+type FileResult struct {
+	ItemID  string `msgpack:"item_id"`
+	State   string `msgpack:"state"` // ready, complete, error
+	Message string `msgpack:"message,omitempty"`
 }
 
 type Text struct {
@@ -44,6 +75,7 @@ type Text struct {
 	Hash      []byte `msgpack:"hash"`
 	Text      string `msgpack:"text"`
 	CreatedAt int64  `msgpack:"created_at"`
+	SourceApp string `msgpack:"source_app,omitempty"`
 }
 
 type ImageBegin struct {
@@ -54,6 +86,7 @@ type ImageBegin struct {
 	TotalSize uint64 `msgpack:"total_size"`
 	Chunks    uint32 `msgpack:"chunks"`
 	CreatedAt int64  `msgpack:"created_at"`
+	SourceApp string `msgpack:"source_app,omitempty"`
 }
 
 type ImageChunk struct {

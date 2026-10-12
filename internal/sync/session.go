@@ -14,12 +14,14 @@ import (
 	"github.com/2fa0/snapover/internal/identity"
 	"github.com/2fa0/snapover/internal/wire"
 	"github.com/oklog/ulid/v2"
+	"github.com/zeebo/blake3"
 )
 
 const (
-	pingEvery = 15 * time.Second
-	readLimit = 45 * time.Second
-	queueSize = 8
+	pingEvery  = 15 * time.Second
+	readLimit  = 45 * time.Second
+	queueSize  = 8
+	queueBytes = clip.MaxImageBytes
 )
 
 // Session is one live peer connection after Hello has been accepted.
@@ -31,46 +33,84 @@ type Session struct {
 	onItem   func(clip.Item)
 	out      chan clip.Item
 
-	mu       sync.Mutex
-	writeMu  sync.Mutex
-	closed   bool
-	lastRecv time.Time
-	done     chan struct{}
-	once     sync.Once
+	mu            sync.Mutex
+	writeMu       sync.Mutex
+	closed        bool
+	queuedBytes   int
+	lastRecv      time.Time
+	done          chan struct{}
+	once          sync.Once
+	fileSupported bool
+	receiveDir    func() string
+	onFile        func(Notice)
+	fileSendMu    sync.Mutex
+	fileResultMu  sync.Mutex
+	fileSendID    string
+	fileResults   chan wire.FileResult
+	responses     chan response
+}
+
+type response struct {
+	typ  byte
+	body any
 }
 
 func newSession(conn *tls.Conn, peerID string, weDialed bool, log *slog.Logger, onItem func(clip.Item)) *Session {
 	return &Session{
-		conn:     conn,
-		peerID:   peerID,
-		weDialed: weDialed,
-		log:      log,
-		onItem:   onItem,
-		out:      make(chan clip.Item, queueSize),
-		lastRecv: time.Now(),
-		done:     make(chan struct{}),
+		conn:      conn,
+		peerID:    peerID,
+		weDialed:  weDialed,
+		log:       log,
+		onItem:    onItem,
+		out:       make(chan clip.Item, queueSize),
+		responses: make(chan response, 16),
+		lastRecv:  time.Now(),
+		done:      make(chan struct{}),
 	}
 }
 
+func queuedSize(item clip.Item) int { return len(item.PNG) + len(item.Text) }
+
 func (s *Session) enqueue(item clip.Item) bool {
+	// The peer needs the original bytes, not our local thumbnail.
+	item.Thumbnail = nil
 	s.mu.Lock()
-	closed := s.closed
-	s.mu.Unlock()
-	if closed {
+	defer s.mu.Unlock()
+	n := queuedSize(item)
+	if s.closed || n > queueBytes-s.queuedBytes {
 		return false
 	}
 	select {
 	case s.out <- item:
+		s.queuedBytes += n
 		return true
 	default:
 		return false
 	}
 }
 
+func (s *Session) releaseQueued(item clip.Item) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false
+	}
+	s.queuedBytes -= queuedSize(item)
+	return true
+}
+
 func (s *Session) Close() {
 	s.once.Do(func() {
 		s.mu.Lock()
 		s.closed = true
+		// Drop queued payloads immediately, even if an active write is blocked.
+		for len(s.out) > 0 {
+			select {
+			case <-s.out:
+			default:
+			}
+		}
+		s.queuedBytes = 0
 		s.mu.Unlock()
 		close(s.done)
 		_ = s.conn.Close()
@@ -94,6 +134,13 @@ func (s *Session) run() {
 func (s *Session) readLoop() {
 	defer s.Close()
 	var asm *assembler
+	var incoming *fileReceive
+	defer func() {
+		if incoming != nil {
+			incoming.file.Abort()
+			s.fileNotice(incoming, "error", "", "连接已断开，未完成的文件已清理，请重新发送")
+		}
+	}()
 	for {
 		typ, payload, err := wire.ReadFrame(s.conn)
 		if err != nil {
@@ -105,9 +152,29 @@ func (s *Session) readLoop() {
 		s.mu.Lock()
 		s.lastRecv = time.Now()
 		s.mu.Unlock()
+		if incoming != nil && time.Since(incoming.updated) > fileWait {
+			s.rejectFile(incoming.id, "接收超时，请重新发送")
+			s.fileNotice(incoming, "error", "", "接收超时，请重新发送")
+			incoming.file.Abort()
+			incoming = nil
+		}
 		switch typ {
+		case wire.TypeFileBegin, wire.TypeFileChunk, wire.TypeFileEnd, wire.TypeFileCancel:
+			incoming = s.receiveFile(typ, payload, incoming)
+		case wire.TypeFileResult:
+			var result wire.FileResult
+			if wire.Unmarshal(payload, &result) == nil {
+				s.fileResultMu.Lock()
+				if result.ItemID == s.fileSendID && s.fileResults != nil {
+					select {
+					case s.fileResults <- result:
+					default:
+					}
+				}
+				s.fileResultMu.Unlock()
+			}
 		case wire.TypePing:
-			_ = s.write(wire.TypePong, nil)
+			s.respond(wire.TypePong, nil)
 		case wire.TypePong, wire.TypeAck:
 		case wire.TypeError:
 			var msg wire.Error
@@ -121,17 +188,16 @@ func (s *Session) readLoop() {
 				continue
 			}
 			s.onItem(item)
-			_ = s.write(wire.TypeAck, wire.Ack{ItemID: itemIDOf(payload)})
+			s.respond(wire.TypeAck, wire.Ack{ItemID: itemIDOf(payload)})
 		case wire.TypeImageBegin:
 			var begin wire.ImageBegin
 			if err := wire.Unmarshal(payload, &begin); err != nil {
 				s.log.Warn("图片头无效", "err", err)
 				continue
 			}
-			asm = &assembler{begin: begin}
-			if begin.Chunks == 0 || begin.TotalSize == 0 || begin.TotalSize > clip.MaxImageBytes {
-				s.log.Warn("图片头超出限制", "size", begin.TotalSize, "chunks", begin.Chunks)
-				asm = nil
+			asm, err = newAssembler(begin)
+			if err != nil {
+				s.log.Warn("图片头超出限制", "err", err)
 			}
 		case wire.TypeImageChunk:
 			if asm == nil {
@@ -142,15 +208,8 @@ func (s *Session) readLoop() {
 				asm = nil
 				continue
 			}
-			if chunk.ItemID != asm.begin.ItemID || chunk.Index != uint32(len(asm.parts)) {
-				s.log.Warn("图片分片顺序错误", "want", len(asm.parts), "got", chunk.Index)
-				asm = nil
-				continue
-			}
-			asm.parts = append(asm.parts, chunk.Data)
-			asm.size += len(chunk.Data)
-			if asm.size > clip.MaxImageBytes {
-				s.log.Warn("图片分片总量超限")
+			if err := asm.add(chunk); err != nil {
+				s.log.Warn("图片分片无效", "err", err)
 				asm = nil
 			}
 		case wire.TypeImageEnd:
@@ -169,7 +228,7 @@ func (s *Session) readLoop() {
 				continue
 			}
 			s.onItem(item)
-			_ = s.write(wire.TypeAck, wire.Ack{ItemID: itemIDOf(payload)})
+			s.respond(wire.TypeAck, wire.Ack{ItemID: itemIDOf(payload)})
 		default:
 			s.log.Debug("忽略未知帧", "type", typ)
 		}
@@ -184,7 +243,14 @@ func (s *Session) writeLoop() {
 		select {
 		case <-s.done:
 			return
+		case r := <-s.responses:
+			if err := s.write(r.typ, r.body); err != nil {
+				return
+			}
 		case item := <-s.out:
+			if !s.releaseQueued(item) {
+				return
+			}
 			if err := s.sendItem(item); err != nil {
 				s.log.Warn("发送失败", "err", err)
 				return
@@ -204,6 +270,17 @@ func (s *Session) writeLoop() {
 	}
 }
 
+// Readers must keep consuming frames while the other side writes. Queue
+// replies so simultaneous transfers cannot stall both read loops on writes.
+func (s *Session) respond(typ byte, body any) {
+	select {
+	case s.responses <- response{typ: typ, body: body}:
+	case <-s.done:
+	default:
+		s.Close()
+	}
+}
+
 func (s *Session) sendItem(item clip.Item) error {
 	now := time.Now().UnixMilli()
 	id := ulid.Make().String()
@@ -214,6 +291,7 @@ func (s *Session) sendItem(item clip.Item) error {
 			Hash:      item.Hash[:],
 			Text:      item.Text,
 			CreatedAt: now,
+			SourceApp: clip.CleanSource(item.SourceApp),
 		})
 	case clip.KindImage:
 		chunks := split(item.PNG, wire.ChunkSize)
@@ -225,6 +303,7 @@ func (s *Session) sendItem(item clip.Item) error {
 			TotalSize: uint64(len(item.PNG)),
 			Chunks:    uint32(len(chunks)),
 			CreatedAt: now,
+			SourceApp: clip.CleanSource(item.SourceApp),
 		}); err != nil {
 			return err
 		}
@@ -254,33 +333,55 @@ func (s *Session) write(typ byte, v any) error {
 	// connection while a write is blocked, or the two goroutines deadlock.
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	_ = s.conn.SetWriteDeadline(time.Now().Add(15 * time.Second))
 	return wire.WriteMsg(s.conn, typ, v)
 }
 
 type assembler struct {
-	begin wire.ImageBegin
-	parts [][]byte
-	size  int
+	begin  wire.ImageBegin
+	data   []byte
+	chunks uint32
+}
+
+func newAssembler(begin wire.ImageBegin) (*assembler, error) {
+	if begin.TotalSize == 0 || begin.TotalSize > clip.MaxImageBytes ||
+		begin.Chunks != uint32((begin.TotalSize+wire.ChunkSize-1)/wire.ChunkSize) || len(begin.Hash) != 32 {
+		return nil, errors.New("无效的图片大小、分片数量或哈希")
+	}
+	return &assembler{begin: begin}, nil
+}
+
+func (a *assembler) add(chunk wire.ImageChunk) error {
+	if chunk.ItemID != a.begin.ItemID || chunk.Index != a.chunks || a.chunks >= a.begin.Chunks {
+		return errors.New("图片分片顺序错误")
+	}
+	if len(chunk.Data) == 0 || len(chunk.Data) > wire.ChunkSize || uint64(len(a.data)+len(chunk.Data)) > a.begin.TotalSize {
+		return errors.New("图片分片大小超出限制")
+	}
+	if a.data == nil {
+		// A header alone must not reserve a full-size image buffer.
+		a.data = make([]byte, 0, int(a.begin.TotalSize))
+	}
+	a.data = append(a.data, chunk.Data...)
+	a.chunks++
+	return nil
 }
 
 func (a *assembler) finish() (clip.Item, error) {
-	if uint32(len(a.parts)) != a.begin.Chunks {
-		return clip.Item{}, fmt.Errorf("分片数量 %d，期望 %d", len(a.parts), a.begin.Chunks)
+	if a.chunks != a.begin.Chunks {
+		return clip.Item{}, fmt.Errorf("分片数量 %d，期望 %d", a.chunks, a.begin.Chunks)
 	}
-	if uint64(a.size) != a.begin.TotalSize {
-		return clip.Item{}, fmt.Errorf("图片大小 %d，期望 %d", a.size, a.begin.TotalSize)
+	if uint64(len(a.data)) != a.begin.TotalSize {
+		return clip.Item{}, fmt.Errorf("图片大小 %d，期望 %d", len(a.data), a.begin.TotalSize)
 	}
-	png := make([]byte, 0, a.size)
-	for _, part := range a.parts {
-		png = append(png, part...)
-	}
-	item, err := clip.FromPNG(png)
+	item, err := clip.FromPNG(a.data)
 	if err != nil {
 		return clip.Item{}, err
 	}
-	if len(a.begin.Hash) != 32 || !bytes.Equal(item.Hash[:], a.begin.Hash) {
+	if !bytes.Equal(item.Hash[:], a.begin.Hash) {
 		return clip.Item{}, errors.New("图片哈希不一致")
 	}
+	item.SourceApp = clip.CleanSource(a.begin.SourceApp)
 	return item, nil
 }
 
@@ -293,9 +394,13 @@ func textFromWire(payload []byte) (clip.Item, error) {
 	if err != nil {
 		return clip.Item{}, err
 	}
-	if len(msg.Hash) != 32 || !bytes.Equal(item.Hash[:], msg.Hash) {
+	// Protocol v1 hashes the transmitted bytes. Verify before using the
+	// normalized hash so older peers can still send CRLF text.
+	wireHash := blake3.Sum256([]byte(msg.Text))
+	if len(msg.Hash) != 32 || !bytes.Equal(wireHash[:], msg.Hash) {
 		return clip.Item{}, errors.New("文本哈希不一致")
 	}
+	item.SourceApp = clip.CleanSource(msg.SourceApp)
 	return item, nil
 }
 

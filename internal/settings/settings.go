@@ -11,10 +11,12 @@ const DefaultMaxImageMB = 20
 
 // Values is the small set of options the settings page can change.
 type Values struct {
-	Paused      bool `json:"paused"`
-	TextOnly    bool `json:"text_only"`
-	MaxImageMB  int  `json:"max_image_mb"`
-	OpenAtLogin bool `json:"open_at_login"`
+	Paused        bool   `json:"paused"`
+	TextOnly      bool   `json:"text_only"`
+	MaxImageMB    int    `json:"max_image_mb"`
+	OpenAtLogin   bool   `json:"open_at_login"`
+	ReceiveDir    string `json:"receive_dir,omitempty"`
+	DisableSendTo bool   `json:"disable_send_to,omitempty"`
 }
 
 // File is settings.json in the data directory.

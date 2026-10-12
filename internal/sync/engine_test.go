@@ -83,8 +83,12 @@ func TestEchoDoesNotResend(t *testing.T) {
 func TestExchangeTextAndImage(t *testing.T) {
 	a, b := newPair(t)
 	item := mustText(t, "跨设备 你好")
+	item.SourceApp = "微信"
 	b.HandleLocal(1, item)
 	waitWrite(t, a.Board.(*memBoard), item.Hash)
+	if got := a.Board.(*memBoard).Writes(); got[len(got)-1].SourceApp != "微信" {
+		t.Fatalf("text source = %q", got[len(got)-1].SourceApp)
+	}
 
 	// B just copied locally, so the 2s local-priority window would correctly
 	// refuse the image. Clear it; that rule has its own test.
@@ -92,8 +96,12 @@ func TestExchangeTextAndImage(t *testing.T) {
 	b.localActive = time.Time{}
 	b.mu.Unlock()
 	img := mustPNG(t)
+	img.SourceApp = "截图"
 	a.HandleLocal(2, img)
 	waitWrite(t, b.Board.(*memBoard), img.Hash)
+	if got := b.Board.(*memBoard).Writes(); got[len(got)-1].SourceApp != "截图" {
+		t.Fatalf("image source = %q", got[len(got)-1].SourceApp)
+	}
 }
 
 func TestReconnectUsingSavedAddress(t *testing.T) {

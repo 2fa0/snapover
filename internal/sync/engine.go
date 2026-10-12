@@ -37,6 +37,7 @@ type Engine struct {
 	paused      bool
 	textOnly    bool
 	maxImage    int
+	receiveDir  string
 	sess        *Session
 	link        Link
 	localActive time.Time
@@ -204,12 +205,19 @@ func (e *Engine) Attach(conn *tls.Conn, weDialed bool) error {
 	}
 
 	sess := newSession(conn, peer.id, weDialed, e.Log, e.deliver)
+	for _, cap := range hello.Capabilities {
+		if cap == wire.FileCapability {
+			sess.fileSupported = true
+		}
+	}
+	sess.receiveDir = e.ReceiveDir
+	sess.onFile = func(n Notice) { n.PeerID = peer.id; n.PeerName = hello.Name; e.notify(n) }
 	if !e.adopt(sess) {
 		e.Log.Info("关掉重复连接", "peer", peer.id, "dialed", weDialed)
 		return nil
 	}
 	e.mu.Lock()
-	e.link = Link{ID: peer.id, Name: hello.Name, Platform: hello.Platform, Addr: addr}
+	e.link = Link{ID: peer.id, Name: hello.Name, Platform: hello.Platform, Addr: addr, FileTransfer: sess.fileSupported}
 	e.mu.Unlock()
 	e.Log.Info("已连接", "peer", peer.id, "name", hello.Name, "platform", hello.Platform, "dialed", weDialed)
 	e.notify(Notice{
@@ -229,12 +237,13 @@ func (e *Engine) Attach(conn *tls.Conn, weDialed bool) error {
 
 func (e *Engine) handshake(conn *tls.Conn) (*identityResult, wire.Hello, error) {
 	hello := wire.Hello{
-		DeviceID:    e.LocalID,
-		Name:        e.Name,
-		Platform:    e.Platform,
-		Proto:       wire.Proto,
-		Fingerprint: e.Fingerprint,
-		ListenPort:  e.ListenPort,
+		DeviceID:     e.LocalID,
+		Name:         e.Name,
+		Platform:     e.Platform,
+		Proto:        wire.Proto,
+		Fingerprint:  e.Fingerprint,
+		ListenPort:   e.ListenPort,
+		Capabilities: []string{wire.FileCapability},
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- wire.WriteMsg(conn, wire.TypeHello, hello) }()

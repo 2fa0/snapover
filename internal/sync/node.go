@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"net"
 	"time"
+
+	"github.com/2fa0/snapover/internal/lan"
 )
 
 // Listen accepts peers until ctx is cancelled.
@@ -32,6 +34,11 @@ func Listen(ctx context.Context, addr string, e *Engine) error {
 			_ = conn.Close()
 			continue
 		}
+		if !lan.AllowLocal(lan.LocalIP(tlsConn)) {
+			e.Log.Info("忽略虚拟网卡上的连接", "local", tlsConn.LocalAddr().String(), "remote", tlsConn.RemoteAddr().String())
+			_ = tlsConn.Close()
+			continue
+		}
 		enableKeepAlive(tlsConn)
 		go func() {
 			if err := e.Attach(tlsConn, false); err != nil {
@@ -55,10 +62,17 @@ func Dial(ctx context.Context, addr string, e *Engine) {
 			}
 			continue
 		}
-		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		conn, bind, err := lan.DialTimeout(addr, 5*time.Second)
+		if err == nil && bind != nil {
+			e.Log.Info("从局域网网卡拨号", "addr", addr, "bind", bind.String())
+		}
 		if err != nil {
-			e.Log.Warn("拨号失败", "addr", addr, "err", err)
-			e.notify(Notice{Kind: NoticeError, Message: "连不上 " + addr, Addr: addr})
+			msg := "连不上 " + addr
+			if bind != nil {
+				msg += "（已从 " + bind.String() + " 拨出，不走虚拟网卡）"
+			}
+			e.Log.Warn("拨号失败", "addr", addr, "bind", bindString(bind), "err", err)
+			e.notify(Notice{Kind: NoticeError, Message: msg, Addr: addr})
 			if !wait(ctx, backoff) {
 				return
 			}
@@ -127,4 +141,11 @@ func wait(ctx context.Context, d time.Duration) bool {
 	case <-t.C:
 		return true
 	}
+}
+
+func bindString(ip net.IP) string {
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
 }
