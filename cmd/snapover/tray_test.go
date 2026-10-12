@@ -5,10 +5,10 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"os"
-	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/2fa0/snapover/internal/trayicon"
 )
 
 func TestPickerShortcuts(t *testing.T) {
@@ -25,11 +25,7 @@ func TestPickerShortcuts(t *testing.T) {
 }
 
 func TestMenuJPGBecomesTrayIcon(t *testing.T) {
-	buf, err := os.ReadFile(filepath.Join("..", "..", "resources", "icon.jpg"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := trayIconPNG(buf, false)
+	out, err := trayIconPNG(trayicon.MenuIconJPG, false)
 	if err != nil {
 		t.Fatal(err)
 	}

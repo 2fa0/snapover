@@ -6,12 +6,12 @@ import (
 	"image/color"
 	_ "image/jpeg"
 	"image/png"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/egoist/mygo"
+
+	"github.com/2fa0/snapover/internal/trayicon"
 )
 
 func (a *app) startTray() {
@@ -87,6 +87,7 @@ func (a *app) trayMenu() *mygo.Menu {
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Label: status, Disabled: true},
 		{Label: "快速历史", Click: func(*mygo.MenuItem, *mygo.Window) { a.togglePicker() }},
+		{Label: "发送文件…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openFiles() }},
 		{Label: "打开窗口", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(a.page) }},
 		{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageSettings) }},
 		mygo.Separator(),
@@ -173,21 +174,10 @@ func loginErr(err error) string {
 }
 
 func loadMenuIcon() []byte {
-	// icon.jpg 是菜单栏图标。程序图标是 icon.png，由 app.jpg 转来，不要拿来做菜单。
-	names := []string{"icon.jpg"}
-	if dir, err := mygo.App.Path(mygo.PathResources); err == nil {
-		for _, name := range names {
-			if buf, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
-				return buf
-			}
-		}
-	}
-	for _, name := range names {
-		if buf, err := os.ReadFile(filepath.Join("resources", name)); err == nil {
-			return buf
-		}
-	}
-	return nil
+	// 源图嵌在二进制里（internal/trayicon），不再从 exe 旁边或
+	// resources/ 读：Windows 上 exe 被单独拷走时读不到文件，托盘
+	// 会退化成 fillFallback 的占位竖条。
+	return trayicon.MenuIconJPG
 }
 
 func trayIconPNG(src []byte, white bool) ([]byte, error) {
