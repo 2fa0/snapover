@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/png"
 	"testing"
+	"time"
 
 	"github.com/2fa0/clipbridge/internal/clip"
 )
@@ -51,22 +52,54 @@ func TestAddListAndRestore(t *testing.T) {
 	}
 }
 
-func TestTrimDropsOldest(t *testing.T) {
+func TestPinDeleteAndAge(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < MaxEntries+3; i++ {
-		item, err := clip.FromText(string(rune('a' + i%26)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := s.Add(DirLocal, "", item); err != nil {
-			t.Fatal(err)
+	keep, err := clip.FromText("keep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned, err := s.Add(DirLocal, "", keep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPinned(pinned.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	old, err := clip.FromText("old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone, err := s.Add(DirLocal, "", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	for i := range s.entries {
+		if s.entries[i].ID == gone.ID {
+			s.entries[i].At = time.Now().Add(-MaxAge - time.Hour)
 		}
 	}
-	if n := len(s.List()); n != MaxEntries {
-		t.Fatalf("len = %d", n)
+	s.trimAtLocked(time.Now())
+	_ = s.saveLocked()
+	s.mu.Unlock()
+	list := s.List()
+	if len(list) != 1 || list[0].ID != pinned.ID || !list[0].Pinned {
+		t.Fatalf("after age trim: %+v", list)
+	}
+	if err := s.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s.List()); n != 1 {
+		t.Fatalf("clear removed pinned, len=%d", n)
+	}
+	if err := s.Delete(pinned.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s.List()); n != 0 {
+		t.Fatalf("delete left %d", n)
 	}
 }
 

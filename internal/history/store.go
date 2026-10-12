@@ -16,7 +16,12 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-const MaxEntries = 200
+const (
+	// MaxEntries is how many unpinned items are kept. Pinned items stay.
+	MaxEntries = 1000
+	// MaxAge is how long an unpinned item is kept.
+	MaxAge = 30 * 24 * time.Hour
+)
 
 const (
 	DirLocal  = "local"
@@ -36,6 +41,7 @@ type Entry struct {
 	Peer      string    `json:"peer,omitempty"`
 	ImageFile string    `json:"image,omitempty"`
 	ThumbFile string    `json:"thumb,omitempty"`
+	Pinned    bool      `json:"pinned,omitempty"`
 }
 
 // Store keeps the newest clipboard items on disk.
@@ -157,13 +163,78 @@ func (s *Store) findLocked(id string) (Entry, bool) {
 	return Entry{}, false
 }
 
-func (s *Store) trimLocked() {
-	if len(s.entries) <= MaxEntries {
-		return
+// SetPinned keeps an item out of age and count cleanup.
+func (s *Store) SetPinned(id string, on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.entries {
+		if s.entries[i].ID == id {
+			s.entries[i].Pinned = on
+			return s.saveLocked()
+		}
 	}
-	drop := s.entries[MaxEntries:]
-	s.entries = s.entries[:MaxEntries]
-	for _, entry := range drop {
+	return os.ErrNotExist
+}
+
+// Delete removes one item and its image files.
+func (s *Store) Delete(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.entries {
+		if s.entries[i].ID != id {
+			continue
+		}
+		s.removeFiles([]Entry{s.entries[i]})
+		s.entries = append(s.entries[:i], s.entries[i+1:]...)
+		return s.saveLocked()
+	}
+	return os.ErrNotExist
+}
+
+// Clear drops every item that is not pinned.
+func (s *Store) Clear() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.entries[:0]
+	var drop []Entry
+	for _, entry := range s.entries {
+		if entry.Pinned {
+			kept = append(kept, entry)
+			continue
+		}
+		drop = append(drop, entry)
+	}
+	s.entries = append([]Entry(nil), kept...)
+	s.removeFiles(drop)
+	return s.saveLocked()
+}
+
+func (s *Store) trimLocked() {
+	s.trimAtLocked(time.Now())
+}
+
+func (s *Store) trimAtLocked(now time.Time) {
+	kept := make([]Entry, 0, len(s.entries))
+	var drop []Entry
+	unpinned := 0
+	for _, entry := range s.entries {
+		if entry.Pinned {
+			kept = append(kept, entry)
+			continue
+		}
+		if unpinned >= MaxEntries || now.Sub(entry.At) > MaxAge {
+			drop = append(drop, entry)
+			continue
+		}
+		unpinned++
+		kept = append(kept, entry)
+	}
+	s.entries = kept
+	s.removeFiles(drop)
+}
+
+func (s *Store) removeFiles(entries []Entry) {
+	for _, entry := range entries {
 		if entry.ImageFile != "" {
 			_ = os.Remove(filepath.Join(s.dir, "blobs", entry.ImageFile))
 		}
