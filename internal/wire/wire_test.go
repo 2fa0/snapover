@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"runtime"
 	"testing"
+
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 func TestFrameRoundTrip(t *testing.T) {
@@ -68,4 +71,79 @@ func TestHelloListenPortCompatibility(t *testing.T) {
 			t.Fatalf("older hello=%+v err=%v", old, err)
 		}
 	}
+}
+
+func TestRejectDeepUnknownField(t *testing.T) {
+	// An unpaired peer can send unknown Hello fields before authentication.
+	// A short frame must not drive the decoder into unbounded recursion.
+	payload := append([]byte{0x81, 0xa1, 'x'}, bytes.Repeat([]byte{0x91}, 10000)...)
+	payload = append(payload, 0xc0)
+	var hello Hello
+	if err := Unmarshal(payload, &hello); err == nil {
+		t.Fatal("accepted deeply nested unknown Hello field")
+	}
+}
+
+func TestRejectMalformedMessageLengths(t *testing.T) {
+	for _, value := range [][]byte{
+		{0xdb, 0xff, 0xff, 0xff, 0xff},    // string32
+		{0xc6, 0xff, 0xff, 0xff, 0xff},    // binary32
+		{0xdd, 0xff, 0xff, 0xff, 0xff},    // array32
+		{0xdf, 0xff, 0xff, 0xff, 0xff},    // map32
+		{0xc9, 0xff, 0xff, 0xff, 0xff, 1}, // extension32
+		{0xdc, 0, 2, 0xc0},                // truncated array16
+		{0xde, 0, 1, 0xc0},                // truncated map16
+		{0x81, 0xa1, 'x', 0xc0, 0xc0},     // trailing value
+	} {
+		payload := append([]byte{0x81, 0xa1, 'x'}, value...)
+		var hello Hello
+		if err := Unmarshal(payload, &hello); err == nil {
+			t.Fatalf("accepted malformed unknown field: %x", value)
+		}
+	}
+}
+
+func TestRejectTruncatedBinaryBeforeAllocating(t *testing.T) {
+	// A declared 16 MB hash is carried in a tiny frame. Decoding must
+	// reject it before allocating a buffer based on that untrusted length.
+	payload := []byte{0x81, 0xa4, 'h', 'a', 's', 'h', 0xc6, 1, 0, 0, 0}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	var text Text
+	err := Unmarshal(payload, &text)
+	runtime.ReadMemStats(&after)
+	if err == nil {
+		t.Fatal("accepted truncated binary field")
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 1<<20 {
+		t.Fatalf("allocated %d bytes for a truncated binary field", allocated)
+	}
+}
+
+func TestUnknownFieldsRemainCompatible(t *testing.T) {
+	payload, err := msgpack.Marshal(map[string]any{
+		"device_id": "device", "proto": Proto,
+		"future": map[string]any{"values": []any{true, nil, 42, "text", []byte{1, 2}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hello Hello
+	if err := Unmarshal(payload, &hello); err != nil || hello.DeviceID != "device" || hello.Proto != Proto {
+		t.Fatalf("hello=%+v err=%v", hello, err)
+	}
+}
+
+func FuzzUnmarshalHello(f *testing.F) {
+	payload, err := msgpack.Marshal(Hello{DeviceID: "device", Proto: Proto, Capabilities: []string{FileCapability, PairCapability}})
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(payload)
+	f.Add([]byte{0x81, 0xa1, 'x', 0x91, 0xc0})
+	f.Add([]byte{0x81, 0xa1, 'x', 0xc6, 0xff, 0xff, 0xff, 0xff})
+	f.Fuzz(func(t *testing.T, payload []byte) {
+		var hello Hello
+		_ = Unmarshal(payload, &hello)
+	})
 }

@@ -3,11 +3,13 @@
 package wire
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 
 	"github.com/vmihailenco/msgpack/v5"
+	"github.com/vmihailenco/msgpack/v5/msgpcode"
 )
 
 const (
@@ -158,5 +160,67 @@ func ReadFrame(r io.Reader) (byte, []byte, error) {
 }
 
 func Unmarshal(payload []byte, v any) error {
+	if len(payload) > MaxFrame-1 {
+		return fmt.Errorf("消息超过帧长度限制")
+	}
+	r := bytes.NewReader(payload)
+	if err := checkValue(msgpack.NewDecoder(r), r, 0); err != nil {
+		return err
+	}
+	if r.Len() != 0 {
+		return fmt.Errorf("消息包含多余内容")
+	}
 	return msgpack.Unmarshal(payload, v)
+}
+
+// Validate before decoding: unknown fields otherwise recurse without a bound,
+// and binary fields allocate their declared length before reading their bytes.
+// Keep skipping unknown fields for protocol compatibility.
+func checkValue(d *msgpack.Decoder, r *bytes.Reader, depth int) error {
+	if depth > 32 {
+		return fmt.Errorf("消息嵌套过深")
+	}
+	c, err := d.PeekCode()
+	if err != nil {
+		return err
+	}
+	var n int
+	switch {
+	case msgpcode.IsFixedArray(c) || c == msgpcode.Array16 || c == msgpcode.Array32:
+		n, err = d.DecodeArrayLen()
+	case msgpcode.IsFixedMap(c) || c == msgpcode.Map16 || c == msgpcode.Map32:
+		n, err = d.DecodeMapLen()
+		if n > r.Len()/2 {
+			return io.ErrUnexpectedEOF
+		}
+		n *= 2
+	case msgpcode.IsString(c) || msgpcode.IsBin(c) || msgpcode.IsExt(c):
+		if msgpcode.IsExt(c) {
+			_, n, err = d.DecodeExtHeader()
+		} else {
+			n, err = d.DecodeBytesLen()
+		}
+		if err != nil {
+			return err
+		}
+		if n < 0 || n > r.Len() {
+			return io.ErrUnexpectedEOF
+		}
+		_, err = r.Seek(int64(n), io.SeekCurrent)
+		return err
+	default:
+		return d.Skip()
+	}
+	if err != nil {
+		return err
+	}
+	if n < 0 || n > r.Len() {
+		return io.ErrUnexpectedEOF
+	}
+	for range n {
+		if err := checkValue(d, r, depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
 }
