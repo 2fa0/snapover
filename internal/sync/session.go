@@ -30,24 +30,34 @@ type Session struct {
 	peerID   string
 	weDialed bool
 	log      *slog.Logger
-	onItem   func(clip.Item)
-	out      chan clip.Item
+	onItem   func(clip.Item) error
+	out      chan queuedItem
 
-	mu            sync.Mutex
-	writeMu       sync.Mutex
-	closed        bool
-	queuedBytes   int
-	lastRecv      time.Time
-	done          chan struct{}
-	once          sync.Once
-	fileSupported bool
-	receiveDir    func() string
-	onFile        func(Notice)
-	fileSendMu    sync.Mutex
-	fileResultMu  sync.Mutex
-	fileSendID    string
-	fileResults   chan wire.FileResult
-	responses     chan response
+	mu                       sync.Mutex
+	writeMu                  sync.Mutex
+	closed                   bool
+	queuedBytes              int
+	lastRecv                 time.Time
+	done                     chan struct{}
+	once                     sync.Once
+	fileSupported            bool
+	receiveDir               func() string
+	onFile                   func(Notice)
+	fileSendMu               sync.Mutex
+	fileResultMu             sync.Mutex
+	fileSendID               string
+	fileResults              chan wire.FileResult
+	responses                chan response
+	clipboardResultSupported bool
+	clipboardSendMu          sync.Mutex
+	clipboardResultMu        sync.Mutex
+	clipboardSendID          string
+	clipboardResults         chan wire.Ack
+}
+
+type queuedItem struct {
+	clip.Item
+	id string
 }
 
 type response struct {
@@ -55,14 +65,14 @@ type response struct {
 	body any
 }
 
-func newSession(conn *tls.Conn, peerID string, weDialed bool, log *slog.Logger, onItem func(clip.Item)) *Session {
+func newSession(conn *tls.Conn, peerID string, weDialed bool, log *slog.Logger, onItem func(clip.Item) error) *Session {
 	return &Session{
 		conn:      conn,
 		peerID:    peerID,
 		weDialed:  weDialed,
 		log:       log,
 		onItem:    onItem,
-		out:       make(chan clip.Item, queueSize),
+		out:       make(chan queuedItem, queueSize),
 		responses: make(chan response, 16),
 		lastRecv:  time.Now(),
 		done:      make(chan struct{}),
@@ -72,6 +82,10 @@ func newSession(conn *tls.Conn, peerID string, weDialed bool, log *slog.Logger, 
 func queuedSize(item clip.Item) int { return len(item.PNG) + len(item.Text) }
 
 func (s *Session) enqueue(item clip.Item) bool {
+	return s.enqueueID(item, "")
+}
+
+func (s *Session) enqueueID(item clip.Item, id string) bool {
 	// The peer needs the original bytes, not our local thumbnail.
 	item.Thumbnail = nil
 	s.mu.Lock()
@@ -81,7 +95,7 @@ func (s *Session) enqueue(item clip.Item) bool {
 		return false
 	}
 	select {
-	case s.out <- item:
+	case s.out <- queuedItem{Item: item, id: id}:
 		s.queuedBytes += n
 		return true
 	default:
@@ -89,13 +103,13 @@ func (s *Session) enqueue(item clip.Item) bool {
 	}
 }
 
-func (s *Session) releaseQueued(item clip.Item) bool {
+func (s *Session) releaseQueued(item queuedItem) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return false
 	}
-	s.queuedBytes -= queuedSize(item)
+	s.queuedBytes -= queuedSize(item.Item)
 	return true
 }
 
@@ -179,7 +193,19 @@ func (s *Session) readLoop() {
 			}
 		case wire.TypePing:
 			s.respond(wire.TypePong, nil)
-		case wire.TypePong, wire.TypeAck:
+		case wire.TypePong:
+		case wire.TypeAck:
+			var result wire.Ack
+			if wire.Unmarshal(payload, &result) == nil {
+				s.clipboardResultMu.Lock()
+				if result.ItemID == s.clipboardSendID && s.clipboardResults != nil {
+					select {
+					case s.clipboardResults <- result:
+					default:
+					}
+				}
+				s.clipboardResultMu.Unlock()
+			}
 		case wire.TypeError:
 			var msg wire.Error
 			_ = wire.Unmarshal(payload, &msg)
@@ -191,8 +217,7 @@ func (s *Session) readLoop() {
 				s.log.Warn("丢弃文本", "err", err)
 				continue
 			}
-			s.onItem(item)
-			s.respond(wire.TypeAck, wire.Ack{ItemID: itemIDOf(payload)})
+			s.deliverItem(itemIDOf(payload), item)
 		case wire.TypeImageBegin:
 			var begin wire.ImageBegin
 			if err := wire.Unmarshal(payload, &begin); err != nil {
@@ -231,8 +256,7 @@ func (s *Session) readLoop() {
 				s.log.Warn("丢弃图片", "err", err)
 				continue
 			}
-			s.onItem(item)
-			s.respond(wire.TypeAck, wire.Ack{ItemID: itemIDOf(payload)})
+			s.deliverItem(end.ItemID, item)
 		default:
 			s.log.Debug("忽略未知帧", "type", typ)
 		}
@@ -255,7 +279,7 @@ func (s *Session) writeLoop() {
 			if !s.releaseQueued(item) {
 				return
 			}
-			if err := s.sendItem(item); err != nil {
+			if err := s.sendItem(item.Item, item.id); err != nil {
 				s.log.Warn("发送失败", "err", err)
 				return
 			}
@@ -285,9 +309,19 @@ func (s *Session) respond(typ byte, body any) {
 	}
 }
 
-func (s *Session) sendItem(item clip.Item) error {
+func (s *Session) deliverItem(id string, item clip.Item) {
+	result := wire.Ack{ItemID: id, State: "complete"}
+	if err := s.onItem(item); err != nil {
+		result.State, result.Message = "error", err.Error()
+	}
+	s.respond(wire.TypeAck, result)
+}
+
+func (s *Session) sendItem(item clip.Item, id string) error {
 	now := time.Now().UnixMilli()
-	id := ulid.Make().String()
+	if id == "" {
+		id = ulid.Make().String()
+	}
 	switch item.Kind {
 	case clip.KindText:
 		return s.write(wire.TypeText, wire.Text{

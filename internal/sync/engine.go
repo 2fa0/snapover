@@ -149,7 +149,7 @@ func (e *Engine) deliver(item clip.Item) {
 	e.deliverFrom(nil, item)
 }
 
-func (e *Engine) deliverFrom(source *Session, item clip.Item) {
+func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 	e.clipMu.Lock()
 	var paused, active, attempted bool
 	var link Link
@@ -181,18 +181,18 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) {
 		e.clipMu.Unlock()
 		e.Log.Info("已暂停，忽略对端内容", "kind", item.Kind, "bytes", item.Size)
 		e.notify(Notice{Kind: NoticeStatus, Message: "已暂停，忽略对端内容"})
-		return
+		return errors.New("对端已暂停同步，未写入剪贴板")
 	}
 	if active {
 		e.clipMu.Unlock()
 		e.Log.Info("本地刚复制过，不覆盖剪贴板", "kind", item.Kind, "bytes", item.Size)
 		e.notify(Notice{Kind: NoticeStatus, Message: "本地刚复制过，未覆盖剪贴板"})
-		return
+		return errors.New("对端刚复制过内容，未覆盖剪贴板，请稍后重试")
 	}
 
 	if !attempted {
 		e.clipMu.Unlock()
-		return
+		return errors.New("连接已改变，未写入剪贴板")
 	}
 	if err == nil {
 		if back, snapErr := e.Board.Snapshot(); snapErr == nil && back.Kind != "" {
@@ -210,10 +210,11 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) {
 	if err != nil {
 		e.Log.Error("写入剪贴板失败", "err", err)
 		e.notify(Notice{Kind: NoticeError, Message: "写入剪贴板失败"})
-		return
+		return errors.New("对端写入剪贴板失败，请检查对端剪贴板后重试")
 	}
 	e.Log.Info("已写入剪贴板", "kind", item.Kind, "bytes", item.Size)
 	e.notify(Notice{Kind: NoticeRemote, Item: item, Message: "已写入剪贴板", PeerID: link.ID, PeerName: link.Name})
+	return nil
 }
 
 // Connected reports whether a peer session is up.
@@ -284,10 +285,13 @@ func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) er
 	_ = conn.SetDeadline(time.Time{})
 
 	sess := newSession(conn, peer.id, weDialed, e.Log, nil)
-	sess.onItem = func(item clip.Item) { e.deliverFrom(sess, item) }
+	sess.onItem = func(item clip.Item) error { return e.deliverFrom(sess, item) }
 	for _, cap := range hello.Capabilities {
 		if cap == wire.FileCapability {
 			sess.fileSupported = true
+		}
+		if cap == wire.ClipboardResultCapability {
+			sess.clipboardResultSupported = true
 		}
 	}
 	sess.receiveDir = e.ReceiveDir
@@ -337,7 +341,7 @@ func (e *Engine) handshake(conn *tls.Conn) (*identityResult, wire.Hello, error) 
 		Proto:        wire.Proto,
 		Fingerprint:  e.Fingerprint,
 		ListenPort:   e.ListenPort,
-		Capabilities: []string{wire.FileCapability, wire.PairCapability},
+		Capabilities: []string{wire.FileCapability, wire.PairCapability, wire.ClipboardResultCapability},
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- wire.WriteMsg(conn, wire.TypeHello, hello) }()

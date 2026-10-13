@@ -54,6 +54,8 @@ const FileCapability = "file-transfer-v1"
 
 const PairCapability = "pair-confirm-v1"
 
+const ClipboardResultCapability = "clipboard-result-v1"
+
 type PairState struct {
 	Trusted bool `msgpack:"trusted"`
 }
@@ -115,7 +117,9 @@ type ImageEnd struct {
 }
 
 type Ack struct {
-	ItemID string `msgpack:"item_id"`
+	ItemID  string `msgpack:"item_id"`
+	State   string `msgpack:"state,omitempty"` // complete, error; absent on older peers
+	Message string `msgpack:"message,omitempty"`
 }
 
 type Error struct {

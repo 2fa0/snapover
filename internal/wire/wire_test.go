@@ -32,6 +32,28 @@ func TestFrameRoundTrip(t *testing.T) {
 	}
 }
 
+func TestClipboardAckCompatibility(t *testing.T) {
+	type legacyAck struct {
+		ItemID string `msgpack:"item_id"`
+	}
+	oldPayload, err := msgpack.Marshal(legacyAck{ItemID: "old"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var current Ack
+	if err := Unmarshal(oldPayload, &current); err != nil || current.ItemID != "old" || current.State != "" {
+		t.Fatalf("legacy ack: %+v %v", current, err)
+	}
+	newPayload, err := msgpack.Marshal(Ack{ItemID: "new", State: "error", Message: "已暂停"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old legacyAck
+	if err := Unmarshal(newPayload, &old); err != nil || old.ItemID != "new" {
+		t.Fatalf("new ack broke legacy decoding: %+v %v", old, err)
+	}
+}
+
 func TestRejectHugeFrame(t *testing.T) {
 	var hdr [5]byte
 	binary.BigEndian.PutUint32(hdr[:4], uint32(MaxFrame+1))
