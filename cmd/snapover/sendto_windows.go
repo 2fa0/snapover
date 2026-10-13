@@ -31,6 +31,9 @@ func (a *app) setSendTo(on, save bool) {
 		} else {
 			err = sendto.Remove()
 		}
+		if err != nil && a.engine.Log != nil {
+			a.engine.Log.Warn("更新「发送到」入口失败", "enabled", on, "err", err)
+		}
 		a.updateFiles(func() {
 			a.sendToBusy = false
 			if err != nil {
