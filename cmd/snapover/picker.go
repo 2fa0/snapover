@@ -211,6 +211,7 @@ func (a *app) pickerView(c *ui.Context) {
 		default:
 			list := ui.List(c, &a.pickList, len(shown), func(i int) {
 				entry := shown[i]
+				sel := i == a.pickSel
 				row := ui.Row(c).Padding(6, 4).Gap(8).AlignItems(ui.Center)
 				if row.Hovered() && entry.Kind == string(clip.KindImage) {
 					hoverID, hoverBounds = entry.ID, row.Bounds()
@@ -222,14 +223,14 @@ func (a *app) pickerView(c *ui.Context) {
 					a.pickSel = i
 				}
 				row.Children(func() {
-					a.pickerThumb(c, entry, t)
+					a.pickerThumb(c, entry, t, sel)
 					ui.Column(c).Grow(1).Gap(2).Children(func() {
 						title := entryTitle(entry)
 						if entry.Pinned {
 							title = "置顶  ·  " + title
 						}
 						ui.Text(c, title).SingleLine()
-						ui.Text(c, entryMeta(entry)).FontSize(12).TextColor(t.TextMuted).SingleLine()
+						ui.Text(c, entryMeta(entry)).FontSize(12).TextColor(rowMetaColor(t, sel)).SingleLine()
 					})
 				})
 			}).Grow(1)
@@ -263,7 +264,7 @@ func (a *app) movePick(delta int) {
 	a.pickList.ScrollIntoView(a.pickSel)
 }
 
-func (a *app) pickerThumb(c *ui.Context, entry history.Entry, t *ui.Theme) {
+func (a *app) pickerThumb(c *ui.Context, entry history.Entry, t *ui.Theme, selected bool) {
 	if entry.Kind != string(clip.KindImage) {
 		return
 	}
@@ -271,7 +272,7 @@ func (a *app) pickerThumb(c *ui.Context, entry history.Entry, t *ui.Theme) {
 		ui.Image(c, bmp).Size(28, 28).Fit(ui.Cover).Radius(4)
 		return
 	}
-	ui.Box(c).Size(28, 28).Radius(4).Background(t.Surface)
+	ui.Box(c).Size(28, 28).Radius(4).Background(rowThumbPlaceholder(t, selected))
 }
 
 func (a *app) pastePicked() {

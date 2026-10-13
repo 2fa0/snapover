@@ -424,12 +424,13 @@ func (a *app) historyPage(c *ui.Context) {
 	}
 	if ui.List(c, &a.histList, len(shown), func(i int) {
 		entry := shown[i]
+		sel := i == a.histSel
 		ui.Row(c).Padding(8, 4).Gap(10).AlignItems(ui.Center).Children(func() {
 			if entry.Kind == string(clip.KindImage) {
 				if bmp := a.thumb(entry.ID); bmp != nil {
 					ui.Image(c, bmp).Size(40, 40).Fit(ui.Cover).Radius(4)
 				} else {
-					ui.Box(c).Size(40, 40).Radius(4).Background(t.Surface)
+					ui.Box(c).Size(40, 40).Radius(4).Background(rowThumbPlaceholder(t, sel))
 				}
 			}
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
@@ -438,7 +439,7 @@ func (a *app) historyPage(c *ui.Context) {
 					title = "置顶  ·  " + title
 				}
 				ui.Text(c, title).SingleLine()
-				ui.Text(c, entryMeta(entry)).FontSize(12).TextColor(t.TextMuted).SingleLine()
+				ui.Text(c, entryMeta(entry)).FontSize(12).TextColor(rowMetaColor(t, sel)).SingleLine()
 			})
 		})
 	}).Grow(1).Submitted() {
@@ -713,6 +714,24 @@ func kv(c *ui.Context, k, v string) {
 }
 
 func entryTitle(e history.Entry) string { return history.Title(e) }
+
+// rowMetaColor is the color of a history row's secondary line. A chosen row
+// sits on the accent fill, where the usual muted gray disappears, so there it
+// borrows the accent's text color instead.
+func rowMetaColor(t *ui.Theme, selected bool) ui.Color {
+	if selected {
+		return t.AccentText.Alpha(0.85)
+	}
+	return t.TextMuted
+}
+
+// rowThumbPlaceholder fills the thumb box while an image still loads.
+func rowThumbPlaceholder(t *ui.Theme, selected bool) ui.Color {
+	if selected {
+		return t.AccentText.Alpha(0.25)
+	}
+	return t.Surface
+}
 
 func entryMeta(e history.Entry) string {
 	from := "本机"
