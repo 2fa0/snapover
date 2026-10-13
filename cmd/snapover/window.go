@@ -183,7 +183,7 @@ func (a *app) open(ctx context.Context) {
 		Height:    560,
 		MinWidth:  720,
 		MinHeight: 440,
-		Hidden:    mygo.App.WasOpenedAtLogin(),
+		Hidden:    mygo.App.WasOpenedAtLogin() || a.pendingFileRequest != nil,
 		Content:   ui.View(a.view),
 	})
 	a.win.OnClose(func(e *mygo.CloseEvent) {

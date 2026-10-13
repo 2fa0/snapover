@@ -56,9 +56,13 @@ func (a *app) handleFileRequest(paths []string, cold bool) {
 		}
 		return
 	}
-	a.openFiles()
+	defer func() {
+		if a.fileWin != nil {
+			a.fileWin.Invalidate()
+		}
+	}()
 	if !a.prepareFileRequest(paths) {
-		a.fileWin.Invalidate()
+		a.openFiles()
 		return
 	}
 	// Resolve the cold-launch target before checking an already online peer.
@@ -73,27 +77,25 @@ func (a *app) handleFileRequest(paths []string, cold bool) {
 	if link, online := a.engine.Link(); online {
 		if !canAutoSendFile(cold, expectedID, link.ID) {
 			a.fileCommandHint = "当前在线设备已改变，请确认设备后点击「发送」"
-			a.fileWin.Invalidate()
+			a.openFiles()
 			return
 		}
-		a.sendSelectedFile()
-		a.fileWin.Invalidate()
+		a.sendSelectedFile(true)
 		return
 	}
 	a.fileCommandHint = "没有在线设备。请先连接设备，再点击「发送」"
 	if !cold {
-		a.fileWin.Invalidate()
+		a.openFiles()
 		return
 	}
 	// A cold launch may reconnect to the last paired device. Only that known
 	// device can receive automatically; a different incoming peer needs a click.
 	if expectedID == "" {
-		a.fileWin.Invalidate()
+		a.openFiles()
 		return
 	}
 	a.fileBusy, a.fileWaiting = true, true
 	a.fileCommandHint = "正在连接最近的设备，连接成功后会自动发送…"
-	a.fileWin.Invalidate()
 	path := a.filePath
 	ctx := a.root
 	if ctx == nil {
@@ -107,14 +109,16 @@ func (a *app) handleFileRequest(paths []string, cold bool) {
 			a.fileBusy, a.fileWaiting = false, false
 			if err != nil {
 				a.fileCommandHint = err.Error()
+				a.openFiles()
 				return
 			}
 			link, online := a.engine.Link()
 			if !online || link.ID != expectedID || a.filePath != path {
 				a.fileCommandHint = "连接或文件已改变，请确认后点击「发送」"
+				a.openFiles()
 				return
 			}
-			a.sendSelectedFile()
+			a.sendSelectedFile(true)
 		})
 	}()
 }

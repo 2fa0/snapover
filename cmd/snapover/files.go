@@ -72,7 +72,7 @@ func (a *app) filesView(c *ui.Context) {
 				label = "正在连接…"
 			}
 			if ui.PrimaryButton(c, label).Disabled(!online || !link.FileTransfer || a.filePath == "" || a.fileBusy || a.fileChoosing).Clicked() {
-				a.sendSelectedFile()
+				a.sendSelectedFile(false)
 			}
 			if a.fileBusy {
 				ui.Text(c, "关闭窗口后仍会继续传输").FontSize(12).TextColor(t.TextMuted)
@@ -151,7 +151,7 @@ func (a *app) chooseFile() {
 	}()
 }
 
-func (a *app) sendSelectedFile() {
+func (a *app) sendSelectedFile(background bool) {
 	if a.fileBusy || a.filePath == "" {
 		return
 	}
@@ -177,6 +177,9 @@ func (a *app) sendSelectedFile() {
 			a.fileBusy = false
 			if err != nil {
 				a.fileMessage = "发送失败：" + err.Error() + "。请检查连接后重试"
+				if background {
+					a.openFiles()
+				}
 				return
 			}
 			a.fileMessage = "已保存到 " + displayName(link.Name, link.ID) + " 的接收文件夹：" + name
