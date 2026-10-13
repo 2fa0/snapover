@@ -14,6 +14,8 @@ import (
 // Call it only after App.Run has started; other goroutines may call it.
 type MyGoBoard struct{}
 
+var writeClipboardText = mygo.Clipboard.Write
+
 func (MyGoBoard) Sequence() (uint64, error) { return platformSequence() }
 
 func (MyGoBoard) Snapshot() (Item, error) {
@@ -60,8 +62,7 @@ func (MyGoBoard) Write(item Item) error {
 	crashlog.Breadcrumb(fmt.Sprintf("写入剪贴板 kind=%s bytes=%d", item.Kind, item.Size))
 	switch item.Kind {
 	case KindText:
-		mygo.Clipboard.WriteText(clipboardText(item.Text, runtime.GOOS))
-		return nil
+		return writeClipboardText(transfer.TextData(clipboardText(item.Text, runtime.GOOS)))
 	case KindImage:
 		return mygo.Clipboard.WriteImage(item.PNG)
 	default:
