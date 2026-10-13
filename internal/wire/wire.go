@@ -33,6 +33,9 @@ const (
 	TypeFileEnd    byte = 12
 	TypeFileResult byte = 13
 	TypeFileCancel byte = 14
+	TypePairState  byte = 15
+	TypePairChoice byte = 16
+	TypePairReady  byte = 17
 )
 
 type Hello struct {
@@ -46,6 +49,16 @@ type Hello struct {
 }
 
 const FileCapability = "file-transfer-v1"
+
+const PairCapability = "pair-confirm-v1"
+
+type PairState struct {
+	Trusted bool `msgpack:"trusted"`
+}
+
+type PairChoice struct {
+	Accept bool `msgpack:"accept"`
+}
 
 type FileBegin struct {
 	ItemID    string `msgpack:"item_id"`

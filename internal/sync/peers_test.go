@@ -2,6 +2,7 @@ package sync
 
 import (
 	"errors"
+	"os"
 	"testing"
 )
 
@@ -49,5 +50,36 @@ func TestReconnectAddr(t *testing.T) {
 				t.Fatalf("address=%q want=%q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestFailedTrustWritesDoNotChangeMemory(t *testing.T) {
+	s, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Allow("existing", "aabb", "original", "macos", "old"); err != nil {
+		t.Fatal(err)
+	}
+	// An unwritable temporary-file destination forces the same failure on
+	// every mutation without depending on platform permission semantics.
+	if err := os.Mkdir(s.path+".tmp", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Allow("new", "ccdd", "new", "windows", "new"); err == nil {
+		t.Fatal("expected save failure")
+	}
+	if _, err := s.Allow("existing", "aabb", "changed", "windows", "new"); err == nil {
+		t.Fatal("expected update failure")
+	}
+	if err := s.Forget("existing"); err == nil {
+		t.Fatal("expected forget failure")
+	}
+	if err := s.Reset(); err == nil {
+		t.Fatal("expected reset failure")
+	}
+	devices := s.List()
+	if len(devices) != 1 || devices[0].ID != "existing" || devices[0].Peer.Name != "original" || devices[0].Peer.Addr != "old" {
+		t.Fatalf("failed save changed memory: %+v", devices)
 	}
 }

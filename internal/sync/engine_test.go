@@ -109,6 +109,8 @@ func TestReconnectUsingSavedAddress(t *testing.T) {
 	a := engineFor(t, left, &memBoard{})
 	b := engineFor(t, right, &memBoard{})
 	b.ListenPort = "49001"
+	a.SetPairing(true)
+	b.SetPairing(true)
 	ln, err := tls.Listen("tcp", "127.0.0.1:0", a.TLS)
 	if err != nil {
 		t.Fatal(err)
@@ -146,6 +148,7 @@ func TestReconnectUsingSavedAddress(t *testing.T) {
 		t.Cleanup(stop)
 		deadline := time.Now().Add(3 * time.Second)
 		for !a.Connected() || !client.Connected() {
+			approvePair(t, a, client)
 			if time.Now().After(deadline) {
 				t.Fatal("saved address did not reconnect")
 			}
@@ -216,6 +219,8 @@ func newPair(t *testing.T) (*Engine, *Engine) {
 	aBoard, bBoard := &memBoard{}, &memBoard{}
 	a := engineFor(t, left, aBoard)
 	b := engineFor(t, right, bBoard)
+	a.SetPairing(true)
+	b.SetPairing(true)
 	client, server := handshakePair(t, left, right)
 	done := make(chan struct{})
 	go func() {
@@ -225,6 +230,7 @@ func newPair(t *testing.T) (*Engine, *Engine) {
 	go func() { _ = b.Attach(client, true) }()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
+		approvePair(t, a, b)
 		if a.Connected() && b.Connected() {
 			t.Cleanup(func() {
 				client.Close()
@@ -370,4 +376,17 @@ func (m *memBoard) Writes() []clip.Item {
 	out := make([]clip.Item, len(m.writes))
 	copy(out, m.writes)
 	return out
+}
+
+func approvePair(t *testing.T, a, b *Engine) {
+	t.Helper()
+	left, lok := a.PendingPair()
+	right, rok := b.PendingPair()
+	if lok && rok {
+		if left.Code != right.Code {
+			t.Fatalf("pair codes differ: %s, %s", left.Code, right.Code)
+		}
+		a.ConfirmPair(left.Token, true)
+		b.ConfirmPair(right.Token, true)
+	}
 }

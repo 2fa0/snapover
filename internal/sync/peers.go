@@ -22,7 +22,7 @@ type Peer struct {
 	TrustedAt   time.Time `json:"trusted_at"`
 }
 
-// Store persists trusted peers. First connection is trusted (TOFU).
+// Store persists peers approved by the pairing flow.
 // A later certificate change is refused until the record is deleted.
 type Store struct {
 	path string
@@ -57,8 +57,13 @@ func OpenStore(dataDir string) (*Store, error) {
 func (s *Store) Reset() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	old := s.Peer
 	s.Peer = map[string]Peer{}
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		s.Peer = old
+		return err
+	}
+	return nil
 }
 
 // Device is a trusted peer plus its id.
@@ -84,8 +89,26 @@ func (s *Store) Forget(id string) error {
 	id = strings.ToLower(strings.TrimSpace(id))
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	old, exists := s.Peer[id]
 	delete(s.Peer, id)
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		if exists {
+			s.Peer[id] = old
+		}
+		return err
+	}
+	return nil
+}
+
+// Check verifies a known fingerprint without creating or updating trust.
+func (s *Store) Check(id, fingerprint string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	peer, ok := s.Peer[strings.ToLower(strings.TrimSpace(id))]
+	if ok && normalizeFP(peer.Fingerprint) != normalizeFP(fingerprint) {
+		return false, ErrFingerprintMismatch
+	}
+	return ok, nil
 }
 
 func sortDevices(list []Device) {
@@ -121,6 +144,7 @@ func (s *Store) Allow(id, fingerprint, name, platform, addr string) (bool, error
 		if normalizeFP(cur.Fingerprint) != fp {
 			return false, ErrFingerprintMismatch
 		}
+		old := cur
 		if name != "" {
 			cur.Name = name
 		}
@@ -131,7 +155,11 @@ func (s *Store) Allow(id, fingerprint, name, platform, addr string) (bool, error
 			cur.Addr = addr
 		}
 		s.Peer[id] = cur
-		return false, s.saveLocked()
+		if err := s.saveLocked(); err != nil {
+			s.Peer[id] = old
+			return false, err
+		}
+		return false, nil
 	}
 	s.Peer[id] = Peer{
 		Name:        name,
@@ -140,7 +168,11 @@ func (s *Store) Allow(id, fingerprint, name, platform, addr string) (bool, error
 		Addr:        addr,
 		TrustedAt:   time.Now(),
 	}
-	return true, s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		delete(s.Peer, id)
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Store) saveLocked() error {

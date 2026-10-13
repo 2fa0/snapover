@@ -5,11 +5,12 @@ import "time"
 import "github.com/2fa0/snapover/internal/clip"
 
 const (
-	NoticeLocal  = "local"
-	NoticeRemote = "remote"
-	NoticeStatus = "status"
-	NoticeError  = "error"
-	NoticeFile   = "file"
+	NoticeLocal   = "local"
+	NoticeRemote  = "remote"
+	NoticeStatus  = "status"
+	NoticeError   = "error"
+	NoticeFile    = "file"
+	NoticePairing = "pairing"
 )
 
 // Notice is a clipboard or connection change the window can show.

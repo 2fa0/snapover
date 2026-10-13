@@ -150,6 +150,10 @@ func (s *Session) readLoop() {
 			return
 		}
 		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			return
+		}
 		s.lastRecv = time.Now()
 		s.mu.Unlock()
 		if incoming != nil && time.Since(incoming.updated) > fileWait {

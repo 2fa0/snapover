@@ -147,6 +147,7 @@ func main() {
 		TLS:         identity.TLSConfig(id),
 		Peers:       peers,
 		Board:       clip.MyGoBoard{},
+		RunOnBoard:  mygo.RunOnMain,
 		Guard:       clip.NewEchoGuard(5 * time.Second),
 		Log:         log,
 	}

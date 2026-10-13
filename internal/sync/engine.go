@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/2fa0/snapover/internal/clip"
-	"github.com/2fa0/snapover/internal/identity"
 	"github.com/2fa0/snapover/internal/wire"
 )
 
@@ -31,6 +30,19 @@ type Engine struct {
 	// OnNotice is called without engine locks, from the goroutine that
 	// observed the change. It may be nil.
 	OnNotice func(Notice)
+	// RunOnBoard runs a write synchronously on the clipboard's owning thread.
+	// It may be nil for boards that can write directly from a goroutine.
+	RunOnBoard func(func())
+
+	authMu        sync.Mutex
+	authEpoch     uint64
+	authConns     map[*tls.Conn]string
+	pairingUntil  time.Time
+	pairLast      time.Time
+	pairLastID    string
+	pairPreferred bool
+	pairSerial    uint64
+	pendingPair   *pairRequest
 
 	clipMu      sync.Mutex
 	mu          sync.Mutex
@@ -134,31 +146,63 @@ func localSend(p policy, item clip.Item, connected bool) (bool, string) {
 }
 
 func (e *Engine) deliver(item clip.Item) {
-	e.mu.Lock()
-	paused := e.paused
-	active := time.Since(e.localActive) < localPriority
-	e.mu.Unlock()
+	e.deliverFrom(nil, item)
+}
+
+func (e *Engine) deliverFrom(source *Session, item clip.Item) {
+	e.clipMu.Lock()
+	var paused, active, attempted bool
+	var link Link
+	var err error
+	write := func() {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		if source != nil && e.sess != source {
+			return
+		}
+		paused = e.paused
+		active = time.Since(e.localActive) < localPriority
+		if paused || active {
+			return
+		}
+		link = e.link
+		attempted = true
+		e.Guard.Mark(item.Hash)
+		err = e.Board.Write(item)
+	}
+	// Validate and write in the same UI callback: revocation must neither
+	// wait for a queued UI write nor allow it to run after the session is gone.
+	if e.RunOnBoard != nil {
+		e.RunOnBoard(write)
+	} else {
+		write()
+	}
 	if paused {
+		e.clipMu.Unlock()
 		e.Log.Info("已暂停，忽略对端内容", "kind", item.Kind, "bytes", item.Size)
 		e.notify(Notice{Kind: NoticeStatus, Message: "已暂停，忽略对端内容"})
 		return
 	}
 	if active {
+		e.clipMu.Unlock()
 		e.Log.Info("本地刚复制过，不覆盖剪贴板", "kind", item.Kind, "bytes", item.Size)
 		e.notify(Notice{Kind: NoticeStatus, Message: "本地刚复制过，未覆盖剪贴板"})
 		return
 	}
 
-	e.clipMu.Lock()
-	e.Guard.Mark(item.Hash)
-	err := e.Board.Write(item)
+	if !attempted {
+		e.clipMu.Unlock()
+		return
+	}
 	if err == nil {
 		if back, snapErr := e.Board.Snapshot(); snapErr == nil && back.Kind != "" {
 			e.Guard.Mark(back.Hash)
 		}
 		if seq, seqErr := e.Board.Sequence(); seqErr == nil {
 			e.mu.Lock()
-			e.suppressSeq = seq
+			if source == nil || e.sess == source {
+				e.suppressSeq = seq
+			}
 			e.mu.Unlock()
 		}
 	}
@@ -169,7 +213,6 @@ func (e *Engine) deliver(item clip.Item) {
 		return
 	}
 	e.Log.Info("已写入剪贴板", "kind", item.Kind, "bytes", item.Size)
-	link, _ := e.Link()
 	e.notify(Notice{Kind: NoticeRemote, Item: item, Message: "已写入剪贴板", PeerID: link.ID, PeerName: link.Name})
 }
 
@@ -180,31 +223,68 @@ func (e *Engine) Connected() bool {
 	return e.sess != nil
 }
 
-// Attach runs Hello, pins the peer certificate, and serves the connection
-// until it closes. weDialed is true when this process opened the TCP connection.
+// Attach authenticates a peer before creating any clipboard or file session.
 func (e *Engine) Attach(conn *tls.Conn, weDialed bool) error {
-	defer conn.Close()
+	return e.AttachPeer(conn, weDialed, "")
+}
+
+// AttachPeer also checks the identity selected in the device list. Discovery
+// advertisements and saved addresses are routing hints, never proof of identity.
+func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) error {
+	// Rejection must release the transport immediately; a TLS close-notify
+	// can otherwise wait for a peer that has already stopped reading.
+	defer conn.NetConn().Close()
+	e.authMu.Lock()
+	epoch := e.authEpoch
+	if e.authConns == nil {
+		e.authConns = make(map[*tls.Conn]string)
+	}
+	e.authConns[conn] = ""
+	e.authMu.Unlock()
+	defer func() {
+		e.authMu.Lock()
+		delete(e.authConns, conn)
+		e.authMu.Unlock()
+	}()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 	peer, hello, err := e.handshake(conn)
 	if err != nil {
 		return err
 	}
-	addr := conn.RemoteAddr().String()
-	first, err := e.Peers.Allow(peer.id, peer.fp, hello.Name, hello.Platform, reconnectAddr(addr, weDialed, hello.ListenPort))
+	if expectedID != "" && peer.id != expectedID {
+		return ErrWrongPeer
+	}
+	e.authMu.Lock()
+	e.authConns[conn] = peer.id
+	e.authMu.Unlock()
+	paired, err := e.authorizePair(conn, peer, hello, epoch, weDialed)
 	if err != nil {
 		if errors.Is(err, ErrFingerprintMismatch) {
-			e.Log.Error("对端证书变了，拒绝连接。若对端重装过，删除 peers.json 中该设备或加 -reset-peers", "peer", peer.id, "fp", identity.FormatFingerprint(peer.fp))
-			e.notify(Notice{Kind: NoticeError, Message: "对端证书变了，已拒绝。可在设置里清除信任后再连", PeerID: peer.id})
+			e.notify(Notice{Kind: NoticeError, Message: "设备身份发生变化，已拒绝连接。确认对端重装后，解除配对再重新添加", PeerID: peer.id})
 		} else {
-			e.Log.Error("信任对端失败", "err", err)
-			e.notify(Notice{Kind: NoticeError, Message: "信任对端失败"})
+			_ = conn.SetWriteDeadline(time.Now().Add(time.Second))
+			_ = wire.WriteMsg(conn, wire.TypeError, wire.Error{Code: 2, Msg: err.Error()})
+			e.notify(Notice{Kind: NoticeError, Message: err.Error(), PeerID: peer.id})
 		}
 		return err
 	}
-	if first {
-		e.Log.Warn("首次信任对端。请和对端启动日志里的指纹核对", "peer", peer.id, "name", hello.Name, "fp", identity.FormatFingerprint(peer.fp))
+	addr := conn.RemoteAddr().String()
+	for _, cap := range hello.Capabilities {
+		if cap == wire.PairCapability {
+			_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+			var ready wire.PairChoice
+			if err := exchangePair(conn, wire.TypePairReady, wire.PairChoice{Accept: true}, &ready); err != nil {
+				return err
+			}
+			if !ready.Accept {
+				return ErrPairingStopped
+			}
+		}
 	}
+	_ = conn.SetDeadline(time.Time{})
 
-	sess := newSession(conn, peer.id, weDialed, e.Log, e.deliver)
+	sess := newSession(conn, peer.id, weDialed, e.Log, nil)
+	sess.onItem = func(item clip.Item) { e.deliverFrom(sess, item) }
 	for _, cap := range hello.Capabilities {
 		if cap == wire.FileCapability {
 			sess.fileSupported = true
@@ -212,13 +292,26 @@ func (e *Engine) Attach(conn *tls.Conn, weDialed bool) error {
 	}
 	sess.receiveDir = e.ReceiveDir
 	sess.onFile = func(n Notice) { n.PeerID = peer.id; n.PeerName = hello.Name; e.notify(n) }
-	if !e.adopt(sess) {
+	e.authMu.Lock()
+	if epoch != e.authEpoch {
+		e.authMu.Unlock()
+		return ErrPairingStopped
+	}
+	_, err = e.Peers.Allow(peer.id, peer.fp, hello.Name, hello.Platform, reconnectAddr(addr, weDialed, hello.ListenPort))
+	if err != nil {
+		e.authMu.Unlock()
+		e.notify(Notice{Kind: NoticeError, Message: "保存配对失败，请检查数据目录权限后重试", PeerID: peer.id})
+		return err
+	}
+	if paired {
+		e.pairingUntil = time.Time{}
+	}
+	adopted := e.adopt(sess, Link{ID: peer.id, Name: hello.Name, Platform: hello.Platform, Addr: addr, FileTransfer: sess.fileSupported})
+	e.authMu.Unlock()
+	if !adopted {
 		e.Log.Info("关掉重复连接", "peer", peer.id, "dialed", weDialed)
 		return nil
 	}
-	e.mu.Lock()
-	e.link = Link{ID: peer.id, Name: hello.Name, Platform: hello.Platform, Addr: addr, FileTransfer: sess.fileSupported}
-	e.mu.Unlock()
 	e.Log.Info("已连接", "peer", peer.id, "name", hello.Name, "platform", hello.Platform, "dialed", weDialed)
 	e.notify(Notice{
 		Kind:     NoticeStatus,
@@ -229,9 +322,10 @@ func (e *Engine) Attach(conn *tls.Conn, weDialed bool) error {
 		Addr:     addr,
 	})
 	sess.run()
-	e.drop(sess)
-	e.Log.Info("连接断开", "peer", peer.id)
-	e.notify(Notice{Kind: NoticeStatus, Message: "连接断开", PeerID: peer.id, PeerName: hello.Name})
+	if e.drop(sess) {
+		e.Log.Info("连接断开", "peer", peer.id)
+		e.notify(Notice{Kind: NoticeStatus, Message: "设备离线，等待重连", PeerID: peer.id, PeerName: hello.Name})
+	}
 	return nil
 }
 
@@ -243,7 +337,7 @@ func (e *Engine) handshake(conn *tls.Conn) (*identityResult, wire.Hello, error) 
 		Proto:        wire.Proto,
 		Fingerprint:  e.Fingerprint,
 		ListenPort:   e.ListenPort,
-		Capabilities: []string{wire.FileCapability},
+		Capabilities: []string{wire.FileCapability, wire.PairCapability},
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- wire.WriteMsg(conn, wire.TypeHello, hello) }()
@@ -301,7 +395,7 @@ func reconnectAddr(remote string, weDialed bool, listenPort string) string {
 
 // adopt keeps a single session. When both sides dial, the connection opened
 // by the smaller device id wins; the other is closed.
-func (e *Engine) adopt(s *Session) bool {
+func (e *Engine) adopt(s *Session, link Link) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	cur := e.sess
@@ -310,26 +404,30 @@ func (e *Engine) adopt(s *Session) bool {
 			cur.Close()
 		}
 		e.sess = s
+		e.link = link
 		return true
 	}
 	newWins := keep(e.LocalID, s.peerID, s.weDialed) && !keep(e.LocalID, s.peerID, cur.weDialed)
 	if newWins {
 		cur.Close()
 		e.sess = s
+		e.link = link
 		return true
 	}
 	s.Close()
 	return false
 }
 
-func (e *Engine) drop(s *Session) {
+func (e *Engine) drop(s *Session) bool {
 	e.mu.Lock()
-	if e.sess == s {
+	current := e.sess == s
+	if current {
 		e.sess = nil
 		e.link = Link{}
 	}
 	e.mu.Unlock()
 	s.Close()
+	return current
 }
 
 // keep is true when this side is playing the role the tie-break assigned.

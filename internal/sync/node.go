@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"time"
 
@@ -18,6 +19,7 @@ func Listen(ctx context.Context, addr string, e *Engine) error {
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()
+		e.Stop()
 	}()
 	e.Log.Info("正在监听", "addr", addr)
 	for {
@@ -51,6 +53,10 @@ func Listen(ctx context.Context, addr string, e *Engine) error {
 // Dial keeps a connection to addr until ctx is cancelled.
 // It does not open a second connection while one is already up.
 func Dial(ctx context.Context, addr string, e *Engine) {
+	DialPeer(ctx, addr, "", e)
+}
+
+func DialPeer(ctx context.Context, addr, expectedID string, e *Engine) {
 	backoff := time.Second
 	for {
 		if ctx.Err() != nil {
@@ -94,7 +100,20 @@ func Dial(ctx context.Context, addr string, e *Engine) {
 			backoff = min(backoff*2, 30*time.Second)
 			continue
 		}
-		err = e.Attach(tlsConn, true)
+		attached := make(chan struct{})
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = conn.Close()
+			case <-attached:
+			}
+		}()
+		err = e.AttachPeer(tlsConn, true, expectedID)
+		close(attached)
+		if errors.Is(err, ErrPairingStopped) || errors.Is(err, ErrFingerprintMismatch) || errors.Is(err, ErrWrongPeer) {
+			e.notify(Notice{Kind: NoticeError, Message: err.Error(), PeerID: expectedID, Addr: addr})
+			return
+		}
 		if ctx.Err() != nil {
 			return
 		}
