@@ -70,24 +70,20 @@ func (a *app) openPicker(atCaret bool) {
 		a.pickSel = 0
 	}
 	a.pickList.ScrollTo(0, ui.Start)
-	if atCaret && runtime.GOOS == "darwin" {
+	if atCaret && (runtime.GOOS == "darwin" || runtime.GOOS == "windows") {
 		paste.Prompt()
-		point := mygo.Screen.CursorScreenPoint()
-		anchor := mygo.Rectangle{X: point.X, Y: point.Y}
-		if rect, ok := a.pasteTo.CaretBounds(); ok {
-			anchor = mygo.Rectangle{X: rect.X, Y: rect.Y, Width: rect.Width, Height: rect.Height}
-		}
-		area := mygo.Screen.DisplayNearestPoint(mygo.Point{X: anchor.X, Y: anchor.Y}).WorkArea
-		bounds := pickerBounds(anchor, area)
-		// A nonactivating panel can take the keyboard over another app's
-		// full-screen Space without activating Snapover and switching Spaces.
+		bounds, scale := pickerScreenBounds(a.pasteTo)
 		a.picker = mygo.NewFlyout(mygo.FlyoutOptions{
 			Tray: a.tray, Width: bounds.Width, Height: bounds.Height,
 			Hidden: true, Focusable: true, Shadow: true,
 			Content: ui.View(a.pickerView),
 		})
-		a.picker.SetVisibleOnAllWorkspaces(true)
-		a.picker.SetBounds(bounds)
+		if runtime.GOOS == "darwin" {
+			// A nonactivating panel can take the keyboard over another app's
+			// full-screen Space without activating Snapover and switching Spaces.
+			a.picker.SetVisibleOnAllWorkspaces(true)
+		}
+		setPickerBounds(a.picker, bounds, scale)
 	} else {
 		a.picker = mygo.NewFlyout(mygo.FlyoutOptions{
 			Tray:      a.tray,

@@ -61,9 +61,11 @@ func TestPickerBounds(t *testing.T) {
 		want   mygo.Rectangle
 	}{
 		{"below caret", mygo.Rectangle{X: 200, Y: 200, Height: 20}, area, mygo.Rectangle{X: 200, Y: 224, Width: 380, Height: 440}},
+		{"mouse fallback", mygo.Rectangle{X: 200, Y: 200}, area, mygo.Rectangle{X: 200, Y: 204, Width: 380, Height: 440}},
 		{"above caret near bottom", mygo.Rectangle{X: 200, Y: 800, Height: 20}, area, mygo.Rectangle{X: 200, Y: 356, Width: 380, Height: 440}},
 		{"right screen edge", mygo.Rectangle{X: 1400, Y: 200, Height: 20}, area, mygo.Rectangle{X: 1060, Y: 224, Width: 380, Height: 440}},
 		{"display left of primary", mygo.Rectangle{X: -1500, Y: 200, Height: 20}, mygo.Rectangle{X: -1920, Y: 25, Width: 1920, Height: 1055}, mygo.Rectangle{X: -1500, Y: 224, Width: 380, Height: 440}},
+		{"display above primary", mygo.Rectangle{X: 200, Y: -800, Height: 20}, mygo.Rectangle{X: 0, Y: -1080, Width: 1920, Height: 1040}, mygo.Rectangle{X: 200, Y: -776, Width: 380, Height: 440}},
 		{"small work area", mygo.Rectangle{X: 100, Y: 100, Height: 20}, mygo.Rectangle{X: 0, Y: 25, Width: 320, Height: 400}, mygo.Rectangle{X: 0, Y: 25, Width: 320, Height: 400}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
