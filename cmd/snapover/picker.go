@@ -18,14 +18,14 @@ func pickerShortcuts() []string {
 	if runtime.GOOS == "darwin" {
 		return []string{"Alt+Cmd+V", "Cmd+Shift+V"}
 	}
-	return []string{"Ctrl+Shift+V"}
+	return []string{"Alt+V"}
 }
 
 func pickerHint() string {
 	if runtime.GOOS == "darwin" {
 		return "⌥⌘V 弹出快速历史，回车或双击粘贴到光标处。也能用 Cmd+Shift+V"
 	}
-	return "Ctrl+Shift+V 弹出快速历史，回车或双击粘贴到光标处"
+	return "Alt+V 弹出快速历史，回车或双击粘贴到光标处"
 }
 
 func (a *app) registerPickerShortcut() {

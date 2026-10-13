@@ -19,7 +19,7 @@ func TestPickerShortcuts(t *testing.T) {
 		}
 		return
 	}
-	if len(got) != 1 || got[0] != "Ctrl+Shift+V" {
+	if len(got) != 1 || got[0] != "Alt+V" {
 		t.Fatalf("shortcuts = %v", got)
 	}
 }
