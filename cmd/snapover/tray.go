@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"image"
 	"image/color"
-	_ "image/jpeg"
 	"image/png"
 	"runtime"
 	"strings"
 
 	"github.com/egoist/mygo"
 
-	"github.com/2fa0/snapover/internal/trayicon"
+	"github.com/2fa0/snapover/resources"
 )
 
 func (a *app) startTray() {
@@ -175,10 +174,8 @@ func loginErr(err error) string {
 }
 
 func loadMenuIcon() []byte {
-	// 源图嵌在二进制里（internal/trayicon），不再从 exe 旁边或
-	// resources/ 读：Windows 上 exe 被单独拷走时读不到文件，托盘
-	// 会退化成 fillFallback 的占位竖条。
-	return trayicon.MenuIconJPG
+	// 嵌入程序图标，Windows 上单独拷走 exe 也能显示托盘图标。
+	return resources.IconPNG
 }
 
 func trayIconPNG(src []byte, white bool) ([]byte, error) {
@@ -191,8 +188,18 @@ func trayIconPNG(src []byte, white bool) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		cropped := cropInk(img)
+		cropped := cropAlpha(img)
 		inner := image.Rect(3, 3, size-3, size-3)
+		width, height := cropped.Bounds().Dx(), cropped.Bounds().Dy()
+		if width > height {
+			height = max(1, height*inner.Dx()/width)
+			inner.Min.Y += (inner.Dy() - height) / 2
+			inner.Max.Y = inner.Min.Y + height
+		} else {
+			width = max(1, width*inner.Dy()/height)
+			inner.Min.X += (inner.Dx() - width) / 2
+			inner.Max.X = inner.Min.X + width
+		}
 		scaled := image.NewNRGBA(image.Rect(0, 0, inner.Dx(), inner.Dy()))
 		scaleBox(cropped, scaled)
 		ink := color.NRGBA{A: 255}
@@ -202,16 +209,9 @@ func trayIconPNG(src []byte, white bool) ([]byte, error) {
 		for y := 0; y < scaled.Bounds().Dy(); y++ {
 			for x := 0; x < scaled.Bounds().Dx(); x++ {
 				r, g, b, a := scaled.At(x, y).RGBA()
-				nr, ng, nb, na := uint8(r>>8), uint8(g>>8), uint8(b>>8), uint8(a>>8)
-				if na < 16 || (nr > 242 && ng > 242 && nb > 242) {
-					continue
-				}
-				lum := (int(nr) + int(ng) + int(nb)) / 3
-				alpha := 255 - lum
-				if alpha < 24 {
-					continue
-				}
-				dst.SetNRGBA(inner.Min.X+x, inner.Min.Y+y, color.NRGBA{R: ink.R, G: ink.G, B: ink.B, A: uint8(alpha)})
+				// RGBA 已预乘透明度，同时保留原透明区域并将白色细节镂空。
+				alpha := a - (r+g+b)/3
+				dst.SetNRGBA(inner.Min.X+x, inner.Min.Y+y, color.NRGBA{R: ink.R, G: ink.G, B: ink.B, A: uint8(alpha >> 8)})
 			}
 		}
 	}
@@ -234,13 +234,13 @@ func fillFallback(dst *image.NRGBA, white bool) {
 	}
 }
 
-func cropInk(img image.Image) image.Image {
+func cropAlpha(img image.Image) image.Image {
 	b := img.Bounds()
 	minx, miny, maxx, maxy := b.Max.X, b.Max.Y, b.Min.X-1, b.Min.Y-1
 	for y := b.Min.Y; y < b.Max.Y; y++ {
 		for x := b.Min.X; x < b.Max.X; x++ {
-			r, g, bl, a := img.At(x, y).RGBA()
-			if a>>8 < 16 || (r>>8 > 242 && g>>8 > 242 && bl>>8 > 242) {
+			_, _, _, a := img.At(x, y).RGBA()
+			if a == 0 {
 				continue
 			}
 			if x < minx {
@@ -296,12 +296,12 @@ func scaleBox(src image.Image, dst *image.NRGBA) {
 					n++
 				}
 			}
-			dst.SetNRGBA(db.Min.X+x, db.Min.Y+y, color.NRGBA{
-				R: uint8((rs / n) >> 8),
-				G: uint8((gs / n) >> 8),
-				B: uint8((bs / n) >> 8),
-				A: uint8((as / n) >> 8),
-			})
+			dst.SetNRGBA(db.Min.X+x, db.Min.Y+y, color.NRGBAModel.Convert(color.RGBA64{
+				R: uint16(rs / n),
+				G: uint16(gs / n),
+				B: uint16(bs / n),
+				A: uint16(as / n),
+			}).(color.NRGBA))
 		}
 	}
 }
