@@ -38,6 +38,7 @@ type seenDevice struct {
 type Snapshot struct {
 	Devices []Device
 	Message string
+	Err     error
 	// Scope identifies the selection used by this scan. A queued snapshot
 	// can then be discarded if the selection changed before UI delivery.
 	Scope *Scope
@@ -51,7 +52,7 @@ type Snapshot struct {
 func Run(ctx context.Context, local Device, listen string, scope func() Scope, wake <-chan struct{}, publish func(Snapshot)) {
 	port, err := strconv.Atoi(local.Addr)
 	if err != nil || port < 1 || port > 65535 {
-		publish(Snapshot{Message: "自动发现未启动：监听端口无效，请使用手填地址"})
+		publish(Snapshot{Message: "自动发现未启动：监听端口无效，请使用手填地址", Err: fmt.Errorf("invalid discovery port %q", local.Addr)})
 		return
 	}
 	var server *zeroconf.Server
@@ -65,14 +66,17 @@ func Run(ctx context.Context, local Device, listen string, scope func() Scope, w
 	for ctx.Err() == nil {
 		selected := readScope(scope)
 		chosen := interfaces(listen, selected)
+		var scanErr error
 		publishSnapshot := func(message string) {
 			s := snapshot(seen, message, time.Now())
 			s.Scope = &selected
+			s.Err = scanErr
 			publish(s)
 		}
 		message := ""
 		if len(chosen.ifaces) != 0 {
 			if err := probeMulticast(chosen.ifaces); err != nil {
+				scanErr = err
 				message = "局域网广播不可达。请检查系统的本地网络权限及 VPN；也可手填地址连接"
 			}
 		}
@@ -87,6 +91,7 @@ func Run(ctx context.Context, local Device, listen string, scope func() Scope, w
 				server, err = zeroconf.RegisterProxy(local.ID, service, "local.", port, "snapover-"+local.ID, chosen.ips,
 					[]string{"id=" + local.ID, "name=" + shortName(local.Name), "platform=" + local.Platform}, chosen.ifaces)
 				if err != nil {
+					scanErr = fmt.Errorf("register mDNS service: %w", err)
 					message = "本机设备广播未启动，请检查网络权限；仍可手填地址连接"
 				}
 			}
@@ -101,6 +106,7 @@ func Run(ctx context.Context, local Device, listen string, scope func() Scope, w
 		} else if message == "" {
 			resolver, err := zeroconf.NewResolver(zeroconf.SelectIfaces(chosen.ifaces), zeroconf.SelectIPTraffic(zeroconf.IPv4))
 			if err != nil {
+				scanErr = fmt.Errorf("create mDNS resolver: %w", err)
 				message = "局域网搜索未启动，请检查网络权限；仍可手填地址连接"
 			} else {
 				browseCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
@@ -108,6 +114,7 @@ func Run(ctx context.Context, local Device, listen string, scope func() Scope, w
 				entries := make(chan *zeroconf.ServiceEntry, 32)
 				err = resolver.Browse(browseCtx, service, "local.", entries)
 				if err != nil && browseCtx.Err() == nil {
+					scanErr = fmt.Errorf("browse mDNS service: %w", err)
 					message = "局域网搜索失败，请检查网络权限；仍可手填地址连接"
 				}
 				for entry := range entries {
@@ -211,7 +218,7 @@ func probeMulticast(ifaces []net.Interface) error {
 		if _, err := pc.WriteTo(packet, &ipv4.ControlMessage{IfIndex: iface.Index}, &net.UDPAddr{IP: net.ParseIP("224.0.0.251"), Port: 5353}); err == nil {
 			return nil
 		} else {
-			lastErr = err
+			lastErr = fmt.Errorf("multicast on %s: %w", iface.Name, err)
 		}
 	}
 	return lastErr

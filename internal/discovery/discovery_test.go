@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"runtime"
@@ -155,8 +156,12 @@ func TestLANDiscovery(t *testing.T) {
 			defer func() { done <- struct{}{} }()
 			Run(ctx, local, ":"+local.Addr, nil, nil, func(s Snapshot) {
 				if s.Message != "" {
+					message := s.Message
+					if s.Err != nil {
+						message = fmt.Sprintf("%s: %v", message, s.Err)
+					}
 					select {
-					case failures <- s.Message:
+					case failures <- message:
 					default:
 					}
 				}
@@ -182,13 +187,22 @@ func TestLANDiscovery(t *testing.T) {
 		}
 	})
 	seen := make(map[string]bool)
+	var lastFailure string
 	for len(seen) != 2 {
 		select {
 		case id := <-found:
 			seen[id] = true
 		case message := <-failures:
-			t.Fatal(message)
+			// macOS can reject the first operation while its permission
+			// prompt is pending. Keep the process alive and let Run retry.
+			lastFailure = message
 		case <-ctx.Done():
+			if lastFailure != "" {
+				if runtime.GOOS == "darwin" {
+					t.Log("请在系统设置 → 隐私与安全性 → 本地网络中允许运行测试的宿主应用（例如 Cindy），或从 Terminal 中运行此测试。")
+				}
+				t.Fatal(lastFailure)
+			}
 			t.Fatal("devices did not discover one another on the physical LAN")
 		}
 	}

@@ -139,6 +139,14 @@ go tool mygo build -platform windows/amd64,windows/arm64 -o dist
 
 Mac 上编出来的 Windows 程序不能在 Mac 上验证剪贴板。Win+Shift+S 和记事本粘贴必须在 Windows 上试。
 
+局域网发现的实机测试：
+
+```sh
+SNAPOVER_TEST_LAN=1 go test -count=1 ./internal/discovery -run TestLANDiscovery -v
+```
+
+macOS 从 Cindy 等桌面应用运行测试时，本地网络权限归属于启动测试的宿主应用；请在系统设置 → 隐私与安全性 → 本地网络中允许该应用，或从 Terminal 中运行。`no route to host` 也可能由本地网络权限拒绝引起，不能仅凭这个错误判断 VPN 路由故障。测试会等待首次授权并重试，超时仍未发现设备时才失败；底层错误会保留在测试输出中。Snapover 本身的发现错误记录在 `logs/snapover.log` 中，重复错误不会持续刷日志。
+
 ## 已知限制
 
 MyGo 的 `WriteImage` 写出 PNG。Windows 会再带一份普通 `CF_DIB`，不是 `CF_DIBV5`；macOS 不会同时写 TIFF。系统截图和普通文本是这一批的完成标准。贴进微信、Word、Photoshop 时透明通道可能丢。

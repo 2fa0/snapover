@@ -212,7 +212,16 @@ func (a *app) open(ctx context.Context) {
 	a.registerPickerShortcut()
 	a.discoveryWake = make(chan struct{}, 1)
 	a.discoveryScope.Store(a.selection().Scope())
+	var lastDiscoveryError string
 	go discovery.Run(ctx, discovery.Device{ID: a.deviceID, Name: a.name, Platform: a.engine.Platform, Addr: portOf(a.listen)}, a.listen, a.currentDiscoveryScope, a.discoveryWake, func(snapshot discovery.Snapshot) {
+		errText := ""
+		if snapshot.Err != nil {
+			errText = snapshot.Err.Error()
+		}
+		if errText != "" && errText != lastDiscoveryError && a.engine.Log != nil {
+			a.engine.Log.Warn("局域网发现失败", "message", snapshot.Message, "err", snapshot.Err)
+		}
+		lastDiscoveryError = errText
 		a.win.Update(func() { a.applyDiscovery(snapshot) })
 	})
 	if a.peer != "" {
