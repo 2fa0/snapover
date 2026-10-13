@@ -79,16 +79,15 @@ func (a *app) openPicker(atCaret bool) {
 		}
 		area := mygo.Screen.DisplayNearestPoint(mygo.Point{X: anchor.X, Y: anchor.Y}).WorkArea
 		bounds := pickerBounds(anchor, area)
-		a.picker = mygo.NewWindow(mygo.WindowOptions{
-			Title: "复制历史", Width: bounds.Width, Height: bounds.Height,
-			Hidden: true, Frameless: true, Transparent: true, AlwaysOnTop: true,
-			UseContentSize: true, SkipTaskbar: true,
-			DisableResize: true, DisableMinimize: true, DisableMaximize: true, DisableFullScreen: true,
+		// A nonactivating panel can take the keyboard over another app's
+		// full-screen Space without activating Snapover and switching Spaces.
+		a.picker = mygo.NewFlyout(mygo.FlyoutOptions{
+			Tray: a.tray, Width: bounds.Width, Height: bounds.Height,
+			Hidden: true, Focusable: true, Shadow: true,
 			Content: ui.View(a.pickerView),
 		})
+		a.picker.SetVisibleOnAllWorkspaces(true)
 		a.picker.SetBounds(bounds)
-		p := a.picker
-		p.OnBlur(func() { p.Close() })
 	} else {
 		a.picker = mygo.NewFlyout(mygo.FlyoutOptions{
 			Tray:      a.tray,
