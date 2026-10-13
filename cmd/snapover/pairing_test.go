@@ -100,3 +100,21 @@ func TestDiscoveryRetargetsOnlySelectedTrustedDevice(t *testing.T) {
 		t.Fatal("discovery restarted a revoked device")
 	}
 }
+
+func TestDiscoveryDiscardsSnapshotAfterSelectionChange(t *testing.T) {
+	a := &app{engine: &clipsync.Engine{}, discoveryMessage: "current"}
+	a.discoveryScope.Store(discovery.Scope{})
+	oldScope := discovery.Scope{All: true}
+	a.applyDiscovery(discovery.Snapshot{
+		Scope: &oldScope, Message: "old",
+		Devices: []discovery.Device{{ID: "old", Addr: "192.168.1.20:47821"}},
+	})
+	if len(a.discovered) != 0 || a.discoveryMessage != "current" {
+		t.Fatal("queued scan from the old selection restored discovery results")
+	}
+	currentScope := discovery.Scope{}
+	a.applyDiscovery(discovery.Snapshot{Scope: &currentScope, Message: "stopped"})
+	if a.discoveryMessage != "stopped" {
+		t.Fatal("snapshot from the current selection was discarded")
+	}
+}

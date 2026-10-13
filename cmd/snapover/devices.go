@@ -116,6 +116,8 @@ func (a *app) devicesPage(c *ui.Context) {
 		})
 	}
 
+	a.broadcastSection(c)
+
 	section(c, "发现的设备")
 	count := 0
 	for _, dev := range a.discovered {
@@ -138,7 +140,7 @@ func (a *app) devicesPage(c *ui.Context) {
 			}
 		})
 	}
-	if count == 0 {
+	if count == 0 && a.discoveryMessage == "" {
 		ui.Text(c, "正在寻找同一局域网内的电脑。请确认对端已打开 Snapover；找不到时可以手填地址。").TextColor(t.TextMuted)
 	}
 	if a.discoveryMessage != "" {
@@ -174,6 +176,55 @@ func (a *app) devicesPage(c *ui.Context) {
 	}
 }
 
+func (a *app) broadcastSection(c *ui.Context) {
+	t := c.Theme()
+	section(c, "广播网段")
+	ui.Text(c, "只在勾选的网段里广播和搜索。全选时，之后新出现的物理网段也会加入。").TextColor(t.TextMuted)
+	rows := liveSegmentRows()
+	sel := a.selection()
+	var physical, virtual []segmentRow
+	var keys []string
+	for _, row := range rows {
+		if row.virtual {
+			virtual = append(virtual, row)
+			continue
+		}
+		physical = append(physical, row)
+		keys = append(keys, row.key)
+	}
+	ui.Row(c).Gap(8).Children(func() {
+		if ui.Button(c, "全选").Disabled(sel.All()).Clicked() {
+			a.setDiscovery(discovery.SelectAll())
+		}
+		if ui.Button(c, "全不选").Disabled(sel.Stopped()).Clicked() {
+			a.setDiscovery(discovery.SelectNone(keys))
+		}
+	})
+	sel = a.selection()
+	if len(physical) == 0 {
+		ui.Text(c, "没有可用的局域网网段。连接 Wi-Fi 或网线后会出现在这里。").TextColor(t.TextMuted)
+	}
+	a.syncSegmentChecks(physical, sel)
+	for i := range a.segments {
+		row := &a.segments[i]
+		if ui.Checkbox(c.Key("seg-"+row.key), &row.checked, row.label).Changed() {
+			a.setDiscovery(discovery.Toggle(sel, keys, row.key, row.checked))
+			sel = a.selection()
+		}
+	}
+	if !sel.All() && !sel.Stopped() {
+		ui.Text(c, "只广播已勾选的网段。新出现的默认不加入。").FontSize(12).TextColor(t.TextMuted)
+	}
+	if sel.HasNew(keys) {
+		ui.Text(c, "有新网段未加入广播。").FontSize(12).TextColor(t.TextMuted)
+	} else if sel.Stopped() && len(physical) > 0 {
+		ui.Text(c, "发现已停止。勾选网段，或在下面手填地址。").FontSize(12).TextColor(t.TextMuted)
+	}
+	for _, row := range virtual {
+		ui.Text(c, row.label).FontSize(12).TextColor(t.TextMuted)
+	}
+}
+
 func (a *app) isPaired(id string) bool {
 	for _, dev := range a.devices {
 		if dev.ID == id {
@@ -190,6 +241,9 @@ func (a *app) connectDevice(id, addr string) {
 }
 
 func (a *app) applyDiscovery(snapshot discovery.Snapshot) {
+	if snapshot.Scope != nil && !snapshot.Scope.Equal(a.currentDiscoveryScope()) {
+		return
+	}
 	a.discovered = snapshot.Devices
 	a.discoveryMessage = snapshot.Message
 	if a.engine.Connected() || a.targetPeerID == "" || !a.isPaired(a.targetPeerID) {

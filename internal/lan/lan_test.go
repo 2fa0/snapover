@@ -6,6 +6,19 @@ import (
 	"time"
 )
 
+func TestSegmentKeyIgnoresHostAddress(t *testing.T) {
+	network := mustNet(t, "192.168.1.0/24")
+	first := Addr{Name: "en0", IP: net.ParseIP("192.168.1.5"), Net: network}
+	renewed := Addr{Name: "en0", IP: net.ParseIP("192.168.1.40"), Net: network}
+	if SegmentKey(first) != SegmentKey(renewed) || SegmentKey(first) != "en0/192.168.1.0/24" {
+		t.Fatalf("key = %s", SegmentKey(first))
+	}
+	other := Addr{Name: "en1", IP: first.IP, Net: network}
+	if SegmentKey(first) == SegmentKey(other) {
+		t.Fatal("interface name was ignored")
+	}
+}
+
 func TestVirtualNames(t *testing.T) {
 	virtual := []string{"utun4", "clash", "Tailscale", "vEthernet (WSL)", "gpd0", "Cisco AnyConnect", "awdl0"}
 	physical := []string{"en0", "en1", "Ethernet", "Wi-Fi", "以太网"}

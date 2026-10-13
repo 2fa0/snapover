@@ -16,6 +16,15 @@ type Addr struct {
 	Virtual bool
 }
 
+// SegmentKey identifies an IPv4 subnet on an interface. The host address is
+// omitted so a DHCP renewal does not drop a saved discovery selection.
+func SegmentKey(addr Addr) string {
+	if addr.Net == nil {
+		return addr.Name + "/"
+	}
+	return addr.Name + "/" + addr.Net.String()
+}
+
 // Virtual reports whether name belongs to a tunnel, VPN, or other adapter
 // that should not be used for discovery or connections.
 func Virtual(name string) bool {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -53,6 +54,9 @@ type app struct {
 
 	discovered       []discovery.Device
 	discoveryMessage string
+	discoveryScope   atomic.Value
+	discoveryWake    chan struct{}
+	segments         []segmentRow
 	targetPeerID     string
 	dialSeq          uint64
 	deviceDetails    string
@@ -206,7 +210,9 @@ func (a *app) open(ctx context.Context) {
 		time.AfterFunc(80*time.Millisecond, func() { mygo.RunOnMain(a.rememberPasteTarget) })
 	})
 	a.registerPickerShortcut()
-	go discovery.Run(ctx, discovery.Device{ID: a.deviceID, Name: a.name, Platform: a.engine.Platform, Addr: portOf(a.listen)}, a.listen, func(snapshot discovery.Snapshot) {
+	a.discoveryWake = make(chan struct{}, 1)
+	a.discoveryScope.Store(a.selection().Scope())
+	go discovery.Run(ctx, discovery.Device{ID: a.deviceID, Name: a.name, Platform: a.engine.Platform, Addr: portOf(a.listen)}, a.listen, a.currentDiscoveryScope, a.discoveryWake, func(snapshot discovery.Snapshot) {
 		a.win.Update(func() { a.applyDiscovery(snapshot) })
 	})
 	if a.peer != "" {

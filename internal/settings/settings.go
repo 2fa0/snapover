@@ -17,6 +17,13 @@ type Values struct {
 	OpenAtLogin   bool   `json:"open_at_login"`
 	ReceiveDir    string `json:"receive_dir,omitempty"`
 	DisableSendTo bool   `json:"disable_send_to,omitempty"`
+	// DiscoveryMode is empty when every physical segment is used, including
+	// segments that appear later. "selected" limits discovery to DiscoveryNets.
+	// DiscoverySeen records segments present at the last explicit edit, so a
+	// newly attached segment stays unchecked and can be called out.
+	DiscoveryMode string   `json:"discovery_mode,omitempty"`
+	DiscoveryNets []string `json:"discovery_nets,omitempty"`
+	DiscoverySeen []string `json:"discovery_seen,omitempty"`
 }
 
 // File is settings.json in the data directory.

@@ -16,6 +16,9 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	f.Values.MaxImageMB = 8
 	f.Values.ReceiveDir = dir
 	f.Values.DisableSendTo = true
+	f.Values.DiscoveryMode = "selected"
+	f.Values.DiscoveryNets = []string{"en0/192.168.1.0/24"}
+	f.Values.DiscoverySeen = []string{"en0/192.168.1.0/24", "en1/10.0.0.0/24"}
 	if err := f.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -25,6 +28,9 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	}
 	if !again.Values.Paused || !again.Values.TextOnly || again.Values.MaxImageMB != 8 || again.Values.ReceiveDir != dir || !again.Values.DisableSendTo {
 		t.Fatalf("%+v", again.Values)
+	}
+	if again.Values.DiscoveryMode != "selected" || len(again.Values.DiscoveryNets) != 1 || again.Values.DiscoveryNets[0] != "en0/192.168.1.0/24" || len(again.Values.DiscoverySeen) != 2 {
+		t.Fatalf("discovery selection not restored: %+v", again.Values)
 	}
 }
 

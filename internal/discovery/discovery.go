@@ -1,5 +1,6 @@
-// Package discovery advertises routing hints on physical LAN interfaces.
-// A discovered identity is verified against the TLS certificate on connection.
+// Package discovery advertises routing hints on selected physical LAN
+// interfaces. A discovered identity is verified against the TLS certificate
+// on connection.
 package discovery
 
 import (
@@ -37,11 +38,17 @@ type seenDevice struct {
 type Snapshot struct {
 	Devices []Device
 	Message string
+	// Scope identifies the selection used by this scan. A queued snapshot
+	// can then be discarded if the selection changed before UI delivery.
+	Scope *Scope
 }
 
-// Run rebinds discovery when physical interfaces change, including Wi-Fi/IP
-// changes after wake. Each browse is bounded and closes its multicast sockets.
-func Run(ctx context.Context, local Device, listen string, publish func(Snapshot)) {
+// Run rebinds discovery when the selected physical interfaces change,
+// including Wi-Fi/IP changes after wake. scope is read on each pass; a nil
+// scope uses every physical segment. A signal on wake rebinds without waiting
+// out the browse or the idle interval. Each browse is bounded and closes its
+// multicast sockets.
+func Run(ctx context.Context, local Device, listen string, scope func() Scope, wake <-chan struct{}, publish func(Snapshot)) {
 	port, err := strconv.Atoi(local.Addr)
 	if err != nil || port < 1 || port > 65535 {
 		publish(Snapshot{Message: "自动发现未启动：监听端口无效，请使用手填地址"})
@@ -56,43 +63,58 @@ func Run(ctx context.Context, local Device, listen string, publish func(Snapshot
 	var signature string
 	seen := make(map[string]seenDevice)
 	for ctx.Err() == nil {
-		ifaces, addrs, ips, next := interfaces(listen)
+		selected := readScope(scope)
+		chosen := interfaces(listen, selected)
+		publishSnapshot := func(message string) {
+			s := snapshot(seen, message, time.Now())
+			s.Scope = &selected
+			publish(s)
+		}
 		message := ""
-		if len(ifaces) != 0 {
-			if err := probeMulticast(ifaces); err != nil {
+		if len(chosen.ifaces) != 0 {
+			if err := probeMulticast(chosen.ifaces); err != nil {
 				message = "局域网广播不可达。请检查系统的本地网络权限及 VPN；也可手填地址连接"
 			}
 		}
-		if next != signature || server == nil {
+		if chosen.signature != signature || server == nil {
 			if server != nil {
 				server.Shutdown()
 				server = nil
 			}
 			clear(seen)
-			signature = next
-			if len(ifaces) != 0 && message == "" {
-				server, err = zeroconf.RegisterProxy(local.ID, service, "local.", port, "snapover-"+local.ID, ips,
-					[]string{"id=" + local.ID, "name=" + shortName(local.Name), "platform=" + local.Platform}, ifaces)
+			signature = chosen.signature
+			if len(chosen.ifaces) != 0 && message == "" {
+				server, err = zeroconf.RegisterProxy(local.ID, service, "local.", port, "snapover-"+local.ID, chosen.ips,
+					[]string{"id=" + local.ID, "name=" + shortName(local.Name), "platform=" + local.Platform}, chosen.ifaces)
 				if err != nil {
 					message = "本机设备广播未启动，请检查网络权限；仍可手填地址连接"
 				}
 			}
 		}
-		if len(ifaces) == 0 {
-			message = "没有可用的局域网网卡；连接 Wi-Fi 或网线后会自动搜索"
+		woken := false
+		if len(chosen.ifaces) == 0 {
+			if chosen.empty == emptyUnselected {
+				message = "未选择广播网段。勾选网段后会开始搜索，也可手填地址"
+			} else {
+				message = "没有可用的局域网网卡；连接 Wi-Fi 或网线后会自动搜索"
+			}
 		} else if message == "" {
-			resolver, err := zeroconf.NewResolver(zeroconf.SelectIfaces(ifaces), zeroconf.SelectIPTraffic(zeroconf.IPv4))
+			resolver, err := zeroconf.NewResolver(zeroconf.SelectIfaces(chosen.ifaces), zeroconf.SelectIPTraffic(zeroconf.IPv4))
 			if err != nil {
 				message = "局域网搜索未启动，请检查网络权限；仍可手填地址连接"
 			} else {
 				browseCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+				woke := watchWake(browseCtx, cancel, wake)
 				entries := make(chan *zeroconf.ServiceEntry, 32)
 				err = resolver.Browse(browseCtx, service, "local.", entries)
-				if err != nil {
+				if err != nil && browseCtx.Err() == nil {
 					message = "局域网搜索失败，请检查网络权限；仍可手填地址连接"
 				}
 				for entry := range entries {
-					dev, ok := parseEntry(entry, local.ID, addrs)
+					if browseCtx.Err() != nil {
+						continue
+					}
+					dev, ok := parseEntry(entry, local.ID, chosen.addrs)
 					if !ok {
 						continue
 					}
@@ -100,19 +122,70 @@ func Run(ctx context.Context, local Device, listen string, publish func(Snapshot
 						continue
 					}
 					seen[dev.ID] = seenDevice{Device: dev, at: time.Now()}
-					publish(snapshot(seen, message, time.Now()))
+					publishSnapshot(message)
 				}
 				cancel()
+				woken = woke()
 			}
 		}
-		publish(snapshot(seen, message, time.Now()))
-		timer := time.NewTimer(6 * time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
+		if woken {
+			continue
 		}
+		publishSnapshot(message)
+		if !wait(ctx, 6*time.Second, wake) {
+			return
+		}
+	}
+}
+
+func readScope(scope func() Scope) Scope {
+	if scope == nil {
+		return Scope{All: true}
+	}
+	got := scope()
+	if got.All {
+		return Scope{All: true}
+	}
+	if got.Keys == nil {
+		got.Keys = map[string]bool{}
+	}
+	return got
+}
+
+// watchWake cancels browse when the selection changes. Call the returned
+// function after cancelling browse to join the watcher before the idle wait,
+// so an old watcher cannot consume the next selection change.
+func watchWake(ctx context.Context, cancel context.CancelFunc, wake <-chan struct{}) func() bool {
+	if wake == nil {
+		return func() bool { return false }
+	}
+	var hit bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-wake:
+			hit = true
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return func() bool {
+		<-done
+		return hit
+	}
+}
+
+func wait(ctx context.Context, d time.Duration, wake <-chan struct{}) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-wake:
+		return true
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -196,31 +269,63 @@ func parseEntry(entry *zeroconf.ServiceEntry, localID string, addrs []lan.Addr) 
 	return Device{}, false
 }
 
-func interfaces(listen string) ([]net.Interface, []lan.Addr, []string, string) {
+const (
+	emptyNone = iota + 1
+	emptyUnselected
+)
+
+type chosenIfaces struct {
+	ifaces    []net.Interface
+	addrs     []lan.Addr
+	ips       []string
+	signature string
+	empty     int
+}
+
+func interfaces(listen string, scope Scope) chosenIfaces {
+	return chooseInterfaces(listen, scope, lan.IPv4(), net.InterfaceByName)
+}
+
+func chooseInterfaces(listen string, scope Scope, listed []lan.Addr, lookup func(string) (*net.Interface, error)) chosenIfaces {
 	host, _, _ := net.SplitHostPort(listen)
 	bound := net.ParseIP(host)
-	var ifaces []net.Interface
-	var addrs []lan.Addr
-	var ips, keys []string
+	var out chosenIfaces
 	used := make(map[string]bool)
-	for _, addr := range lan.IPv4() {
+	var keys []string
+	candidates := 0
+	for _, addr := range listed {
 		if addr.Virtual || (bound != nil && !bound.IsUnspecified() && !bound.Equal(addr.IP)) {
 			continue
 		}
-		iface, err := net.InterfaceByName(addr.Name)
-		if err != nil || iface.Flags&net.FlagMulticast == 0 {
+		iface, err := lookup(addr.Name)
+		if err != nil || iface == nil || iface.Flags&net.FlagMulticast == 0 {
+			continue
+		}
+		candidates++
+		if !scope.All && !scope.Keys[lan.SegmentKey(addr)] {
 			continue
 		}
 		if !used[addr.Name] {
-			ifaces = append(ifaces, *iface)
+			out.ifaces = append(out.ifaces, *iface)
 			used[addr.Name] = true
 		}
-		addrs = append(addrs, addr)
-		ips = append(ips, addr.IP.String())
+		out.addrs = append(out.addrs, addr)
+		if addr.IP != nil {
+			out.ips = append(out.ips, addr.IP.String())
+		}
 		keys = append(keys, fmt.Sprintf("%d/%s/%s", iface.Index, addr.IP, addr.Net))
 	}
 	sort.Strings(keys)
-	return ifaces, addrs, ips, strings.Join(keys, ",")
+	out.signature = strings.Join(keys, ",")
+	if len(out.ifaces) == 0 {
+		if candidates > 0 && !scope.All {
+			out.empty = emptyUnselected
+			out.signature = "unselected"
+		} else {
+			out.empty = emptyNone
+		}
+	}
+	return out
 }
 
 func shortName(s string) string {
