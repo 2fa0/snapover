@@ -7,6 +7,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 )
 
@@ -203,11 +204,16 @@ func (a *app) loadPickImage(id string, parent *mygo.Window) {
 		img, err := a.hist.Image(id)
 		var bmp *ui.Bitmap
 		if err == nil {
-			bmp = ui.NewBitmap(img)
+			bmp = ui.NewBitmap(imageForDisplay(img))
 		}
 		mygo.RunOnMain(func() {
 			a.pickLoading = false
 			if a.picker != parent {
+				if bmp != nil {
+					w, h := bmp.Size()
+					bmp = nil
+					clip.ReclaimImageMemory(w, h)
+				}
 				return
 			}
 			if err != nil {
@@ -240,6 +246,9 @@ func (a *app) openPickImage(bmp *ui.Bitmap) {
 	})
 	a.pickOriginal = viewer
 	viewer.OnClosed(func() {
+		// Closed native windows may outlive their content closures.
+		bmp = nil
+		clip.ReclaimImageMemory(w, h)
 		if a.pickOriginal == viewer {
 			a.pickOriginal = nil
 		}

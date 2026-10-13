@@ -80,7 +80,7 @@ func FromPNG(data []byte) (Item, error) {
 	}
 	b := img.Bounds()
 	thumb, _ := ThumbnailPNG(img, 160)
-	return Item{
+	item := Item{
 		Kind:      KindImage,
 		PNG:       data,
 		Thumbnail: thumb,
@@ -88,7 +88,9 @@ func FromPNG(data []byte) (Item, error) {
 		Width:     b.Dx(),
 		Height:    b.Dy(),
 		Size:      len(data),
-	}, nil
+	}
+	ReclaimImageMemory(item.Width, item.Height)
+	return item, nil
 }
 
 // DecodePNG checks the clipboard image limits without computing a content hash.

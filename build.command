@@ -26,7 +26,7 @@ echo "正在从 app.jpg 生成程序图标…"
 /usr/bin/sips -s format png resources/app.jpg --out resources/icon.png >/dev/null
 
 echo "正在打包 Windows 11 x64…"
-# MyGo v0.4.5 always invokes NSIS when found. Exclude Homebrew's crashing
+# MyGo always invokes NSIS when found. Exclude Homebrew's crashing
 # makensis while retaining MyGo's executable icons, manifest and resources.
 PATH="$build_tools:/usr/bin:/bin:/usr/sbin:/sbin" CGO_ENABLED=0 \
     "$go_bin" tool mygo build -platform windows/amd64 -o dist

@@ -105,6 +105,8 @@ func (a *app) openPicker(atCaret bool) {
 	a.picker.OnClosed(func() {
 		a.pickerSearch.reset()
 		a.closePickPreview()
+		// ListState retains its window host; don't carry it into the next picker.
+		a.pickList = ui.ListState{Key: a.pickList.Key, Label: a.pickList.Label, Selected: &a.pickSel}
 		a.picker = nil
 		a.pickBusy = false
 	})
