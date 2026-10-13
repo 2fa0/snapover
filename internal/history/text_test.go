@@ -108,7 +108,10 @@ func TestHistoryMutationFailureKeepsBodies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(s.indexPath()+".tmp", 0o700); err != nil {
+	if err := os.Rename(s.journalPath(), s.journalPath()+".saved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(s.journalPath(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	for _, mutate := range []func() error{

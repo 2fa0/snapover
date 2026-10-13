@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"io"
 	"os"
@@ -48,9 +49,12 @@ type Entry struct {
 
 // Store keeps the newest clipboard items on disk.
 type Store struct {
-	mu      sync.Mutex
-	dir     string
-	entries []Entry
+	mu           sync.Mutex
+	dir          string
+	entries      []Entry
+	sequence     uint64
+	journalOps   int
+	journalBytes int64
 }
 
 func Open(dir string) (*Store, error) {
@@ -65,15 +69,18 @@ func Open(dir string) (*Store, error) {
 	}
 	s := &Store{dir: dir}
 	f, err := os.Open(s.indexPath())
-	if errors.Is(err, os.ErrNotExist) {
-		return s, nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	defer f.Close()
-	migrated, err := s.loadIndex(json.NewDecoder(f))
-	if err != nil {
+	migrated := false
+	if err == nil {
+		migrated, err = s.loadIndex(json.NewDecoder(f))
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := s.replayJournal(); err != nil {
 		return nil, err
 	}
 	if migrated {
@@ -127,7 +134,7 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 	before := s.entries
 	s.entries = append([]Entry{entry}, s.entries...)
 	drop := s.trimLocked()
-	if err := s.saveLocked(); err != nil {
+	if err := s.persistLocked(historyChange{Op: "add", Entry: &entry, Drop: entryIDs(drop)}); err != nil {
 		s.entries = before
 		s.removeFiles([]Entry{entry})
 		return Entry{}, err
@@ -220,7 +227,7 @@ func (s *Store) SetPinned(id string, on bool) error {
 		if s.entries[i].ID == id {
 			before := s.entries[i].Pinned
 			s.entries[i].Pinned = on
-			if err := s.saveLocked(); err != nil {
+			if err := s.persistLocked(historyChange{Op: "pin", ID: id, Pinned: on}); err != nil {
 				s.entries[i].Pinned = before
 				return err
 			}
@@ -243,7 +250,7 @@ func (s *Store) Delete(id string) error {
 		s.entries = make([]Entry, 0, len(before)-1)
 		s.entries = append(s.entries, before[:i]...)
 		s.entries = append(s.entries, before[i+1:]...)
-		if err := s.saveLocked(); err != nil {
+		if err := s.persistLocked(historyChange{Op: "drop", Drop: []string{id}}); err != nil {
 			s.entries = before
 			return err
 		}
@@ -268,7 +275,7 @@ func (s *Store) Clear() error {
 		drop = append(drop, entry)
 	}
 	s.entries = kept
-	if err := s.saveLocked(); err != nil {
+	if err := s.persistLocked(historyChange{Op: "drop", Drop: entryIDs(drop)}); err != nil {
 		s.entries = before
 		return err
 	}
@@ -325,7 +332,7 @@ func (s *Store) saveLocked() error {
 	defer os.Remove(tmp)
 	writeErr := func() error {
 		w := bufio.NewWriter(f)
-		if _, err := w.WriteString("{\"items\":[\n"); err != nil {
+		if _, err := fmt.Fprintf(w, "{\"sequence\":%d,\"items\":[\n", s.sequence); err != nil {
 			return err
 		}
 		enc := json.NewEncoder(w)
@@ -344,6 +351,9 @@ func (s *Store) saveLocked() error {
 		}
 		return w.Flush()
 	}()
+	if writeErr == nil {
+		writeErr = f.Sync()
+	}
 	closeErr := f.Close()
 	if writeErr != nil {
 		return writeErr

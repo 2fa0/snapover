@@ -3,6 +3,7 @@ package history
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
@@ -107,6 +108,26 @@ func BenchmarkAddLargeImage(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		if _, err := s.Add(DirLocal, "", item); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPinPopulatedHistory(b *testing.B) {
+	s, err := Open(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := range 1000 {
+		s.entries = append(s.entries, Entry{ID: fmt.Sprint(i), Kind: "text", Text: strings.Repeat("中", 80), At: time.Now().UTC()})
+	}
+	if err := s.saveLocked(); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := range b.N {
+		if err := s.SetPinned("999", i%2 == 0); err != nil {
 			b.Fatal(err)
 		}
 	}

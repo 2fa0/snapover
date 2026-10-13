@@ -81,6 +81,12 @@ func (s *Store) loadIndex(dec *json.Decoder) (bool, error) {
 				return false, err
 			}
 			if key != "items" {
+				if key == "sequence" {
+					if err := dec.Decode(&s.sequence); err != nil {
+						return false, err
+					}
+					continue
+				}
 				var ignored json.RawMessage
 				if err := dec.Decode(&ignored); err != nil {
 					return false, err
