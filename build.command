@@ -25,6 +25,13 @@ ln -s "$go_bin" "$build_tools/go"
 echo "正在从 app.jpg 生成程序图标…"
 /usr/bin/sips -s format png resources/app.jpg --out resources/icon.png >/dev/null
 
+echo "正在编译命令行入口…"
+mkdir -p resources/windows-amd64 resources/darwin-arm64
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 "$go_bin" build -trimpath -ldflags="-s -w" \
+    -o resources/windows-amd64/snapover-cli.exe ./cmd/snapover-cli
+GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 "$go_bin" build -trimpath -ldflags="-s -w" \
+    -o resources/darwin-arm64/snapover-cli ./cmd/snapover-cli
+
 echo "正在打包 Windows 11 x64…"
 # MyGo always invokes NSIS when found. Exclude Homebrew's crashing
 # makensis while retaining MyGo's executable icons, manifest and resources.
@@ -40,5 +47,7 @@ CGO_ENABLED=0 "$go_bin" tool mygo build -platform darwin/arm64 -o dist
 
 echo "打包完成："
 echo "  Windows 11 x64：$PWD/$windows_zip"
+echo "  Windows CLI：$PWD/dist/windows-amd64/snapover-cli.exe"
 echo "  Mac 应用：$PWD/dist/darwin-arm64/Snapover.app"
+echo "  Mac CLI：$PWD/dist/darwin-arm64/Snapover.app/Contents/Resources/snapover-cli"
 echo "  Mac 安装包：$PWD/dist/darwin-arm64/Snapover ${version} arm64.dmg"
