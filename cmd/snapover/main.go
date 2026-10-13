@@ -32,13 +32,13 @@ func main() {
 	listen := flag.String("listen", ":"+defaultPort, "监听地址")
 	peer := flag.String("peer", "", "对端地址，例如 192.168.1.20:47821。只写 IP 时端口用 47821")
 	data := flag.String("data", "", "数据目录。默认 macOS 用 ~/Library/Application Support/Snapover，Windows 用 %AppData%\\Snapover")
-	reset := flag.Bool("reset-peers", false, "清除已信任的对端，下次连接重新信任")
+	reset := flag.Bool("reset-peers", false, "解除全部配对，下次添加需双方确认")
 	check := flag.Bool("check", false, "打印当前剪贴板后退出，不建立连接")
 	debug := flag.Bool("debug", false, "输出调试日志")
 	sendFile := flag.String("send-file", "", "Windows：直接发送一个文件到已连接的设备")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Snapover 第一批：局域网同步文字和图片。\n\n")
-		fmt.Fprintf(os.Stderr, "两边都运行，并且至少一边带 -peer。建议两边都带，断线后才能互相重连。\n\n")
+		fmt.Fprintf(os.Stderr, "两边都运行，在「连接设备」中点击「添加设备」，核对校验码并确认。也可用 -peer 填写对端地址。\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()

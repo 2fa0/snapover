@@ -89,6 +89,7 @@ func (a *app) trayMenu() *mygo.Menu {
 		{Label: "快速历史", Click: func(*mygo.MenuItem, *mygo.Window) { a.togglePicker() }},
 		{Label: "发送文件…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openFiles() }},
 		{Label: "打开窗口", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(a.page) }},
+		{Label: "连接设备", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageDevices) }},
 		{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageSettings) }},
 		mygo.Separator(),
 		{

@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/discovery"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/identity"
 	"github.com/2fa0/snapover/internal/lan"
@@ -49,6 +50,13 @@ type app struct {
 	flash        string
 	confirm      bool
 	confirmClear bool
+
+	discovered       []discovery.Device
+	discoveryMessage string
+	targetPeerID     string
+	dialSeq          uint64
+	deviceDetails    string
+	confirmRemove    string
 
 	devices       []clipsync.Device
 	entries       []history.Entry
@@ -115,7 +123,7 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		paused:       cfg.Values.Paused,
 		textOnly:     cfg.Values.TextOnly,
 		maxImageText: strconv.Itoa(cfg.Values.MaxImageMB),
-		page:         pageSettings,
+		page:         pageDevices,
 		peer:         peer,
 		status:       "未连接",
 		histSel:      -1,
@@ -123,6 +131,12 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 
 		entries: hist.List(),
 		devices: devices,
+	}
+	for _, dev := range devices {
+		if dev.Peer.Addr == peer && peer != "" {
+			a.targetPeerID = dev.ID
+			break
+		}
 	}
 	a.histList.Key = func(i int) any {
 		shown := a.shown()
@@ -192,6 +206,9 @@ func (a *app) open(ctx context.Context) {
 		time.AfterFunc(80*time.Millisecond, func() { mygo.RunOnMain(a.rememberPasteTarget) })
 	})
 	a.registerPickerShortcut()
+	go discovery.Run(ctx, discovery.Device{ID: a.deviceID, Name: a.name, Platform: a.engine.Platform, Addr: portOf(a.listen)}, a.listen, func(snapshot discovery.Snapshot) {
+		a.win.Update(func() { a.applyDiscovery(snapshot) })
+	})
 	if a.peer != "" {
 		a.connect()
 	}
@@ -236,9 +253,24 @@ func (a *app) onNotice(n clipsync.Notice) {
 
 func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 	switch n.Kind {
+	case clipsync.NoticePairing:
+		if n.Message != "" {
+			a.status = n.Message
+		}
+		a.page = pageDevices
 	case clipsync.NoticeStatus, clipsync.NoticeError:
 		a.status = n.Message
 		a.devices = a.engine.Peers.List()
+		if link, up := a.engine.Link(); up && n.PeerID == link.ID && n.Kind == clipsync.NoticeStatus {
+			for _, dev := range a.devices {
+				if dev.ID == link.ID && a.targetPeerID != link.ID {
+					a.targetPeerID = link.ID
+					a.peer = dev.Peer.Addr
+					a.connect()
+					a.status = n.Message
+				}
+			}
+		}
 	case clipsync.NoticeLocal, clipsync.NoticeRemote:
 		if n.Message != "" {
 			a.flash = n.Message
@@ -280,7 +312,7 @@ func (a *app) view(c *ui.Context) {
 		ui.Column(c).Grow(1).FillHeight().Padding(20, 24).Gap(14).Children(func() {
 			switch a.page {
 			case pageDevices:
-				a.devicesPage(c)
+				ui.Scroll(c.Key("devices-scroll")).Grow(1).Gap(14).Children(func() { a.devicesPage(c) })
 			case pageHistory:
 				a.historyPage(c)
 			default:
@@ -293,7 +325,7 @@ func (a *app) view(c *ui.Context) {
 func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
 	ui.Text(c, "设置").FontSize(22).Bold()
-	ui.Text(c, "配对、同步和开机启动在这里。关掉窗口不会退出，从托盘可以再打开。").TextColor(t.TextMuted)
+	ui.Text(c, "同步和开机启动在这里。添加或管理电脑请打开「连接设备」。").TextColor(t.TextMuted)
 
 	section(c, "本机")
 	kv(c, "名称", a.name)
@@ -306,21 +338,6 @@ func (a *app) settingsPage(c *ui.Context) {
 		for _, addr := range a.addrs {
 			kv(c, "地址", addr)
 		}
-	}
-
-	section(c, "配对")
-	ui.Text(c, "填写另一台电脑的地址。只写 IP 时端口用 47821。配对成功后会记住设备，下次启动自动重连。首次连接请核对两边的证书指纹。").TextColor(t.TextMuted)
-	var connect bool
-	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		if ui.TextInput(c.Key("peer"), &a.peer).Placeholder("192.168.1.20").Grow(1).Submitted() {
-			connect = true
-		}
-		if ui.PrimaryButton(c, "连接").Clicked() {
-			connect = true
-		}
-	})
-	if connect {
-		a.connect()
 	}
 
 	section(c, "同步")
@@ -343,70 +360,9 @@ func (a *app) settingsPage(c *ui.Context) {
 
 	a.receiveSettings(c)
 	section(c, "诊断")
-	ui.Text(c, "连不上时，先确认对端已经启动，再让 Windows 防火墙放行入站 TCP 47821。虚拟网卡上的地址不会用来发现或连接。请把上面没有「不用于连接」的地址发给对端。").TextColor(t.TextMuted)
+	ui.Text(c, "连不上时，先确认对端已经启动。Windows 防火墙需要放行 TCP 47821，自动发现还需要 UDP 5353；macOS 需要允许 Snapover 访问本地网络。虚拟网卡不用于发现或连接。").TextColor(t.TextMuted)
 	if ui.Button(c, "测试连接").Clicked() {
 		a.probe()
-	}
-
-	section(c, "信任")
-	label := "清除全部信任"
-	if a.confirm {
-		label = "再点一次，确认清除"
-	}
-	if ui.Button(c, label).Clicked() {
-		if !a.confirm {
-			a.confirm = true
-			return
-		}
-		a.confirm = false
-		if err := a.engine.Peers.Reset(); err != nil {
-			a.status = "清除信任失败"
-			return
-		}
-		a.stopDial()
-		a.devices = nil
-		a.status = "已清除信任。下次连接会重新核对指纹"
-	}
-}
-
-func (a *app) devicesPage(c *ui.Context) {
-	t := c.Theme()
-	ui.Text(c, "连接设备").FontSize(22).Bold()
-	link, up := a.engine.Link()
-	if up {
-		ui.Textf(c, "当前在线：%s", displayName(link.Name, link.ID)).TextColor(t.TextMuted)
-	} else {
-		ui.Text(c, "当前没有在线设备。已信任的设备断线后仍留在这里。").TextColor(t.TextMuted)
-	}
-	if len(a.devices) == 0 {
-		ui.Text(c, "还没有配对过的设备。到「设置」里填对端地址。").Padding(8, 0)
-		return
-	}
-	var forgetID string
-	ui.List(c, nil, len(a.devices), func(i int) {
-		dev := a.devices[i]
-		online := up && dev.ID == link.ID
-		ui.Row(c).Padding(10, 0).Gap(12).AlignItems(ui.Center).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-			ui.Column(c).Grow(1).Gap(2).Children(func() {
-				title := displayName(dev.Peer.Name, dev.ID)
-				if online {
-					title += "  ·  在线"
-				}
-				ui.Text(c, title).SingleLine()
-				meta := platformLabel(dev.Peer.Platform)
-				if dev.Peer.Addr != "" {
-					meta += "  ·  " + dev.Peer.Addr
-				}
-				ui.Text(c, meta).FontSize(12).TextColor(t.TextMuted).SingleLine()
-				ui.Text(c, identity.FormatFingerprint(dev.Peer.Fingerprint)).FontSize(12).TextColor(t.TextMuted).Selectable().SingleLine()
-			})
-			if ui.Button(c.Key(dev.ID), "移除").Clicked() {
-				forgetID = dev.ID
-			}
-		})
-	}).Grow(1)
-	if forgetID != "" {
-		a.forget(forgetID)
 	}
 }
 
@@ -490,8 +446,33 @@ func (a *app) connect() {
 	ctx, cancel := context.WithCancel(parent)
 	a.dialCancel = cancel
 	a.dialAddr = addr
+	if a.targetPeerID == "" {
+		for _, dev := range a.devices {
+			if dev.Peer.Addr == addr {
+				a.targetPeerID = dev.ID
+				break
+			}
+		}
+	}
+	if link, up := a.engine.Link(); up && link.ID != a.targetPeerID {
+		a.engine.Disconnect()
+	}
+	if !a.isPaired(a.targetPeerID) {
+		a.engine.SetPairing(true)
+	}
 	a.status = "正在连接 " + addr
-	go clipsync.Dial(ctx, addr, a.engine)
+	seq := a.dialSeq
+	peerID := a.targetPeerID
+	go func() {
+		clipsync.DialPeer(ctx, addr, peerID, a.engine)
+		if a.win != nil && ctx.Err() == nil {
+			a.win.Update(func() {
+				if a.dialSeq == seq {
+					a.dialCancel = nil
+				}
+			})
+		}
+	}()
 }
 
 func (a *app) forget(id string) {
@@ -502,18 +483,24 @@ func (a *app) forget(id string) {
 			break
 		}
 	}
-	if err := a.engine.Peers.Forget(id); err != nil {
-		a.status = "移除设备失败"
+	if err := a.engine.Revoke(id); err != nil {
+		a.status = "解除配对失败，请重试"
 		return
 	}
-	if addr != "" && addr == a.dialAddr {
+	if a.targetPeerID == id || (addr != "" && addr == a.dialAddr) {
 		a.stopDial()
 	}
+	if a.targetPeerID == id {
+		a.targetPeerID = ""
+		a.peer = ""
+	}
+	a.confirmRemove = ""
 	a.devices = a.engine.Peers.List()
-	a.status = "已移除设备。若它还在线，断开后不会再自动信任"
+	a.status = "已解除配对并断开连接。再次添加需要双方确认"
 }
 
 func (a *app) stopDial() {
+	a.dialSeq++
 	if a.dialCancel != nil {
 		a.dialCancel()
 		a.dialCancel = nil
@@ -592,7 +579,7 @@ func (a *app) probe() {
 	a.status = "正在测试 " + addr
 	go func() {
 		conn, bind, err := lan.DialTimeout(addr, 3*time.Second)
-		msg := "端口通了。若仍不同步，核对两边指纹，并确认防火墙放行了入站 TCP " + defaultPort
+		msg := "端口通了。若仍不同步，确认双方已完成配对，并检查防火墙是否放行了入站 TCP " + defaultPort
 		if bind != nil {
 			msg = "已从 " + bind.String() + " 拨出，不走虚拟网卡。" + msg
 		}

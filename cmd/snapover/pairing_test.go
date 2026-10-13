@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/2fa0/snapover/internal/discovery"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/identity"
 	clipsync "github.com/2fa0/snapover/internal/sync"
@@ -56,5 +57,46 @@ func TestRestorePairedDeviceAfterRestart(t *testing.T) {
 	a = newApp(engine, hist, nil, &identity.Identity{}, ":47821", nil, "")
 	if a.peer != "" || len(a.devices) != 0 {
 		t.Fatal("removed device returned after restart")
+	}
+}
+
+func TestDiscoveryRetargetsOnlySelectedTrustedDevice(t *testing.T) {
+	peers, err := clipsync.OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = peers.Allow("selected", "aabb", "Selected", "macos", "192.168.1.20:47821")
+	_, _ = peers.Allow("other", "ccdd", "Other", "windows", "192.168.1.30:47821")
+	hist, err := history.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := &clipsync.Engine{Peers: peers}
+	a := newApp(engine, hist, nil, &identity.Identity{}, ":47821", nil, "192.168.1.20:47821")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	a.root = ctx
+	a.connect()
+	defer a.stopDial()
+	a.applyDiscovery(discovery.Snapshot{Devices: []discovery.Device{
+		{ID: "untrusted", Addr: "192.168.1.40:47821"},
+		{ID: "other", Addr: "192.168.1.50:47821"},
+	}})
+	if a.peer != "192.168.1.20:47821" || a.targetPeerID != "selected" {
+		t.Fatal("unselected advertisement changed reconnect target")
+	}
+	a.applyDiscovery(discovery.Snapshot{Devices: []discovery.Device{{ID: "selected", Addr: "192.168.1.60:47821"}}})
+	if a.dialAddr != "192.168.1.60:47821" || a.targetPeerID != "selected" {
+		t.Fatal("selected device's new address was not used")
+	}
+	for _, dev := range peers.List() {
+		if dev.ID == "selected" && dev.Peer.Addr != "192.168.1.20:47821" {
+			t.Fatal("unauthenticated discovery advertisement persisted an address")
+		}
+	}
+	a.forget("selected")
+	a.applyDiscovery(discovery.Snapshot{Devices: []discovery.Device{{ID: "selected", Addr: "192.168.1.70:47821"}}})
+	if a.dialCancel != nil || a.targetPeerID != "" || a.peer != "" {
+		t.Fatal("discovery restarted a revoked device")
 	}
 }
