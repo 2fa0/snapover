@@ -63,6 +63,29 @@ func TestPreviewHoverRequiresContinuousDwell(t *testing.T) {
 	}
 }
 
+func TestPreviewSchedulesOnlyDwellAndDismissalDeadlines(t *testing.T) {
+	var h previewHover
+	now := time.Unix(100, 0)
+	if h.nextWake(now, false) != 0 {
+		t.Fatal("idle picker should not wake periodically")
+	}
+	h.update("image", false, now)
+	if got := h.nextWake(now.Add(100*time.Millisecond), false); got != 200*time.Millisecond {
+		t.Fatalf("dwell wake = %v", got)
+	}
+	if h.nextWake(now.Add(time.Second), true) != 0 {
+		t.Fatal("open preview should wait for pointer events")
+	}
+	h.update("", false, now.Add(time.Second))
+	if got := h.nextWake(now.Add(1050*time.Millisecond), true); got != 130*time.Millisecond {
+		t.Fatalf("dismissal wake = %v", got)
+	}
+	h.update("", true, now.Add(1100*time.Millisecond))
+	if h.nextWake(now.Add(1200*time.Millisecond), true) != 0 {
+		t.Fatal("entering preview should cancel the dismissal deadline")
+	}
+}
+
 func TestPreviewImageSize(t *testing.T) {
 	for _, tc := range []struct{ w, h, wantW, wantH int }{
 		{2000, 1000, 456, 228},

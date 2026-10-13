@@ -213,10 +213,7 @@ func (a *app) open(ctx context.Context) {
 	a.initSendTo()
 	a.startTray()
 	a.rememberPasteTarget()
-	go a.watchPasteTarget(ctx)
-	mygo.App.OnDidResignActive(func() {
-		time.AfterFunc(80*time.Millisecond, func() { mygo.RunOnMain(a.rememberPasteTarget) })
-	})
+	a.startPasteTargetWatch(ctx)
 	a.registerPickerShortcut()
 	a.discoveryWake = make(chan struct{}, 1)
 	a.discoveryScope.Store(a.selection().Scope())

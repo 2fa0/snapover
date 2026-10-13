@@ -132,7 +132,22 @@ func (a *app) rememberPasteTarget() {
 	}
 }
 
-func (a *app) watchPasteTarget(ctx context.Context) {
+func (a *app) startPasteTargetWatch(ctx context.Context) {
+	stop, err := paste.WatchForeground(a.rememberPasteTarget)
+	if err == nil {
+		go func() {
+			<-ctx.Done()
+			mygo.RunOnMain(stop)
+		}()
+		return
+	}
+	if a.engine.Log != nil {
+		a.engine.Log.Warn("前台窗口事件不可用，使用轮询兜底", "err", err)
+	}
+	go a.pollPasteTarget(ctx)
+}
+
+func (a *app) pollPasteTarget(ctx context.Context) {
 	tick := time.NewTicker(300 * time.Millisecond)
 	defer tick.Stop()
 	for {

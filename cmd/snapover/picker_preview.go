@@ -44,6 +44,7 @@ func (h *previewHover) update(id string, inside bool, now time.Time) bool {
 
 type pickerPreview struct {
 	hover  previewHover
+	inside bool
 	anchor mygo.Rectangle
 	win    *mygo.Window
 	id     string
@@ -64,16 +65,10 @@ func (a *app) updatePickPreview(c *ui.Context, id string, row ui.Rect) {
 		return
 	}
 	s := &a.pickPreview
-	inside := false
-	if s.win != nil {
-		point, bounds := mygo.Screen.CursorScreenPoint(), s.win.Bounds()
-		inside = point.X >= bounds.X && point.X < bounds.X+bounds.Width &&
-			point.Y >= bounds.Y && point.Y < bounds.Y+bounds.Height
-		if inside {
-			id = ""
-		}
+	if s.inside {
+		id = ""
 	}
-	ready := s.hover.update(id, inside, c.Now())
+	ready := s.hover.update(id, s.inside, c.Now())
 	if s.hover.id == "" {
 		a.closePickPreview()
 		return
@@ -86,6 +81,7 @@ func (a *app) updatePickPreview(c *ui.Context, id string, row ui.Rect) {
 		if s.win != nil {
 			s.win.Close()
 			s.win = nil
+			s.inside = false
 		}
 		s.id, s.request = s.hover.id, nil
 	} else if s.win != nil && id != "" {
@@ -94,8 +90,22 @@ func (a *app) updatePickPreview(c *ui.Context, id string, row ui.Rect) {
 	if ready && s.win == nil && s.request == nil {
 		a.loadPickPreview(s.id)
 	}
-	// Keep tracking while the pointer is in another native window.
-	c.After(50 * time.Millisecond)
+	if delay := s.hover.nextWake(c.Now(), s.win != nil); delay > 0 {
+		c.After(delay)
+	}
+}
+
+func (h previewHover) nextWake(now time.Time, previewOpen bool) time.Duration {
+	if h.id == "" {
+		return 0
+	}
+	if !h.left.IsZero() {
+		return max(0, pickPreviewLeaveDelay-now.Sub(h.left))
+	}
+	if !previewOpen {
+		return max(0, pickPreviewDelay-now.Sub(h.since))
+	}
+	return 0
 }
 
 func previewImageSize(width, height int) (int, int) {
@@ -127,6 +137,9 @@ func (a *app) loadPickPreview(id string) {
 		bmp, err := previewBitmap(a.hist, id)
 		mygo.RunOnMain(func() {
 			a.pickLoading = false
+			if a.picker != nil {
+				a.picker.Invalidate()
+			}
 			s := &a.pickPreview
 			if a.picker != parent || s.request != request || s.hover.id != id {
 				return
@@ -139,13 +152,19 @@ func (a *app) loadPickPreview(id string) {
 			if err != nil {
 				w, h = 240, 60
 			}
-			p := mygo.NewFlyout(mygo.FlyoutOptions{
+			var p *mygo.Window
+			p = mygo.NewFlyout(mygo.FlyoutOptions{
 				Parent: parent, Anchor: s.anchor, Placement: mygo.PlacementRightStart,
 				Gap: 8, Width: max(220, w+24), Height: h + 64,
 				Hidden: true, Shadow: true,
 				Content: ui.View(func(c *ui.Context) {
 					t := c.Theme()
-					ui.Column(c).Fill().Padding(12).Gap(8).Background(t.Surface).Children(func() {
+					box := ui.Column(c).Fill().Padding(12).Gap(8).Background(t.Surface)
+					if inside := box.Hovered(); a.pickPreview.win == p && inside != a.pickPreview.inside {
+						a.pickPreview.inside = inside
+						parent.Invalidate()
+					}
+					box.Children(func() {
 						if bmp == nil {
 							ui.Text(c, "图片预览加载失败，请重新悬停重试").TextColor(t.TextMuted)
 						} else {
@@ -172,6 +191,8 @@ func (a *app) loadPickPreview(id string) {
 			p.OnClosed(func() {
 				if a.pickPreview.win == p {
 					a.pickPreview.win = nil
+					a.pickPreview.inside = false
+					parent.Invalidate()
 				}
 			})
 			p.ShowInactive()
@@ -208,6 +229,9 @@ func (a *app) loadPickImage(id string, parent *mygo.Window) {
 		}
 		mygo.RunOnMain(func() {
 			a.pickLoading = false
+			if a.picker != nil {
+				a.picker.Invalidate()
+			}
 			if a.picker != parent {
 				if bmp != nil {
 					w, h := bmp.Size()
