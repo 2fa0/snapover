@@ -230,7 +230,7 @@ func (a *app) shellResult(err error) {
 }
 
 func (a *app) receiveSettings(c *ui.Context) {
-	section(c, "接收文件")
+	ui.Text(c, "接收到的文件保存到").FontSize(12).TextColor(c.Theme().TextMuted)
 	ui.Text(c, a.engine.ReceiveDir()).Selectable().TextColor(c.Theme().TextMuted).MaxLines(2)
 	ui.Row(c).Gap(8).Children(func() {
 		if ui.Button(c, "更改接收文件夹…").Clicked() {

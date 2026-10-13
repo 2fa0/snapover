@@ -190,7 +190,7 @@ func (a *app) pickerView(c *ui.Context) {
 	}
 	t := c.Theme()
 	c.Root().Background(ui.Transparent)
-	box := ui.Column(c).Fill().Padding(12).Gap(8)
+	box := ui.Column(c).Fill().Padding(14).Gap(10)
 	switch {
 	case c.Vibrancy():
 	case runtime.GOOS == "windows":
@@ -199,8 +199,12 @@ func (a *app) pickerView(c *ui.Context) {
 		box.Background(t.Surface).Radius(10).Border(1, t.Border)
 	}
 	box.Children(func() {
-		ui.Text(c, "复制历史").FontSize(15).Bold()
-		field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).AutoFocus().Placeholder("搜索，回车粘贴")
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, historyIcon).FontSize(18).TextColor(t.TextMuted)
+			ui.Text(c, "复制历史").FontSize(15).Bold().Grow(1)
+			ui.Text(c, "↑↓ 选择 · ↵ 粘贴").FontSize(11).TextColor(t.TextMuted)
+		})
+		field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).Label("搜索快速历史").AutoFocus().Placeholder("搜索内容或来源")
 		if field.Shortcut(0, ui.KeyDown) {
 			a.movePick(1)
 		}
@@ -233,7 +237,7 @@ func (a *app) pickerView(c *ui.Context) {
 			list := ui.List(c, &a.pickList, len(shown), func(i int) {
 				entry := shown[i]
 				sel := i == a.pickSel
-				row := ui.Row(c).Padding(6, 4).Gap(8).AlignItems(ui.Center)
+				row := ui.Row(c).Padding(9, 6).Gap(10).AlignItems(ui.Center)
 				if row.Hovered() && entry.Kind == string(clip.KindImage) {
 					hoverID, hoverBounds = entry.ID, row.Bounds()
 				}
@@ -246,12 +250,13 @@ func (a *app) pickerView(c *ui.Context) {
 				row.Children(func() {
 					a.pickerThumb(c, entry, t, sel)
 					ui.Column(c).Grow(1).Gap(2).Children(func() {
-						title := entryTitle(entry)
-						if entry.Pinned {
-							title = "置顶  ·  " + title
-						}
-						ui.Text(c, title).SingleLine()
-						ui.Text(c, entryMeta(entry)).FontSize(12).TextColor(rowMetaColor(t, sel)).SingleLine()
+						ui.Text(c, entryTitle(entry)).SingleLine()
+						ui.Row(c).Gap(5).Children(func() {
+							if entry.Pinned {
+								ui.Icon(c, pinIcon).FontSize(11).TextColor(rowMetaColor(t, sel))
+							}
+							ui.Text(c, historySource(entry)+" · "+relTime(entry.At)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
+						})
 					})
 				})
 			}).Grow(1)
@@ -286,14 +291,7 @@ func (a *app) movePick(delta int) {
 }
 
 func (a *app) pickerThumb(c *ui.Context, entry history.Entry, t *ui.Theme, selected bool) {
-	if entry.Kind != string(clip.KindImage) {
-		return
-	}
-	if bmp := a.thumb(entry.ID); bmp != nil {
-		ui.Image(c, bmp).Size(28, 28).Fit(ui.Cover).Radius(4)
-		return
-	}
-	ui.Box(c).Size(28, 28).Radius(4).Background(rowThumbPlaceholder(t, selected))
+	a.historyThumb(c, entry, t, selected, 30)
 }
 
 func (a *app) pastePicked() {

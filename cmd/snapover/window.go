@@ -44,13 +44,20 @@ type app struct {
 	textOnly     bool
 	maxImageText string
 
-	page         string
-	peer         string
-	query        string
-	status       string
-	flash        string
-	confirm      bool
-	confirmClear bool
+	page            string
+	peer            string
+	query           string
+	status          string
+	flash           string
+	confirm         bool
+	confirmClear    bool
+	showIdentity    bool
+	showDiagnostics bool
+	showNetwork     bool
+	historyKind     int
+	shownEntries    []history.Entry
+	shownSource     []history.Entry
+	shownKind       int
 
 	discovered       []discovery.Device
 	discoveryMessage string
@@ -187,8 +194,8 @@ func (a *app) open(ctx context.Context) {
 	a.root = ctx
 	a.win = mygo.NewWindow(mygo.WindowOptions{
 		Title:     "Snapover",
-		Width:     880,
-		Height:    560,
+		Width:     960,
+		Height:    640,
 		MinWidth:  720,
 		MinHeight: 440,
 		Hidden:    mygo.App.WasOpenedAtLogin() || a.pendingFileRequest != nil,
@@ -316,83 +323,143 @@ func (a *app) view(c *ui.Context) {
 	a.drainThumbnails()
 	t := c.Theme()
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(t.Background).Children(func() {
-		ui.Column(c).Width(168).FillHeight().Background(t.Surface).Children(func() {
-			ui.Text(c, "Snapover").Bold().Padding(16, 14, 8, 14)
+		ui.Column(c).Width(184).FillHeight().Padding(12, 8).Gap(12).Background(t.Surface).Children(func() {
+			ui.Column(c).Padding(10, 12, 16, 12).Gap(4).Children(func() {
+				ui.Text(c, "Snapover").FontSize(18).Bold()
+				ui.Text(c, a.name).FontSize(11).TextColor(t.TextMuted).SingleLine()
+			})
 			if ui.Sidebar(c, &a.page, func() {
-				ui.SidebarItem(c, pageSettings, nil, "设置")
-				ui.SidebarItem(c, pageDevices, nil, "连接设备")
-				ui.SidebarItem(c, pageHistory, nil, "复制历史")
+				ui.SidebarItem(c, pageSettings, settingsIcon, "设置")
+				ui.SidebarItem(c, pageDevices, deviceIcon, "连接设备")
+				ui.SidebarItem(c, pageHistory, historyIcon, "复制历史")
 			}).Grow(1).Changed() {
 				a.confirm = false
 			}
-			ui.Text(c, a.status).FontSize(12).TextColor(t.TextMuted).Padding(8, 14, 14, 14).MaxLines(3)
-			if ui.Button(c, "发送文件…").Margin(0, 14, 14, 14).Clicked() {
+			ui.Column(c).Padding(12).Gap(8).Children(func() {
+				label := "未连接设备"
+				if link, up := a.engine.Link(); up {
+					label = "已连接 · " + displayName(link.Name, link.ID)
+				}
+				if a.paused {
+					label = "同步已暂停"
+				}
+				ui.Text(c, label).FontSize(12).Bold().SingleLine()
+				ui.Text(c, a.status).FontSize(11).TextColor(t.TextMuted).MaxLines(3)
+			})
+			if ui.Button(c, "").Label("发送文件").Children(func() {
+				ui.Icon(c, sendIcon)
+				ui.Text(c, "发送文件…")
+			}).Margin(0, 6, 4, 6).Clicked() {
 				a.openFiles()
 			}
 		})
-		ui.Column(c).Grow(1).FillHeight().Padding(20, 24).Gap(14).Children(func() {
-			switch a.page {
-			case pageDevices:
-				ui.Scroll(c.Key("devices-scroll")).Grow(1).Gap(14).Children(func() { a.devicesPage(c) })
-			case pageHistory:
-				a.historyPage(c)
-			default:
-				ui.Scroll(c.Key("settings-scroll")).Grow(1).Gap(14).Children(func() { a.settingsPage(c) })
-			}
+		ui.Column(c.Key("page-host")).Grow(1).FillHeight().Children(func() {
+			ui.Column(c.Key(a.page)).Fill().Padding(28).Gap(20).Transition(pageMotion).Children(func() {
+				switch a.page {
+				case pageDevices:
+					ui.Scroll(c.Key("devices-scroll")).Grow(1).Gap(20).Children(func() { a.devicesPage(c) })
+				case pageHistory:
+					a.historyPage(c)
+				default:
+					ui.Scroll(c.Key("settings-scroll")).Grow(1).Gap(20).Children(func() { a.settingsPage(c) })
+				}
+			})
 		})
 	})
 }
 
 func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
-	ui.Text(c, "设置").FontSize(22).Bold()
-	ui.Text(c, "同步和开机启动在这里。添加或管理电脑请打开「连接设备」。").TextColor(t.TextMuted)
-
-	section(c, "本机")
-	kv(c, "名称", a.name)
-	kv(c, "设备", a.deviceID)
-	ui.Text(c, "指纹").FontSize(12).TextColor(t.TextMuted)
-	ui.Text(c, a.fingerprint).Selectable().FontFeatures("tnum")
-	if len(a.addrs) == 0 {
-		kv(c, "地址", "没有可用的局域网 IPv4")
-	} else {
-		for _, addr := range a.addrs {
-			kv(c, "地址", addr)
-		}
-	}
-
-	section(c, "同步")
-	if ui.Checkbox(c, &a.openAtLogin, "开机启动").Changed() {
-		a.setOpenAtLogin(a.openAtLogin)
-	}
-	if ui.Checkbox(c, &a.paused, "暂停同步").Changed() {
-		a.saveSettings()
-	}
-	if ui.Checkbox(c, &a.textOnly, "只同步文本").Changed() {
-		a.saveSettings()
-	}
-	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "图片上限").TextColor(t.TextMuted)
-		if ui.TextInput(c.Key("maxmb"), &a.maxImageText).Width(56).Changed() {
+	pageHeading(c, "设置", "调整剪贴板同步、启动方式和文件接收位置。")
+	settingsGroup(c, "剪贴板同步", func() {
+		if settingSwitch(c, &a.paused, "暂停同步", "暂停收发剪贴板，仍会保存本机复制历史。") {
 			a.saveSettings()
 		}
-		ui.Text(c, "MB，最大 20。超过上限的图片只留在本机历史里。").TextColor(t.TextMuted)
+		ui.Divider(c)
+		if settingSwitch(c, &a.textOnly, "只同步文本", "开启后，图片只保留在本机。") {
+			a.saveSettings()
+		}
+		ui.Divider(c)
+		ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
+			ui.Column(c).Grow(1).Gap(4).Children(func() {
+				ui.Text(c, "图片大小上限").Bold()
+				ui.Text(c, "最多 20 MB，超过上限只保留在本机历史。").FontSize(12).TextColor(t.TextMuted)
+			})
+			if ui.TextInput(c.Key("maxmb"), &a.maxImageText).Label("图片大小上限，MB").Width(56).Submitted() {
+				a.saveSettings()
+			}
+			ui.Text(c, "MB").TextColor(t.TextMuted)
+			if ui.Button(c, "应用").Clicked() {
+				a.saveSettings()
+			}
+		})
 	})
-
-	a.receiveSettings(c)
-	section(c, "诊断")
-	ui.Text(c, "连不上时，先确认对端已经启动。Windows 防火墙需要放行 TCP 47821，自动发现还需要 UDP 5353；macOS 需要允许 Snapover 访问本地网络。虚拟网卡不用于发现或连接。").TextColor(t.TextMuted)
-	if ui.Button(c, "测试连接").Clicked() {
-		a.probe()
-	}
+	settingsGroup(c, "启动", func() {
+		if settingSwitch(c, &a.openAtLogin, "开机启动", "登录电脑后在后台启动 Snapover。") {
+			a.setOpenAtLogin(a.openAtLogin)
+		}
+	})
+	settingsGroup(c, "接收文件", func() { a.receiveSettings(c) })
+	settingsGroup(c, "本机与诊断", func() {
+		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, deviceIcon).FontSize(24).TextColor(t.TextMuted)
+			ui.Column(c).Gap(4).Grow(1).Children(func() {
+				ui.Text(c, a.name).Bold()
+				ui.Text(c, "设备身份与局域网连接信息").FontSize(12).TextColor(t.TextMuted)
+			})
+		})
+		ui.Collapsible(c, "设备信息", &a.showIdentity, func() {
+			ui.Column(c).Padding(12, 0).Gap(10).Children(func() {
+				kv(c, "设备 ID", a.deviceID)
+				ui.Text(c, "证书指纹").FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, a.fingerprint).Selectable().FontSize(12).FontFeatures("tnum")
+				if len(a.addrs) == 0 {
+					kv(c, "地址", "没有可用的局域网 IPv4")
+				}
+				for _, addr := range a.addrs {
+					kv(c, "地址", addr)
+				}
+			})
+		})
+		ui.Collapsible(c, "连接诊断", &a.showDiagnostics, func() {
+			ui.Column(c).Padding(12, 0).Gap(12).Children(func() {
+				ui.Text(c, "确认对端已启动，并允许本地网络访问。Windows 防火墙需放行 TCP 47821 和 UDP 5353；虚拟网卡不用于连接。").FontSize(12).TextColor(t.TextMuted)
+				if ui.Button(c, "测试连接").Clicked() {
+					a.probe()
+				}
+			})
+		})
+	})
 }
 
 func (a *app) historyPage(c *ui.Context) {
 	a.pollHistoryPaste(c)
 	t := c.Theme()
-	ui.Text(c, "复制历史").FontSize(22).Bold()
-	ui.Text(c, pickerHint()+". 双击一条写回剪贴板。未置顶的记录保留 1000 条或 30 天。").TextColor(t.TextMuted)
-	ui.TextInput(c.Key("query"), &a.query).Placeholder("搜索文字")
+	pageHeading(c, "复制历史", "双击记录写回剪贴板，置顶保留常用内容。")
+	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+		if ui.TextInput(c.Key("query"), &a.query).Label("搜索复制历史").Placeholder("搜索内容或来源").Grow(1).Changed() {
+			a.histSel = -1
+			a.histList.ScrollTo(0, ui.Start)
+		}
+		label := "清空未置顶"
+		if a.confirmClear {
+			label = "确认清空"
+		}
+		if ui.Button(c, label).Disabled(len(a.entries) == 0).Clicked() {
+			a.clearHistory()
+		}
+		if a.confirmClear && ui.Button(c, "取消").Clicked() {
+			a.confirmClear = false
+		}
+	})
+	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+		if ui.Segmented(c, &a.historyKind, "全部", "文本", "图片", "置顶").Label("历史类型").Changed() {
+			a.histSel = -1
+			a.histList.ScrollTo(0, ui.Start)
+		}
+		ui.Spacer(c)
+		ui.Textf(c, "%d 条记录", len(a.shown())).FontSize(12).TextColor(t.TextMuted)
+	})
 	shown := a.shown()
 	if a.histSel >= len(shown) {
 		a.histSel = -1
@@ -400,58 +467,63 @@ func (a *app) historyPage(c *ui.Context) {
 	if a.historySearch.pending != nil {
 		c.After(50 * time.Millisecond)
 	}
-	ui.Row(c).Gap(8).Children(func() {
+	ui.Column(c).Grow(1).Radius(10).Border(1, t.Border).Clip().Children(func() {
+		switch {
+		case len(a.entries) == 0:
+			emptyState(c, historyIcon, "复制的内容会出现在这里", "复制一段文字或图片，也可以接收其他设备同步的内容。")
+		case len(shown) == 0:
+			message := "试试其他关键词，或切换到「全部」。"
+			if a.query != "" {
+				message = a.historySearch.emptyMessage()
+			}
+			emptyState(c, searchIcon, "没有匹配的记录", message)
+		default:
+			if ui.List(c, &a.histList, len(shown), func(i int) {
+				entry := shown[i]
+				sel := i == a.histSel
+				ui.Row(c).Padding(12, 10).Gap(12).AlignItems(ui.Center).Children(func() {
+					a.historyThumb(c, entry, t, sel, 40)
+					ui.Column(c).Grow(1).Gap(5).Children(func() {
+						ui.Text(c, entryTitle(entry)).SingleLine()
+						ui.Row(c).Gap(6).Children(func() {
+							if entry.Pinned {
+								ui.Icon(c, pinIcon).FontSize(12).TextColor(rowMetaColor(t, sel))
+							}
+							ui.Text(c, historySource(entry)).FontSize(12).TextColor(rowMetaColor(t, sel)).SingleLine()
+						})
+					})
+					ui.Column(c).Gap(5).AlignItems(ui.End).Children(func() {
+						ui.Text(c, relTime(entry.At)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
+						ui.Text(c, formatSize(entry.Size)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
+					})
+				})
+			}).Grow(1).Submitted() {
+				a.pasteHistory()
+			}
+		}
+	})
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		if ui.PrimaryButton(c, "写回剪贴板").Disabled(a.histSel < 0 || a.historyPaste != nil).Clicked() {
 			a.pasteHistory()
 		}
-		if ui.Button(c, "置顶").Disabled(a.histSel < 0).Clicked() {
-			a.pinSelected()
-		}
-		if ui.Button(c, "删除").Disabled(a.histSel < 0).Clicked() {
-			a.deleteSelected()
-		}
-		label := "清空"
-		if a.confirmClear {
-			label = "再点一次，清空未置顶"
-		}
-		if ui.Button(c, label).Clicked() {
-			a.clearHistory()
+		ui.Toolbar(c, func() {
+			label := "置顶"
+			if entry, ok := a.selected(); ok && entry.Pinned {
+				label = "取消置顶"
+			}
+			if ui.Button(c, label).Disabled(a.histSel < 0).Clicked() {
+				a.pinSelected()
+			}
+			if ui.Button(c, "删除").Disabled(a.histSel < 0).Clicked() {
+				a.deleteSelected()
+			}
+		}).Label("记录操作")
+		ui.Spacer(c)
+		if a.flash != "" {
+			ui.Text(c, a.flash).FontSize(12).TextColor(t.TextMuted).SingleLine()
 		}
 	})
-	if a.flash != "" {
-		ui.Text(c, a.flash).FontSize(12).TextColor(t.TextMuted)
-	}
-	if len(a.entries) == 0 {
-		ui.Text(c, "还没有记录。在这台电脑上复制一段文字，或等对端同步过来。").Padding(8, 0)
-		return
-	}
-	if len(shown) == 0 {
-		ui.Text(c, a.historySearch.emptyMessage()).TextColor(t.TextMuted)
-		return
-	}
-	if ui.List(c, &a.histList, len(shown), func(i int) {
-		entry := shown[i]
-		sel := i == a.histSel
-		ui.Row(c).Padding(8, 4).Gap(10).AlignItems(ui.Center).Children(func() {
-			if entry.Kind == string(clip.KindImage) {
-				if bmp := a.thumb(entry.ID); bmp != nil {
-					ui.Image(c, bmp).Size(40, 40).Fit(ui.Cover).Radius(4)
-				} else {
-					ui.Box(c).Size(40, 40).Radius(4).Background(rowThumbPlaceholder(t, sel))
-				}
-			}
-			ui.Column(c).Grow(1).Gap(2).Children(func() {
-				title := entryTitle(entry)
-				if entry.Pinned {
-					title = "置顶  ·  " + title
-				}
-				ui.Text(c, title).SingleLine()
-				ui.Text(c, entryMeta(entry)).FontSize(12).TextColor(rowMetaColor(t, sel)).SingleLine()
-			})
-		})
-	}).Grow(1).Submitted() {
-		a.pasteHistory()
-	}
+	ui.Text(c, pickerHint()).FontSize(11).TextColor(t.TextMuted).MaxLines(2)
 }
 
 func (a *app) connect() {
@@ -532,7 +604,24 @@ func (a *app) stopDial() {
 }
 
 func (a *app) shown() []history.Entry {
-	return a.historySearch.filter(a.root, a.hist, a.entries, a.query)
+	entries := a.historySearch.filter(a.root, a.hist, a.entries, a.query)
+	if a.historyKind == 0 {
+		return entries
+	}
+	if a.shownKind == a.historyKind && len(entries) == len(a.shownSource) &&
+		(len(entries) == 0 || &entries[0] == &a.shownSource[0]) {
+		return a.shownEntries
+	}
+	shown := make([]history.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if (a.historyKind == 1 && entry.Kind == string(clip.KindText)) ||
+			(a.historyKind == 2 && entry.Kind == string(clip.KindImage)) ||
+			(a.historyKind == 3 && entry.Pinned) {
+			shown = append(shown, entry)
+		}
+	}
+	a.shownSource, a.shownEntries, a.shownKind = entries, shown, a.historyKind
+	return shown
 }
 
 func (a *app) filtered(query string) []history.Entry {
@@ -543,6 +632,7 @@ func matchesEntry(entry history.Entry, q string) bool { return history.Matches(e
 
 func (a *app) refreshEntries() {
 	a.entries = a.hist.List()
+	a.shownSource, a.shownEntries = nil, nil
 	a.historySearch.reset()
 	a.pickerSearch.reset()
 	if a.thumbs == nil {
@@ -711,22 +801,6 @@ func rowThumbPlaceholder(t *ui.Theme, selected bool) ui.Color {
 		return t.AccentText.Alpha(0.25)
 	}
 	return t.Surface
-}
-
-func entryMeta(e history.Entry) string {
-	from := "本机"
-	if e.Dir == history.DirRemote {
-		from = "对端"
-	}
-	if e.Peer != "" {
-		from += " " + e.Peer
-	}
-	parts := []string{relTime(e.At), from}
-	if e.SourceApp != "" {
-		parts = append(parts, e.SourceApp)
-	}
-	parts = append(parts, formatSize(e.Size))
-	return strings.Join(parts, "  ·  ")
 }
 
 func relTime(at time.Time) string {
