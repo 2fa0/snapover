@@ -17,6 +17,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/control"
 	"github.com/2fa0/snapover/internal/crashlog"
 	"github.com/2fa0/snapover/internal/front"
 	"github.com/2fa0/snapover/internal/history"
@@ -183,6 +184,10 @@ func main() {
 			return
 		}
 		uiApp.open(ctx)
+		if _, err := control.Start(ctx, dataDir, uiApp.handleCLI); err != nil {
+			log.Error("CLI 服务启动失败", "err", err)
+			uiApp.onNotice(clipsync.Notice{Kind: clipsync.NoticeError, Message: "CLI 服务启动失败：" + err.Error()})
+		}
 		go func() {
 			if err := clipsync.Listen(ctx, *listen, engine); err != nil && ctx.Err() == nil {
 				log.Error("监听失败", "addr", *listen, "err", err)
@@ -250,25 +255,7 @@ func runCheck(log *slog.Logger, board clip.Board) {
 }
 
 func defaultDataDir() (string, error) {
-	if dir, ok := portableDataDir(); ok {
-		return dir, nil
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(home, "Library", "Application Support", "Snapover"), nil
-	case "windows":
-		base := os.Getenv("APPDATA")
-		if base == "" {
-			return "", fmt.Errorf("APPDATA 未设置")
-		}
-		return filepath.Join(base, "Snapover"), nil
-	default:
-		return "", fmt.Errorf("不支持 %s", runtime.GOOS)
-	}
+	return control.DefaultDataDir()
 }
 
 func normalizePeer(s string) (string, error) {
@@ -291,21 +278,6 @@ func portOf(listen string) string {
 		return defaultPort
 	}
 	return port
-}
-
-func portableDataDir() (string, bool) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", false
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
-	}
-	dir := filepath.Dir(exe)
-	if _, err := os.Stat(filepath.Join(dir, "portable.flag")); err != nil {
-		return "", false
-	}
-	return filepath.Join(dir, "data"), true
 }
 
 func newLogger(dataDir string, level slog.Level) *slog.Logger {
