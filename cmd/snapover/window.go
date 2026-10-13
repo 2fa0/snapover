@@ -67,8 +67,16 @@ type app struct {
 	histSel       int
 	histList      ui.ListState
 	thumbs        *simplelru.LRU[string, *ui.Bitmap]
+	thumbBytes    int
+	thumbPending  map[string]*thumbRequest
+	thumbQueue    []*thumbRequest
+	thumbActive   int
+	thumbResults  chan thumbResult
+	thumbUsedAt   time.Time
+	thumbTimer    *time.Timer
 	historySearch historySearch
 	pickerSearch  historySearch
+	historyPaste  *pasteRequest
 
 	win                *mygo.Window
 	tray               *mygo.Tray
@@ -308,6 +316,7 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 }
 
 func (a *app) view(c *ui.Context) {
+	a.drainThumbnails()
 	t := c.Theme()
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(t.Background).Children(func() {
 		ui.Column(c).Width(168).FillHeight().Background(t.Surface).Children(func() {
@@ -382,6 +391,7 @@ func (a *app) settingsPage(c *ui.Context) {
 }
 
 func (a *app) historyPage(c *ui.Context) {
+	a.pollHistoryPaste(c)
 	t := c.Theme()
 	ui.Text(c, "复制历史").FontSize(22).Bold()
 	ui.Text(c, pickerHint()+". 双击一条写回剪贴板。未置顶的记录保留 1000 条或 30 天。").TextColor(t.TextMuted)
@@ -394,7 +404,7 @@ func (a *app) historyPage(c *ui.Context) {
 		c.After(50 * time.Millisecond)
 	}
 	ui.Row(c).Gap(8).Children(func() {
-		if ui.PrimaryButton(c, "写回剪贴板").Disabled(a.histSel < 0).Clicked() {
+		if ui.PrimaryButton(c, "写回剪贴板").Disabled(a.histSel < 0 || a.historyPaste != nil).Clicked() {
 			a.pasteHistory()
 		}
 		if ui.Button(c, "置顶").Disabled(a.histSel < 0).Clicked() {
@@ -550,6 +560,11 @@ func (a *app) refreshEntries() {
 			a.thumbs.Remove(id)
 		}
 	}
+	for id := range a.thumbPending {
+		if !live[id] {
+			delete(a.thumbPending, id)
+		}
+	}
 }
 
 func (a *app) selected() (history.Entry, bool) {
@@ -666,39 +681,7 @@ func (a *app) pasteHistory() {
 	if !ok {
 		return
 	}
-	item, err := a.hist.Item(entry.ID)
-	if err != nil {
-		a.flash = "读历史失败"
-		return
-	}
-	if err := a.board.Write(item); err != nil {
-		a.flash = "写回剪贴板失败"
-		return
-	}
-	a.flash = "已写回剪贴板"
-}
-
-const maxThumbCache = 128
-
-func (a *app) thumb(id string) *ui.Bitmap {
-	if a.thumbs == nil {
-		a.thumbs, _ = simplelru.NewLRU[string, *ui.Bitmap](maxThumbCache, nil)
-	}
-	if bmp, ok := a.thumbs.Get(id); ok {
-		return bmp
-	}
-	raw, err := a.hist.Thumb(id)
-	if err != nil || len(raw) == 0 {
-		a.thumbs.Add(id, nil)
-		return nil
-	}
-	bmp, err := ui.DecodeBitmap(raw)
-	if err != nil {
-		a.thumbs.Add(id, nil)
-		return nil
-	}
-	a.thumbs.Add(id, bmp)
-	return bmp
+	a.startHistoryPaste(entry.ID, nil)
 }
 
 func section(c *ui.Context, title string) {

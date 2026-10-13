@@ -163,6 +163,15 @@ func (s *Store) Thumb(id string) ([]byte, error) {
 
 // Item rebuilds a clipboard item so the history page can write it back.
 func (s *Store) Item(id string) (clip.Item, error) {
+	return s.readItem(id, false)
+}
+
+// PasteItem skips hashes and thumbnails that only synchronization needs.
+func (s *Store) PasteItem(id string) (clip.Item, error) {
+	return s.readItem(id, true)
+}
+
+func (s *Store) readItem(id string, forPaste bool) (clip.Item, error) {
 	s.mu.Lock()
 	entry, ok := s.findLocked(id)
 	s.mu.Unlock()
@@ -191,6 +200,9 @@ func (s *Store) Item(id string) (clip.Item, error) {
 	data, err := os.ReadFile(filepath.Join(s.dir, "blobs", entry.ImageFile))
 	if err != nil {
 		return clip.Item{}, err
+	}
+	if forPaste {
+		return clip.PNGForPaste(data)
 	}
 	return clip.FromPNG(data)
 }

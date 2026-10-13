@@ -93,6 +93,17 @@ func FromPNG(data []byte) (Item, error) {
 	return item, nil
 }
 
+// PNGForPaste validates a saved image without building synchronization metadata.
+func PNGForPaste(data []byte) (Item, error) {
+	img, err := DecodePNG(data)
+	if err != nil {
+		return Item{}, err
+	}
+	b := img.Bounds()
+	ReclaimImageMemory(b.Dx(), b.Dy())
+	return Item{Kind: KindImage, PNG: data, Width: b.Dx(), Height: b.Dy(), Size: len(data)}, nil
+}
+
 // DecodePNG checks the clipboard image limits without computing a content hash.
 func DecodePNG(data []byte) (image.Image, error) {
 	if len(data) == 0 {

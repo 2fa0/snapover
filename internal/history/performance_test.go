@@ -113,6 +113,41 @@ func BenchmarkAddLargeImage(b *testing.B) {
 	}
 }
 
+func BenchmarkPrepareImagePaste(b *testing.B) {
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, image.NewNRGBA(image.Rect(0, 0, 2000, 2000))); err != nil {
+		b.Fatal(err)
+	}
+	item, err := clip.FromPNG(raw.Bytes())
+	if err != nil {
+		b.Fatal(err)
+	}
+	s, err := Open(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+	entry, err := s.Add(DirLocal, "", item)
+	if err != nil {
+		b.Fatal(err)
+	}
+	for _, name := range []string{"sync-item", "paste-item"} {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				var err error
+				if name == "sync-item" {
+					_, err = s.Item(entry.ID)
+				} else {
+					_, err = s.PasteItem(entry.ID)
+				}
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkPinPopulatedHistory(b *testing.B) {
 	s, err := Open(b.TempDir())
 	if err != nil {

@@ -156,3 +156,29 @@ func mustPNG(t *testing.T) clip.Item {
 	}
 	return item
 }
+
+func TestPasteItemPreservesImageAndRejectsCorruptBody(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := mustPNG(t)
+	entry, err := s.Add(DirLocal, "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.PasteItem(entry.ID)
+	if err != nil || !bytes.Equal(got.PNG, item.PNG) || got.Width != item.Width || got.Height != item.Height {
+		t.Fatal("paste changed the saved image")
+	}
+	if got.Hash != ([32]byte{}) || len(got.Thumbnail) != 0 {
+		t.Fatal("paste rebuilt synchronization metadata")
+	}
+	// Keep the valid PNG header but truncate the image data.
+	if err := os.WriteFile(filepath.Join(s.dir, "blobs", entry.ImageFile), item.PNG[:40], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PasteItem(entry.ID); err == nil {
+		t.Fatal("paste accepted a corrupt image body")
+	}
+}

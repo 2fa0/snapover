@@ -98,6 +98,9 @@ func (a *app) openPicker(atCaret bool) {
 		})
 	}
 	a.picker.OnClosed(func() {
+		if r := a.historyPaste; r != nil && r.picker == a.picker {
+			a.historyPaste = nil
+		}
 		a.pickerSearch.reset()
 		a.closePickPreview()
 		// ListState retains its window host; don't carry it into the next picker.
@@ -150,11 +153,14 @@ func (a *app) closePicker() {
 }
 
 func (a *app) pickerView(c *ui.Context) {
-	var hoverID string
-	var hoverBounds ui.Rect
+	a.drainThumbnails()
 	if c.Shortcut(0, ui.KeyEscape) {
 		a.finishPick()
+		return
 	}
+	a.pollHistoryPaste(c)
+	var hoverID string
+	var hoverBounds ui.Rect
 	shown := a.filtered(a.pickQuery)
 	if len(shown) > 0 {
 		if c.Shortcut(0, ui.KeyDown) {
@@ -283,23 +289,7 @@ func (a *app) pastePicked() {
 	if a.pickSel < 0 || a.pickSel >= len(shown) {
 		return
 	}
-	item, err := a.hist.Item(shown[a.pickSel].ID)
-	if err != nil {
-		a.pickFlash = "读历史失败"
-		return
-	}
-	if err := a.board.Write(item); err != nil {
-		a.pickFlash = "写回剪贴板失败"
-		return
-	}
-	a.pickBusy = true
-	target := a.pasteTo
-	a.finishPick()
-	if !target.Valid() {
-		a.notePaste("已复制。没有记住刚才的窗口，请在目标处再按一次粘贴")
-		return
-	}
-	go a.deliverPaste(target)
+	a.startHistoryPaste(shown[a.pickSel].ID, a.picker)
 }
 
 func (a *app) deliverPaste(target paste.Target) {
@@ -339,6 +329,11 @@ func (a *app) finishPick() {
 	p := a.picker
 	if p == nil {
 		return
+	}
+	// Closing is deferred until after the view; cancel a pending read now so
+	// its completion cannot publish to the clipboard before OnClosed runs.
+	if r := a.historyPaste; r != nil && r.picker == p {
+		a.historyPaste = nil
 	}
 	p.Update(func() {
 		if a.picker == p {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/2fa0/snapover/internal/history"
 )
@@ -52,9 +53,22 @@ func TestThumbnailCacheBounded(t *testing.T) {
 	a := &app{hist: store}
 	for i := range 600 {
 		a.thumb(fmt.Sprint(i))
+		waitThumbnails(t, a)
 	}
 	if a.thumbs.Len() != maxThumbCache || a.thumbs.Contains("0") || !a.thumbs.Contains("599") {
 		t.Fatal("cache did not evict oldest entries")
+	}
+}
+
+func waitThumbnails(t *testing.T, a *app) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for a.thumbActive > 0 || len(a.thumbQueue) > 0 {
+		a.drainThumbnails()
+		if time.Now().After(deadline) {
+			t.Fatal("thumbnail loads did not finish")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
