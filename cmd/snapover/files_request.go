@@ -50,7 +50,7 @@ func (a *app) prepareFileRequest(paths []string) bool {
 }
 
 func (a *app) handleFileRequest(paths []string, cold bool) {
-	if a.win == nil {
+	if a.root == nil {
 		if a.pendingFileRequest == nil {
 			a.pendingFileRequest = &fileRequest{paths: paths, cold: cold}
 		}

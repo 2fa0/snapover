@@ -77,6 +77,7 @@ func main() {
 		log.Error("创建数据目录失败", "dir", dataDir, "err", err)
 		die(1)
 	}
+	mygo.App.SetPath(mygo.PathUserData, dataDir)
 	crashPath, crashErr := crashlog.Install(dataDir)
 	log = newLogger(dataDir, level)
 	if crashErr != nil {
@@ -159,6 +160,11 @@ func main() {
 	}
 	engine.SetReceiveDir(receiveDir)
 	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
+	mygo.App.OnActivate(func(hasVisibleWindows bool) {
+		if !hasVisibleWindows && uiApp.root != nil {
+			uiApp.reveal(uiApp.page)
+		}
+	})
 	if runtime.GOOS == "windows" {
 		if *sendFile != "" {
 			uiApp.pendingFileRequest = &fileRequest{paths: append([]string{*sendFile}, flag.Args()...), cold: true}
@@ -166,7 +172,7 @@ func main() {
 		mygo.App.OnSecondInstance(func(args []string, workingDir string) {
 			if paths, requested := sendToPaths(args, workingDir); requested {
 				uiApp.handleFileRequest(paths, false)
-			} else if uiApp.win != nil {
+			} else if uiApp.root != nil {
 				uiApp.reveal(uiApp.page)
 			}
 		})

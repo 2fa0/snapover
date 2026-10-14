@@ -105,15 +105,7 @@ func (a *app) filesView(c *ui.Context) {
 }
 
 func (a *app) updateFiles(fn func()) {
-	mygo.RunOnMain(func() {
-		fn()
-		if a.fileWin != nil {
-			a.fileWin.Invalidate()
-		}
-		if a.win != nil {
-			a.win.Invalidate()
-		}
-	})
+	a.update(fn)
 }
 
 func (a *app) selectFile(paths []string) {

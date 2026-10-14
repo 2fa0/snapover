@@ -118,6 +118,7 @@ func (a *app) reveal(page string) {
 		page = pageSettings
 	}
 	a.page = page
+	a.openMainWindow()
 	if a.win == nil {
 		return
 	}

@@ -316,11 +316,7 @@ func (a *app) deliverPaste(target paste.Target) {
 }
 
 func (a *app) notePaste(msg string) {
-	if a.win == nil {
-		a.status = msg
-		return
-	}
-	a.win.Update(func() {
+	a.update(func() {
 		a.status = msg
 		a.flash = msg
 		a.refreshTray()

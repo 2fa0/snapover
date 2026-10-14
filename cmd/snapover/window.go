@@ -192,22 +192,6 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 
 func (a *app) open(ctx context.Context) {
 	a.root = ctx
-	a.win = mygo.NewWindow(mygo.WindowOptions{
-		Title:     "Snapover",
-		Width:     960,
-		Height:    640,
-		MinWidth:  720,
-		MinHeight: 440,
-		Hidden:    mygo.App.WasOpenedAtLogin() || a.pendingFileRequest != nil,
-		Content:   ui.View(a.view),
-	})
-	a.win.OnClose(func(e *mygo.CloseEvent) {
-		if a.quitting {
-			return
-		}
-		e.PreventDefault()
-		a.win.Hide()
-	})
 	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 		{Role: mygo.RoleAppMenu},
 		{Label: "设置", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageSettings) }},
@@ -219,6 +203,9 @@ func (a *app) open(ctx context.Context) {
 	a.restoreLogin()
 	a.initSendTo()
 	a.startTray()
+	if (!mygo.App.WasOpenedAtLogin() && a.pendingFileRequest == nil) || a.tray == nil {
+		a.openMainWindow()
+	}
 	a.rememberPasteTarget()
 	a.startPasteTargetWatch(ctx)
 	a.registerPickerShortcut()
@@ -234,7 +221,7 @@ func (a *app) open(ctx context.Context) {
 			a.engine.Log.Warn("局域网发现失败", "message", snapshot.Message, "err", snapshot.Err)
 		}
 		lastDiscoveryError = errText
-		a.win.Update(func() { a.applyDiscovery(snapshot) })
+		a.update(func() { a.applyDiscovery(snapshot) })
 	})
 	if a.peer != "" {
 		a.connect()
@@ -245,12 +232,55 @@ func (a *app) open(ctx context.Context) {
 	}
 }
 
-func (a *app) show(page string) {
-	if a.win == nil {
-		a.page = page
+func (a *app) openMainWindow() {
+	if a.win != nil || a.quitting {
 		return
 	}
-	a.win.Update(func() { a.reveal(page) })
+	win := mygo.NewWindow(mygo.WindowOptions{
+		Title:     "Snapover",
+		Width:     960,
+		Height:    640,
+		MinWidth:  720,
+		MinHeight: 440,
+		StateKey:  "main",
+		Content:   ui.View(a.view),
+	})
+	a.win = win
+	win.OnClosed(func() {
+		a.win = nil
+		a.historySearch.reset()
+		a.shownSource, a.shownEntries = nil, nil
+		// ListState holds its window host, including the closed UI's resources.
+		a.histList = ui.ListState{Key: a.histList.Key, Label: a.histList.Label, Selected: &a.histSel}
+		a.confirm, a.confirmClear = false, false
+		if r := a.historyPaste; r != nil && r.picker == nil {
+			a.historyPaste = nil
+		}
+		if a.picker == nil {
+			a.releaseThumbnails()
+		}
+	})
+}
+
+// Background work outlives every window. Dispatch state changes through the
+// application, then redraw whichever windows are still open.
+func (a *app) update(fn func()) {
+	mygo.RunOnMain(func() {
+		fn()
+		if a.win != nil {
+			a.win.Invalidate()
+		}
+		if a.picker != nil {
+			a.picker.Invalidate()
+		}
+		if a.fileWin != nil {
+			a.fileWin.Invalidate()
+		}
+	})
+}
+
+func (a *app) show(page string) {
+	a.update(func() { a.reveal(page) })
 }
 
 func (a *app) onNotice(n clipsync.Notice) {
@@ -270,12 +300,7 @@ func (a *app) onNotice(n clipsync.Notice) {
 			added = &entry
 		}
 	}
-	apply := func() { a.apply(n, added) }
-	if a.win == nil {
-		apply()
-		return
-	}
-	a.win.Update(apply)
+	a.update(func() { a.apply(n, added) })
 }
 
 func (a *app) apply(n clipsync.Notice, added *history.Entry) {
@@ -560,8 +585,8 @@ func (a *app) connect() {
 	peerID := a.targetPeerID
 	go func() {
 		clipsync.DialPeer(ctx, addr, peerID, a.engine)
-		if a.win != nil && ctx.Err() == nil {
-			a.win.Update(func() {
+		if ctx.Err() == nil {
+			a.update(func() {
 				if a.dialSeq == seq {
 					a.dialCancel = nil
 				}
@@ -709,9 +734,7 @@ func (a *app) probe() {
 		} else {
 			_ = conn.Close()
 		}
-		if a.win != nil {
-			a.win.Update(func() { a.status = msg })
-		}
+		a.update(func() { a.status = msg })
 	}()
 }
 

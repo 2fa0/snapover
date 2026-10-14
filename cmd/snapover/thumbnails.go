@@ -65,7 +65,7 @@ func (a *app) dispatchThumbnails() {
 			continue
 		}
 		a.thumbActive++
-		store, results, host := a.hist, a.thumbResults, a.win
+		store, results, root := a.hist, a.thumbResults, a.root
 		go func() {
 			// Both the disk read and bitmap conversion happen outside the view.
 			raw, err := store.Thumb(r.id)
@@ -74,8 +74,8 @@ func (a *app) dispatchThumbnails() {
 				bmp, _ = ui.DecodeBitmap(raw)
 			}
 			results <- thumbResult{r, bmp}
-			if host != nil {
-				host.Update(a.drainThumbnails)
+			if root != nil {
+				a.update(a.drainThumbnails)
 			}
 		}()
 	}
@@ -109,33 +109,44 @@ func (a *app) drainThumbnails() {
 
 func (a *app) touchThumbnails() {
 	a.thumbUsedAt = time.Now()
-	if a.thumbTimer == nil && a.win != nil {
+	if a.thumbTimer == nil && a.root != nil {
 		a.scheduleThumbnailTrim(thumbIdle)
 	}
 }
 
 func (a *app) scheduleThumbnailTrim(after time.Duration) {
-	host := a.win
-	a.thumbTimer = time.AfterFunc(after, func() {
-		host.Update(func() {
-			a.thumbTimer = nil
-			if a.root != nil && a.root.Err() != nil {
-				return
-			}
-			if left := thumbIdle - time.Since(a.thumbUsedAt); left > 0 {
-				a.scheduleThumbnailTrim(left)
-				return
-			}
-			if a.picker != nil || (a.page == pageHistory && a.win.IsVisible()) {
-				a.scheduleThumbnailTrim(thumbIdle)
-				return
-			}
-			a.releaseThumbnails()
-		})
+	var timer *time.Timer
+	timer = time.AfterFunc(after, func() {
+		a.update(func() { a.trimThumbnails(timer) })
 	})
+	a.thumbTimer = timer
+}
+
+func (a *app) trimThumbnails(timer *time.Timer) {
+	// Stop cannot cancel a callback that has already been dispatched.
+	if a.thumbTimer != timer {
+		return
+	}
+	a.thumbTimer = nil
+	if a.root != nil && a.root.Err() != nil {
+		return
+	}
+	if left := thumbIdle - time.Since(a.thumbUsedAt); left > 0 {
+		a.scheduleThumbnailTrim(left)
+		return
+	}
+	if a.picker != nil || (a.page == pageHistory && a.win != nil && a.win.IsVisible()) {
+		a.scheduleThumbnailTrim(thumbIdle)
+		return
+	}
+	a.releaseThumbnails()
 }
 
 func (a *app) releaseThumbnails() {
+	if a.thumbTimer != nil {
+		a.thumbTimer.Stop()
+		a.thumbTimer = nil
+	}
 	if a.thumbs != nil {
 		a.thumbs.Purge()
 	}

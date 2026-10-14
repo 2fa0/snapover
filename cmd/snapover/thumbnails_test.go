@@ -5,10 +5,36 @@ import (
 	"image"
 	"image/png"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 )
+
+func TestThumbnailTrimRejectsCallbackFromClosedWindow(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.initThumbnails()
+	old := time.NewTimer(time.Hour)
+	defer old.Stop()
+	a.thumbTimer = old
+	a.releaseThumbnails()
+	current := time.NewTimer(time.Hour)
+	defer current.Stop()
+	a.thumbTimer = current
+	a.thumbs.Add("new window", nil)
+	a.thumbUsedAt = time.Now().Add(-thumbIdle)
+
+	// The expired callback reaches the UI after close and reopen.
+	a.trimThumbnails(old)
+	if a.thumbTimer != current || !a.thumbs.Contains("new window") {
+		t.Fatal("stale callback replaced the current timer or released the new cache")
+	}
+	current.Stop()
+	a.trimThumbnails(current)
+	if a.thumbTimer != nil || a.thumbs.Len() != 0 {
+		t.Fatal("current callback did not release the idle cache")
+	}
+}
 
 func TestThumbnailsLoadAsynchronouslyAndReleaseIdleCache(t *testing.T) {
 	a := interfaceTestApp(t)
