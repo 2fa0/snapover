@@ -18,7 +18,7 @@ func TestSendQueueByteBudgetAndFIFO(t *testing.T) {
 	s := newSession(nil, "peer", false, nil, nil)
 	payload := make([]byte, queueBytes/2)
 	for i := range 2 {
-		if !s.enqueue(clip.Item{Kind: clip.KindImage, PNG: payload, Text: "", SourceApp: string(rune('a' + i)), Thumbnail: []byte("unused")}) {
+		if !s.enqueue(clip.Item{Kind: clip.KindImage, PNG: payload, Text: "", SourceApp: string(rune('a' + i)), Thumbnail: []byte("unused"), Preview: []byte("unused preview")}) {
 			t.Fatal("valid payload rejected")
 		}
 	}
@@ -26,7 +26,7 @@ func TestSendQueueByteBudgetAndFIFO(t *testing.T) {
 		t.Fatal("byte budget exceeded")
 	}
 	first := <-s.out
-	if first.SourceApp != "a" || len(first.Thumbnail) != 0 || !s.releaseQueued(first) {
+	if first.SourceApp != "a" || len(first.Thumbnail) != 0 || len(first.Preview) != 0 || !s.releaseQueued(first) {
 		t.Fatal("FIFO or thumbnail release failed")
 	}
 	if !s.enqueue(clip.Item{Kind: clip.KindText, Text: "new"}) {

@@ -88,6 +88,7 @@ func (s *Session) enqueue(item clip.Item) bool {
 func (s *Session) enqueueID(item clip.Item, id string) bool {
 	// The peer needs the original bytes, not our local thumbnail.
 	item.Thumbnail = nil
+	item.Preview = nil
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := queuedSize(item)

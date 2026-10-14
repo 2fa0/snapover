@@ -55,7 +55,8 @@ func FromImageFile(path string) (Item, error) {
 		return Item{}, err
 	}
 	thumb, _ := ThumbnailPNG(img, 160)
-	return Item{Kind: KindImage, PNG: encoded.Bytes(), Thumbnail: thumb,
+	preview, _ := PreviewPNG(img)
+	return Item{Kind: KindImage, PNG: encoded.Bytes(), Thumbnail: thumb, Preview: preview,
 		Hash: HashImage(img), Width: cfg.Width, Height: cfg.Height, Size: encoded.Len()}, nil
 }
 

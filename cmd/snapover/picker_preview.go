@@ -112,7 +112,7 @@ func previewImageSize(width, height int) (int, int) {
 	if width <= 0 || height <= 0 {
 		return 1, 1
 	}
-	scale := min(1.0, 456.0/float64(width), 308.0/float64(height))
+	scale := min(1.0, float64(clip.PreviewWidth/2)/float64(width), float64(clip.PreviewHeight/2)/float64(height))
 	return max(1, int(math.Round(float64(width)*scale))), max(1, int(math.Round(float64(height)*scale)))
 }
 
@@ -189,6 +189,8 @@ func (a *app) loadPickPreview(id string) {
 			})
 			s.win = p
 			p.OnClosed(func() {
+				// Native windows can outlive their content closures.
+				bmp = nil
 				if a.pickPreview.win == p {
 					a.pickPreview.win = nil
 					a.pickPreview.inside = false
@@ -201,11 +203,11 @@ func (a *app) loadPickPreview(id string) {
 }
 
 func previewBitmap(store *history.Store, id string) (*ui.Bitmap, error) {
-	data, err := store.Thumb(id)
+	img, err := store.PreviewImage(id)
 	if err != nil {
 		return nil, err
 	}
-	return ui.DecodeBitmap(data)
+	return ui.NewBitmap(imageForDisplay(img)), nil
 }
 
 func (a *app) loadPickImage(id string, parent *mygo.Window) {

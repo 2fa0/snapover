@@ -64,6 +64,9 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "thumbs"), 0o700); err != nil {
 		return nil, err
 	}
+	if err := os.MkdirAll(filepath.Join(dir, "previews"), 0o700); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Join(dir, "texts"), 0o700); err != nil {
 		return nil, err
 	}
@@ -127,6 +130,9 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 			if err := os.WriteFile(filepath.Join(s.dir, "thumbs", entry.ThumbFile), thumb, 0o600); err != nil {
 				entry.ThumbFile = ""
 			}
+		}
+		if len(item.Preview) > 0 {
+			_ = os.WriteFile(filepath.Join(s.dir, "previews", id+".png"), item.Preview, 0o600)
 		}
 	}
 	s.mu.Lock()
@@ -328,6 +334,7 @@ func (s *Store) removeFiles(entries []Entry) {
 		}
 		if entry.ImageFile != "" {
 			_ = os.Remove(filepath.Join(s.dir, "blobs", entry.ImageFile))
+			_ = os.Remove(filepath.Join(s.dir, "previews", entry.ID+".png"))
 		}
 		if entry.ThumbFile != "" {
 			_ = os.Remove(filepath.Join(s.dir, "thumbs", entry.ThumbFile))

@@ -88,8 +88,8 @@ func TestPreviewSchedulesOnlyDwellAndDismissalDeadlines(t *testing.T) {
 
 func TestPreviewImageSize(t *testing.T) {
 	for _, tc := range []struct{ w, h, wantW, wantH int }{
-		{2000, 1000, 456, 228},
-		{1000, 10000, 31, 308},
+		{2000, 1000, 560, 280},
+		{1000, 10000, 34, 340},
 		{80, 40, 80, 40},
 		{0, 0, 1, 1},
 	} {
@@ -100,7 +100,7 @@ func TestPreviewImageSize(t *testing.T) {
 	}
 }
 
-func TestPreviewUsesThumbnailWithoutReadingOriginal(t *testing.T) {
+func TestPreviewUsesDetailedCacheWithoutReadingOriginal(t *testing.T) {
 	dir := t.TempDir()
 	store, err := history.Open(dir)
 	if err != nil {
@@ -126,10 +126,36 @@ func TestPreviewUsesThumbnailWithoutReadingOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, h := bmp.Size()
-	if w != 64 || h != 160 {
-		t.Fatalf("preview decoded full image instead of thumbnail: %dx%d", w, h)
+	if w != 272 || h != 680 || thumbMemory(bmp) > 4<<20 {
+		t.Fatalf("preview quality or memory budget: %dx%d", w, h)
 	}
 	if _, err := previewBitmap(store, "missing"); !os.IsNotExist(err) {
 		t.Fatalf("missing preview: %v", err)
+	}
+}
+
+func BenchmarkHoverPreviewBitmap(b *testing.B) {
+	store, err := history.Open(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+	var data bytes.Buffer
+	if err := png.Encode(&data, image.NewNRGBA(image.Rect(0, 0, 1791, 438))); err != nil {
+		b.Fatal(err)
+	}
+	item, err := clip.FromPNG(data.Bytes())
+	if err != nil {
+		b.Fatal(err)
+	}
+	entry, err := store.Add(history.DirLocal, "", item)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		if _, err := previewBitmap(store, entry.ID); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

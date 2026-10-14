@@ -42,6 +42,7 @@ type Item struct {
 	PNG  []byte
 	// Thumbnail holds only a small PNG, never the decoded original pixels.
 	Thumbnail []byte
+	Preview   []byte // Bounded PNG for hover previews, not sent to peers.
 	Hash      [32]byte
 	Width     int
 	Height    int
@@ -80,10 +81,12 @@ func FromPNG(data []byte) (Item, error) {
 	}
 	b := img.Bounds()
 	thumb, _ := ThumbnailPNG(img, 160)
+	preview, _ := PreviewPNG(img)
 	item := Item{
 		Kind:      KindImage,
 		PNG:       data,
 		Thumbnail: thumb,
+		Preview:   preview,
 		Hash:      HashImage(img),
 		Width:     b.Dx(),
 		Height:    b.Dy(),
