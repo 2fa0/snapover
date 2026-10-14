@@ -181,6 +181,7 @@ func main() {
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		uiApp.quitting = true
 		cancel()
+		uiApp.hist.CleanOpened()
 	})
 
 	mygo.App.WhenReady(func() {

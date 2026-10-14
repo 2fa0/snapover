@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"time"
@@ -164,10 +165,12 @@ func (a *app) loadPickPreview(id string) {
 			if err != nil {
 				w, h = 240, 60
 			}
+			workW, workH := previewWorkSize()
+			winW, winH := previewFlyoutSize(w, h, workW, workH)
 			var p *mygo.Window
 			p = mygo.NewFlyout(mygo.FlyoutOptions{
 				Parent: parent, Anchor: s.anchor, Placement: mygo.PlacementRightStart,
-				Gap: 8, Width: max(220, w+24), Height: h + 64,
+				Gap: 8, Width: winW, Height: winH,
 				Hidden: true, Shadow: true,
 				Content: ui.View(func(c *ui.Context) {
 					t := c.Theme()
@@ -182,9 +185,11 @@ func (a *app) loadPickPreview(id string) {
 						} else if bmp == nil {
 							ui.Text(c, "图片预览加载失败，请重新悬停重试").TextColor(t.TextMuted)
 						} else {
-							ui.Image(c, bmp).Size(float32(w), float32(h)).Fit(ui.Contain)
+							// Fit the whole picture. A long screenshot becomes a strip;
+							// reading it is the system viewer's job, not this card's.
+							ui.Image(c, bmp).Grow(1).Shrink(1).FillWidth().MaxHeight(float32(h)).Fit(ui.Contain)
 						}
-						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+						ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
 							meta := fmt.Sprintf("%d × %d", entry.Width, entry.Height)
 							label := "查看原图"
 							if isText {
@@ -241,71 +246,46 @@ func (a *app) loadPickImage(id string, parent *mygo.Window) {
 		return
 	}
 	a.pickLoading = true
-	// Keep at most one original window; release the previous pixels before
-	// decoding another large image.
-	if a.pickOriginal != nil {
-		a.pickOriginal.Close()
-	}
 	if a.pickPreview.win != nil {
 		a.pickPreview.win.Invalidate()
 	}
 	go func() {
-		img, err := a.hist.Image(id)
-		var bmp *ui.Bitmap
-		if err == nil {
-			bmp = ui.NewBitmap(imageForDisplay(img))
-		}
+		path, err := a.hist.StageImage(id)
 		mygo.RunOnMain(func() {
-			a.pickLoading = false
-			if a.picker != nil {
-				a.picker.Invalidate()
-			}
-			if a.picker != parent {
-				if bmp != nil {
-					w, h := bmp.Size()
-					bmp = nil
-					clip.ReclaimImageMemory(w, h)
-				}
+			// Opening is terminal for this image. A dismissed picker must not
+			// launch the viewer afterwards.
+			if err != nil || a.quitting || a.picker != parent {
+				a.finishPickImage(parent, err)
 				return
 			}
-			if err != nil {
-				a.pickFlash = "原图加载失败，请重新选择图片后重试"
-				parent.Invalidate()
-				if a.pickPreview.win != nil {
-					a.pickPreview.win.Invalidate()
-				}
-				return
+			ctx := a.root
+			if ctx == nil {
+				ctx = context.Background()
 			}
-			a.openPickImage(bmp)
+			ctx, cancel := context.WithTimeout(ctx, imageOpenTimeout)
+			go func() {
+				defer cancel()
+				err := openSystemImage(ctx, path)
+				mygo.RunOnMain(func() { a.finishPickImage(parent, err) })
+			}()
 		})
 	}()
 }
 
-func (a *app) openPickImage(bmp *ui.Bitmap) {
-	w, h := bmp.Size()
-	var viewer *mygo.Window
-	viewer = mygo.NewWindow(mygo.WindowOptions{
-		Title: "图片原图", Width: min(960, max(360, w+24)), Height: min(720, max(240, h+24)),
-		Hidden: true, UseContentSize: true,
-		Content: ui.View(func(c *ui.Context) {
-			if c.Shortcut(0, ui.KeyEscape) {
-				viewer.Update(viewer.Close)
-			}
-			ui.ScrollBoth(c).Fill().Children(func() {
-				ui.Image(c, bmp).Size(float32(w), float32(h)).Fit(ui.Contain)
-			})
-		}),
-	})
-	a.pickOriginal = viewer
-	viewer.OnClosed(func() {
-		// Closed native windows may outlive their content closures.
-		bmp = nil
-		clip.ReclaimImageMemory(w, h)
-		if a.pickOriginal == viewer {
-			a.pickOriginal = nil
+func (a *app) finishPickImage(parent *mygo.Window, err error) {
+	a.pickLoading = false
+	if a.picker != nil {
+		a.picker.Invalidate()
+	}
+	if a.quitting || a.picker != parent {
+		return
+	}
+	if err != nil {
+		a.pickFlash = "原图打开失败，请重新选择图片后重试"
+		if a.pickPreview.win != nil {
+			a.pickPreview.win.Invalidate()
 		}
-	})
+		return
+	}
 	a.closePicker()
-	viewer.Show()
-	viewer.Focus()
 }

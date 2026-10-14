@@ -86,6 +86,17 @@ func TestPreviewSchedulesOnlyDwellAndDismissalDeadlines(t *testing.T) {
 	}
 }
 
+func TestPreviewFlyoutShrinksToWorkArea(t *testing.T) {
+	w, h := previewFlyoutSize(560, 340, 0, 0)
+	if w != 584 || h != 404 {
+		t.Fatalf("uncapped size = %d × %d", w, h)
+	}
+	w, h = previewFlyoutSize(560, 340, 400, 200)
+	if w != 384 || h != 184 {
+		t.Fatalf("capped size = %d × %d", w, h)
+	}
+}
+
 func TestPreviewImageSize(t *testing.T) {
 	for _, tc := range []struct{ w, h, wantW, wantH int }{
 		{2000, 1000, 560, 280},

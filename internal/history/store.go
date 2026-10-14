@@ -50,6 +50,8 @@ type Entry struct {
 // Store keeps the newest clipboard items on disk.
 type Store struct {
 	mu           sync.Mutex
+	openedMu     sync.Mutex
+	openedClosed bool
 	dir          string
 	entries      []Entry
 	sequence     uint64
@@ -68,6 +70,9 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "texts"), 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "opened"), 0o700); err != nil {
 		return nil, err
 	}
 	s := &Store{dir: dir}
@@ -92,6 +97,8 @@ func Open(dir string) (*Store, error) {
 			return nil, err
 		}
 	}
+	// Staged viewer files belong to the previous process.
+	s.cleanOpened()
 	return s, nil
 }
 
