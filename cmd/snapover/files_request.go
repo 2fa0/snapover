@@ -40,9 +40,17 @@ func sendToPaths(args []string, workingDir string) ([]string, bool) {
 	return paths, true
 }
 
+func (a *app) handleSecondInstance(args []string, workingDir string) {
+	if paths, requested := sendToPaths(args, workingDir); requested {
+		a.handleFileRequest(paths, false)
+	} else if a.root != nil {
+		a.reveal(a.page)
+	}
+}
+
 func (a *app) prepareFileRequest(paths []string) bool {
 	if a.fileBusy || a.fileChoosing {
-		a.fileCommandHint = "正在处理另一个文件，请完成后再从「发送到」菜单发送"
+		a.fileCommandHint = "正在处理另一个文件，请完成后再发送"
 		return false
 	}
 	a.selectFile(paths)

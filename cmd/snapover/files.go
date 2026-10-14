@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -175,7 +176,22 @@ func (a *app) sendSelectedFile(background bool) {
 				return
 			}
 			a.fileMessage = "已保存到 " + displayName(link.Name, link.ID) + " 的接收文件夹：" + name
+			if background && runtime.GOOS == "darwin" {
+				a.sentFileNotification(name, displayName(link.Name, link.ID))
+			}
 		})
+	}()
+}
+
+func (a *app) sentFileNotification(name, peer string) {
+	if !mygo.NotificationsSupported() {
+		return
+	}
+	go func() {
+		notice := mygo.NewNotification(mygo.NotificationOptions{Title: "文件已发送 · Snapover", Body: name + " 已保存到 " + peer + " 的接收文件夹"})
+		if err := notice.Show(); err != nil && a.engine.Log != nil {
+			a.engine.Log.Debug("文件通知未显示", "err", err)
+		}
 	}()
 }
 

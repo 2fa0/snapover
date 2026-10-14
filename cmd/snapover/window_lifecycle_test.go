@@ -17,6 +17,13 @@ import (
 // SNAPOVER_TEST_UI=1 go test ./cmd/snapover -run TestMainWindow -count=1
 // runs the lifecycle checks with real windows in a desktop session.
 func TestMain(m *testing.M) {
+	if os.Getenv("SNAPOVER_TEST_SEND_FILE_HELPER") == "1" {
+		mygo.App.SetName("Snapover UI Tests")
+		if !mygo.App.RequestSingleInstanceLock() {
+			os.Exit(0)
+		}
+		os.Exit(2)
+	}
 	if os.Getenv("SNAPOVER_TEST_UI") != "1" {
 		os.Exit(m.Run())
 	}

@@ -36,7 +36,7 @@ func main() {
 	reset := flag.Bool("reset-peers", false, "解除全部配对，下次添加需双方确认")
 	check := flag.Bool("check", false, "打印当前剪贴板后退出，不建立连接")
 	debug := flag.Bool("debug", false, "输出调试日志")
-	sendFile := flag.String("send-file", "", "Windows：直接发送一个文件到已连接的设备")
+	sendFile := flag.String("send-file", "", "直接发送一个文件到已连接的设备")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Snapover 第一批：局域网同步文字和图片。\n\n")
 		fmt.Fprintf(os.Stderr, "两边都运行，在「连接设备」中点击「添加设备」，核对校验码并确认。也可用 -peer 填写对端地址。\n\n")
@@ -50,12 +50,8 @@ func main() {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	mygo.App.SetName("Snapover")
-	if *sendFile != "" && runtime.GOOS != "windows" {
-		log.Error("--send-file 是 Windows 专属入口，请从「发送文件」窗口选择文件")
-		die(2)
-	}
 	// Forward shell requests before touching the running instance's data or logs.
-	if runtime.GOOS == "windows" && !*check && !mygo.App.RequestSingleInstanceLock() {
+	if (runtime.GOOS == "windows" || runtime.GOOS == "darwin") && !*check && !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
 
@@ -165,17 +161,11 @@ func main() {
 			uiApp.reveal(uiApp.page)
 		}
 	})
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		if *sendFile != "" {
 			uiApp.pendingFileRequest = &fileRequest{paths: append([]string{*sendFile}, flag.Args()...), cold: true}
 		}
-		mygo.App.OnSecondInstance(func(args []string, workingDir string) {
-			if paths, requested := sendToPaths(args, workingDir); requested {
-				uiApp.handleFileRequest(paths, false)
-			} else if uiApp.root != nil {
-				uiApp.reveal(uiApp.page)
-			}
-		})
+		mygo.App.OnSecondInstance(uiApp.handleSecondInstance)
 	}
 	engine.OnNotice = uiApp.onNotice
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
