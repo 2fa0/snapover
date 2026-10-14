@@ -6,18 +6,31 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 )
 
-func pickTextPreview(c *ui.Context, text string, err error) {
-	if err != nil {
+func newPickTextPreview(text string) *editor.State {
+	return &editor.State{
+		Buffer:          editor.NewBuffer(text),
+		Label:           "文本预览",
+		ReadOnly:        true,
+		SoftWrap:        true,
+		LineNumbers:     editor.LineNumbersOff,
+		NoIndentGuides:  true,
+		NoFolding:       true,
+		NoActiveLine:    true,
+		NoScrollPastEnd: true,
+	}
+}
+
+func pickTextPreview(c *ui.Context, state *editor.State, err error) {
+	if err != nil || state == nil {
 		ui.Text(c, "文本预览加载失败，请重新悬停重试").TextColor(c.Theme().TextMuted)
 		return
 	}
-	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-		ui.Text(c, text).FontSize(14).FillWidth()
-	})
+	editor.View(c.Key("text-preview"), state).Grow(1).FillWidth()
 }
 
 // rowNeedsPreview keeps hover previews for images and text the list cannot

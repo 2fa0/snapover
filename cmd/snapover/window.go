@@ -365,9 +365,9 @@ func (a *app) view(c *ui.Context) {
 				ui.Text(c, a.name).FontSize(11).TextColor(t.TextMuted).SingleLine()
 			})
 			if ui.Sidebar(c, &a.page, func() {
-				ui.SidebarItem(c, pageSettings, settingsIcon, "设置")
-				ui.SidebarItem(c, pageDevices, deviceIcon, "连接设备")
-				ui.SidebarItem(c, pageHistory, historyIcon, "复制历史")
+				ui.SidebarItem(c, pageSettings, settingsIcon, "设置").Transition(navMotion)
+				ui.SidebarItem(c, pageDevices, deviceIcon, "连接设备").Transition(navMotion)
+				ui.SidebarItem(c, pageHistory, historyIcon, "复制历史").Transition(navMotion)
 			}).Grow(1).Changed() {
 				a.confirm = false
 			}
@@ -379,8 +379,8 @@ func (a *app) view(c *ui.Context) {
 				if a.paused {
 					label = "同步已暂停"
 				}
-				ui.Text(c, label).FontSize(12).Bold().SingleLine()
-				ui.Text(c, a.status).FontSize(11).TextColor(t.TextMuted).MaxLines(3)
+				ui.Text(c, label).FontSize(12).Bold().SingleLine().ContentTransition(ui.ContentTransition{})
+				ui.Text(c, a.status).FontSize(11).TextColor(t.TextMuted).MaxLines(3).ContentTransition(ui.ContentTransition{})
 			})
 			if ui.Button(c, "").Label("发送文件").Children(func() {
 				ui.Icon(c, sendIcon)
@@ -502,7 +502,8 @@ func (a *app) historyPage(c *ui.Context) {
 			a.histList.ScrollTo(0, ui.Start)
 		}
 		ui.Spacer(c)
-		ui.Textf(c, "%d 条记录", len(a.shown())).FontSize(12).TextColor(t.TextMuted)
+		ui.Textf(c, "%d 条记录", len(a.shown())).FontSize(12).TextColor(t.TextMuted).
+			ContentTransition(ui.ContentTransition{Numeric: true})
 	})
 	shown := a.shown()
 	if a.histSel >= len(shown) {

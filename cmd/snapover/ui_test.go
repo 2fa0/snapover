@@ -43,6 +43,29 @@ func clickInterface(t *testing.T, tt *ui.Tester, text string) {
 	}
 }
 
+func TestMainNavigationRemainsImmediateDuringMotion(t *testing.T) {
+	for _, reduceMotion := range []bool{false, true} {
+		a := interfaceTestApp(t)
+		tt := ui.NewTester(a.view, 960, 640)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: reduceMotion})
+		for _, target := range []struct{ label, page string }{
+			{"设置", pageSettings},
+			{"复制历史", pageHistory},
+			{"连接设备", pageDevices},
+			{"设置", pageSettings},
+		} {
+			clickInterface(t, tt, target.label)
+			if a.page != target.page {
+				t.Fatalf("navigation during animation chose %s, want %s", a.page, target.page)
+			}
+		}
+		tt.Key(0, ui.KeyDown)
+		if a.page != pageDevices {
+			t.Fatal("sidebar keyboard navigation stopped working")
+		}
+	}
+}
+
 func TestHistoryFilterActionsKeepPinnedRecords(t *testing.T) {
 	a := interfaceTestApp(t)
 	text, _ := clip.FromText("保留的文本")

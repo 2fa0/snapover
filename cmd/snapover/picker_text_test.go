@@ -134,21 +134,96 @@ func TestTextPreviewOnlyWhenRowTruncates(t *testing.T) {
 
 func TestPickTextPreviewCanScrollAndReportLoadFailure(t *testing.T) {
 	body := "开头\n" + strings.Repeat("文本内容\n", 200) + "末尾"
+	state := newPickTextPreview(body)
 	tt := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Children(func() {
-			pickTextPreview(c, body, nil)
+			pickTextPreview(c, state, nil)
 		})
 	}, 396, 300)
 	before := bytes.Clone(tt.Image().Pix)
-	tt.Scroll(100, 100, 0, -1000)
+	tt.Scroll(100, 100, 0, 1000)
 	if bytes.Equal(before, tt.Image().Pix) {
 		t.Fatal("text preview could not scroll beyond its beginning")
 	}
 	failed := ui.NewTester(func(c *ui.Context) {
-		pickTextPreview(c, "", errors.New("missing body"))
+		pickTextPreview(c, nil, errors.New("missing body"))
 	}, 240, 60)
 	if !failed.HasText("文本预览加载失败，请重新悬停重试") {
 		t.Fatal("failed preview did not explain how to retry")
+	}
+}
+
+func TestPickTextPreviewEditorIsReadOnly(t *testing.T) {
+	body := "  开头\n\t缩进 😀\n" + strings.Repeat("保留空格  \n", 30)
+	state := newPickTextPreview(body)
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Children(func() { pickTextPreview(c, state, nil) })
+	}, 396, 300)
+	clickInterface(t, tt, "文本预览")
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(ui.Cmd, ui.KeyC)
+	if tt.Clipboard() != body {
+		t.Fatal("preview editor changed the copied text or whitespace")
+	}
+	tt.Type("不应写入")
+	tt.Key(0, ui.KeyBackspace)
+	tt.SetClipboard("不应粘贴")
+	tt.Key(ui.Cmd, ui.KeyV)
+	if state.Buffer.String() != body {
+		t.Fatal("preview editor changed the text")
+	}
+}
+
+func TestPickTextPreviewDoesNotChangeStoredText(t *testing.T) {
+	a := interfaceTestApp(t)
+	body := "  开头\r\n\t缩进\r\n混合换行\n尾部  "
+	item, err := clip.FromText(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := a.hist.Add(history.DirLocal, "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _, err := a.hist.TextPreview(entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := newPickTextPreview(text)
+	ui.NewTester(func(c *ui.Context) { pickTextPreview(c, state, nil) }, 396, 300)
+	stored, err := a.hist.PasteItem(entry.ID)
+	if err != nil || stored.Text != item.Text {
+		t.Fatalf("preview changed the stored text: %v", err)
+	}
+	r := &pickTextReader{text: stored.Text}
+	tt := ui.NewTester(r.view, 720, 480)
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(ui.Cmd, ui.KeyC)
+	if tt.Clipboard() != item.Text {
+		t.Fatal("full reader changed the stored text")
+	}
+}
+
+func TestPickTextPreviewLongLineMemoryBounded(t *testing.T) {
+	for _, body := range []string{
+		strings.Repeat("A", 16<<10),
+		strings.Repeat("中😀\t ", (16<<10)/9),
+	} {
+		runtime.GC()
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		start := time.Now()
+		state := newPickTextPreview(body)
+		tt := ui.NewTester(func(c *ui.Context) {
+			ui.Column(c).Fill().Children(func() { pickTextPreview(c, state, nil) })
+		}, 396, 300)
+		tt.SetScale(2)
+		runtime.ReadMemStats(&after)
+		allocated := after.TotalAlloc - before.TotalAlloc
+		t.Logf("previewed %d bytes in %s, allocated %.1f MiB", len(body), time.Since(start), float64(allocated)/(1<<20))
+		if allocated > 12<<20 {
+			t.Fatalf("hover preview allocated %d bytes", allocated)
+		}
 	}
 }
 

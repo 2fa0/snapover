@@ -86,7 +86,7 @@ func (a *app) devicesPage(c *ui.Context) {
 					} else if a.targetPeerID == dev.ID && a.dialCancel != nil {
 						state = "正在重连"
 					}
-					ui.Text(c, state).FontSize(12).TextColor(color).SingleLine()
+					ui.Text(c, state).FontSize(12).TextColor(color).SingleLine().ContentTransition(ui.ContentTransition{})
 					if !online && ui.Button(c, "连接").Disabled(waiting || dev.Peer.Addr == "").Clicked() {
 						addr := dev.Peer.Addr
 						for _, found := range a.discovered {
@@ -107,7 +107,11 @@ func (a *app) devicesPage(c *ui.Context) {
 				})
 				if a.deviceDetails == dev.ID {
 					ui.Column(c.Key("details")).Gap(10).Padding(12).Radius(8).Background(t.Background).
-						Transition(ui.ElementTransition{Duration: 160 * time.Millisecond, Enter: &ui.Motion{Collapse: true}}).Children(func() {
+						Transition(ui.ElementTransition{
+							Duration: 160 * time.Millisecond,
+							Enter:    &ui.Motion{Collapse: true},
+							Exit:     &ui.Motion{Collapse: true},
+						}).Children(func() {
 						kv(c, "地址", dev.Peer.Addr)
 						ui.Text(c, "证书指纹").FontSize(12).TextColor(t.TextMuted)
 						ui.Text(c, identity.FormatFingerprint(dev.Peer.Fingerprint)).Selectable().FontSize(12)

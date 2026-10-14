@@ -33,10 +33,11 @@ var (
 	searchIcon   = interfaceIcon("magnifying-glass")
 )
 
-var pageMotion = ui.ElementTransition{
-	Duration: 160 * time.Millisecond,
-	Enter:    &ui.Motion{Y: 6},
-}
+var (
+	pageAnimation = ui.Animation{Spring: ui.SpringOptions{Duration: 180 * time.Millisecond}}
+	pageMotion    = ui.ElementTransition{Animation: &pageAnimation, Enter: &ui.Motion{Y: 4}}
+	navMotion     = ui.ElementTransition{Duration: 120 * time.Millisecond, Colors: true}
+)
 
 func pageHeading(c *ui.Context, title, description string) {
 	ui.Column(c).Gap(5).Margin(0, 0, 4, 0).Children(func() {

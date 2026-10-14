@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 )
@@ -167,6 +168,10 @@ func (a *app) loadPickPreview(id string) {
 			}
 			workW, workH := previewWorkSize()
 			winW, winH := previewFlyoutSize(w, h, workW, workH)
+			var textPreview *editor.State
+			if isText && err == nil {
+				textPreview = newPickTextPreview(text)
+			}
 			var p *mygo.Window
 			p = mygo.NewFlyout(mygo.FlyoutOptions{
 				Parent: parent, Anchor: s.anchor, Placement: mygo.PlacementRightStart,
@@ -181,7 +186,7 @@ func (a *app) loadPickPreview(id string) {
 					}
 					box.Children(func() {
 						if isText {
-							pickTextPreview(c, text, err)
+							pickTextPreview(c, textPreview, err)
 						} else if bmp == nil {
 							ui.Text(c, "图片预览加载失败，请重新悬停重试").TextColor(t.TextMuted)
 						} else {
@@ -222,6 +227,7 @@ func (a *app) loadPickPreview(id string) {
 				// Native windows can outlive their content closures.
 				bmp = nil
 				text = ""
+				textPreview = nil
 				if a.pickPreview.win == p {
 					a.pickPreview.win = nil
 					a.pickPreview.inside = false
