@@ -48,10 +48,11 @@ type endpoint struct {
 }
 
 type Server struct {
-	http *http.Server
-	lock *os.File
-	path string
-	once sync.Once
+	http   *http.Server
+	lock   *os.File
+	path   string
+	once   sync.Once
+	cancel context.CancelFunc
 }
 
 func Start(ctx context.Context, dataDir string, handler Handler) (*Server, error) {
@@ -71,7 +72,8 @@ func Start(ctx context.Context, dataDir string, handler Handler) (*Server, error
 		return nil, err
 	}
 	ep := endpoint{Address: ln.Addr().String(), Token: hex.EncodeToString(token)}
-	s := &Server{lock: lock, path: filepath.Join(dataDir, "cli.json")}
+	ctx, cancel := context.WithCancel(ctx)
+	s := &Server{lock: lock, path: filepath.Join(dataDir, "cli.json"), cancel: cancel}
 	busy := make(chan struct{}, 1)
 	s.http = &http.Server{
 		ReadTimeout: 10 * time.Second, ReadHeaderTimeout: 3 * time.Second,
@@ -136,6 +138,7 @@ func Start(ctx context.Context, dataDir string, handler Handler) (*Server, error
 		}),
 	}
 	if err := writeEndpoint(s.path, ep); err != nil {
+		cancel()
 		ln.Close()
 		lock.Close()
 		return nil, err
@@ -147,6 +150,7 @@ func Start(ctx context.Context, dataDir string, handler Handler) (*Server, error
 
 func (s *Server) Close() {
 	s.once.Do(func() {
+		s.cancel()
 		_ = s.http.Close()
 		_ = os.Remove(s.path)
 		_ = s.lock.Close()

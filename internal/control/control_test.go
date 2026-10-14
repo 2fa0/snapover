@@ -146,3 +146,16 @@ func TestClientDisconnectCancelsRequest(t *testing.T) {
 		t.Fatal("cancellation reported success")
 	}
 }
+
+func TestCloseCancelsServerContext(t *testing.T) {
+	s, err := Start(context.Background(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := s.http.BaseContext(nil)
+	s.Close()
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Fatal("closing the server retained its context and cancellation watcher")
+	}
+}
