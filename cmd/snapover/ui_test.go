@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -127,6 +128,52 @@ func TestSettingsControlsPersistPolicy(t *testing.T) {
 	}
 	if !got.Values.Paused || !got.Values.TextOnly || got.Values.MaxImageMB != 8 {
 		t.Fatalf("settings were not saved: %+v", got.Values)
+	}
+}
+
+func TestTextLimitInputAppliesAndRejectsInvalidValues(t *testing.T) {
+	a := interfaceTestApp(t)
+	tt := ui.NewTester(a.settingsPage, 960, 1200)
+	clickInterface(t, tt, "文本大小上限，MB")
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("8")
+	clickInterface(t, tt, "应用文本上限")
+	got, err := settings.Load(filepath.Dir(a.cfg.Path))
+	if err != nil || got.Values.MaxTextMB != 8 || a.engine.TextLimit() != 8<<20 {
+		t.Fatalf("text limit was not applied: %+v %v", got, err)
+	}
+	for _, value := range []string{"", "abc", "0", "-1", "21", "1.5"} {
+		a.maxTextText = value
+		a.saveTextLimit()
+		if a.maxTextError == "" || a.cfg.Values.MaxTextMB != 8 || a.engine.TextLimit() != 8<<20 {
+			t.Fatalf("invalid limit %q changed the setting", value)
+		}
+	}
+	a.maxTextText = " 20 "
+	a.saveTextLimit()
+	if a.maxTextError != "" || a.maxTextText != "20" || a.engine.TextLimit() != 20<<20 {
+		t.Fatal("valid input did not clear the validation error")
+	}
+	reopened, err := settings.Load(filepath.Dir(a.cfg.Path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := newApp(a.engine, a.hist, reopened, &identity.Identity{}, ":47821", nil, "")
+	if b.maxTextText != "20" || b.engine.TextLimit() != 20<<20 {
+		t.Fatal("saved limit was not restored on startup")
+	}
+}
+
+func TestTextLimitSaveFailureKeepsActiveLimit(t *testing.T) {
+	a := interfaceTestApp(t)
+	// A directory at the settings file path prevents publishing the new value.
+	if err := os.Mkdir(a.cfg.Path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	a.maxTextText = "8"
+	a.saveTextLimit()
+	if a.maxTextError == "" || a.cfg.Values.MaxTextMB != 1 || a.engine.TextLimit() != 1<<20 {
+		t.Fatal("failed save changed the active limit")
 	}
 }
 

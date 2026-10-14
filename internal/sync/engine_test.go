@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -56,6 +57,22 @@ func TestLocalCopyNotifiesWithoutPeer(t *testing.T) {
 	}
 	if e.Connected() {
 		t.Fatal("should not be connected")
+	}
+}
+
+func TestLocalTextLimitSkipsHistoryAndCanBeRaised(t *testing.T) {
+	e := testEngine(t, &memBoard{})
+	item := mustText(t, strings.Repeat("a", clip.DefaultMaxTextBytes+1))
+	var got []Notice
+	e.OnNotice = func(n Notice) { got = append(got, n) }
+	e.HandleLocal(1, item)
+	if len(got) != 1 || got[0].Kind != NoticeStatus || got[0].Item.Kind != "" {
+		t.Fatal("oversize text was offered to history")
+	}
+	e.SetTextLimit(2 << 20)
+	e.HandleLocal(2, item)
+	if len(got) != 2 || got[1].Kind != NoticeLocal || got[1].Item.Text != item.Text {
+		t.Fatal("raised limit did not capture the same text")
 	}
 }
 

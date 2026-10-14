@@ -12,13 +12,15 @@ import (
 
 // MyGoBoard reads and writes the system clipboard through MyGo.
 // Call it only after App.Run has started; other goroutines may call it.
-type MyGoBoard struct{}
+type MyGoBoard struct {
+	TextLimit func() int
+}
 
 var writeClipboardData = mygo.Clipboard.Write
 
 func (MyGoBoard) Sequence() (uint64, error) { return platformSequence() }
 
-func (MyGoBoard) Snapshot() (Item, error) {
+func (b MyGoBoard) Snapshot() (Item, error) {
 	crashlog.Breadcrumb("开始读取剪贴板")
 	raw := mygo.Clipboard.AvailableFormats()
 	portable := make([]string, 0, 4)
@@ -49,7 +51,11 @@ func (MyGoBoard) Snapshot() (Item, error) {
 		if text == "" {
 			return Item{}, nil
 		}
-		item, err := FromText(text)
+		limit := DefaultMaxTextBytes
+		if b.TextLimit != nil {
+			limit = b.TextLimit()
+		}
+		item, err := FromTextWithLimit(text, limit)
 		if err != nil {
 			return Item{Skip: err.Error()}, nil
 		}

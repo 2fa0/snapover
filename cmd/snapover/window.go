@@ -46,6 +46,8 @@ type app struct {
 	paused       bool
 	textOnly     bool
 	maxImageText string
+	maxTextText  string
+	maxTextError string
 
 	page            string
 	peer            string
@@ -125,6 +127,10 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 	if cfg == nil {
 		cfg = &settings.File{Values: settings.Values{MaxImageMB: settings.DefaultMaxImageMB}}
 	}
+	if cfg.Values.MaxTextMB == 0 {
+		cfg.Values.MaxTextMB = settings.DefaultMaxTextMB
+	}
+	engine.SetTextLimit(cfg.Values.MaxTextMB << 20)
 	devices := engine.Peers.List()
 	if peer == "" {
 		for _, dev := range devices {
@@ -147,6 +153,7 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		paused:       cfg.Values.Paused,
 		textOnly:     cfg.Values.TextOnly,
 		maxImageText: strconv.Itoa(cfg.Values.MaxImageMB),
+		maxTextText:  strconv.Itoa(cfg.Values.MaxTextMB),
 		page:         pageDevices,
 		peer:         peer,
 		status:       "未连接",
@@ -414,6 +421,24 @@ func (a *app) settingsPage(c *ui.Context) {
 		ui.Divider(c)
 		if settingSwitch(c, &a.textOnly, "只同步文本", "开启后，图片只保留在本机。") {
 			a.saveSettings()
+		}
+		ui.Divider(c)
+		ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
+			ui.Column(c).Grow(1).Gap(4).Children(func() {
+				ui.Text(c, "文本大小上限").Bold()
+				ui.Text(c, "1–20 MB，默认 1 MB，按 UTF-8 字节数计算。").FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, "超限文本不收录、不收发；已保存的历史仍可回贴。").FontSize(12).TextColor(t.TextMuted)
+			})
+			if ui.TextInput(c.Key("maxtextmb"), &a.maxTextText).Label("文本大小上限，MB").Width(56).Submitted() {
+				a.saveTextLimit()
+			}
+			ui.Text(c, "MB").TextColor(t.TextMuted)
+			if ui.Button(c, "应用文本上限").Clicked() {
+				a.saveTextLimit()
+			}
+		})
+		if a.maxTextError != "" {
+			ui.Text(c, a.maxTextError).FontSize(12).TextColor(t.Danger)
 		}
 		ui.Divider(c)
 		ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
@@ -731,6 +756,25 @@ func (a *app) saveSettings() {
 		a.status = "已暂停同步"
 	}
 	a.refreshTray()
+}
+
+func (a *app) saveTextLimit() {
+	n, err := strconv.Atoi(strings.TrimSpace(a.maxTextText))
+	if err != nil || n < 1 || n > settings.MaxTextMB {
+		a.maxTextError = fmt.Sprintf("文本大小上限须为 1–%d 的整数，单位 MB", settings.MaxTextMB)
+		return
+	}
+	previous := a.cfg.Values.MaxTextMB
+	a.cfg.Values.MaxTextMB = n
+	if err := a.cfg.Save(); err != nil {
+		a.cfg.Values.MaxTextMB = previous
+		a.maxTextError = "文本上限保存失败，请检查数据目录权限后重试"
+		return
+	}
+	a.engine.SetTextLimit(n << 20)
+	a.maxTextText = strconv.Itoa(n)
+	a.maxTextError = ""
+	a.status = fmt.Sprintf("文本大小上限已设为 %d MB", n)
 }
 
 func (a *app) probe() {

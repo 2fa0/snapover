@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/2fa0/snapover/internal/control"
+	"github.com/2fa0/snapover/internal/settings"
 )
 
 const usage = `用法：
@@ -24,7 +25,8 @@ const usage = `用法：
 
 请先启动 Snapover 并连接设备。文件保存到对端接收文件夹，文字和图片
 进入对端剪贴板，不改动本机剪贴板。路径包含空格时请加引号。
-文字使用 UTF-8，最大 1 MB；图片支持 PNG/JPEG/BMP/WebP，最大 20 MB；
+文字使用 UTF-8，上限沿用 Snapover 设置（默认 1 MB，最多 20 MB）；
+图片支持 PNG/JPEG/BMP/WebP，最大 20 MB；
 单文件最大 50 MB。可设置 snapover 别名以缩短命令。
 退出码：0 成功，1 发送失败，2 参数或输入无效。
 `
@@ -70,8 +72,8 @@ func parse(ctx context.Context, args []string, stdin io.Reader) (command, error)
 		if err != nil {
 			return command{}, fmt.Errorf("读取标准输入失败：%w", err)
 		}
-		if len(data) > 1<<20 {
-			return command{}, errors.New("标准输入超过 1 MB")
+		if len(data) > settings.MaxTextMB<<20 {
+			return command{}, fmt.Errorf("标准输入超过 %d MB", settings.MaxTextMB)
 		}
 		value = strings.TrimPrefix(string(data), "\ufeff")
 	} else {
@@ -81,8 +83,8 @@ func parse(ctx context.Context, args []string, stdin io.Reader) (command, error)
 		value = values[0]
 	}
 	if kind == "text" {
-		if value == "" || len(value) > 1<<20 || !utf8.ValidString(value) {
-			return command{}, errors.New("请输入非空、1 MB 以内的 UTF-8 文本")
+		if value == "" || len(value) > settings.MaxTextMB<<20 || !utf8.ValidString(value) {
+			return command{}, fmt.Errorf("请输入非空、%d MB 以内的 UTF-8 文本", settings.MaxTextMB)
 		}
 	} else {
 		if value == "" {
@@ -127,7 +129,7 @@ func readInput(ctx context.Context, stdin io.Reader) ([]byte, error) {
 	// A pipe or console reader can block until EOF. Let cancellation return
 	// immediately; main exits the CLI process even if that read is still blocked.
 	go func() {
-		data, err := io.ReadAll(io.LimitReader(stdin, (1<<20)+1))
+		data, err := io.ReadAll(io.LimitReader(stdin, (settings.MaxTextMB<<20)+1))
 		ready <- result{data: data, err: err}
 	}()
 	select {

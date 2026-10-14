@@ -148,11 +148,11 @@ func main() {
 		ListenPort:  portOf(*listen),
 		TLS:         identity.TLSConfig(id),
 		Peers:       peers,
-		Board:       clip.MyGoBoard{},
 		RunOnBoard:  mygo.RunOnMain,
 		Guard:       clip.NewEchoGuard(5 * time.Second),
 		Log:         log,
 	}
+	engine.Board = clip.MyGoBoard{TextLimit: engine.TextLimit}
 	engine.SetPolicy(cfg.Values.Paused, cfg.Values.TextOnly, cfg.Values.MaxImageMB<<20)
 	receiveDir := cfg.Values.ReceiveDir
 	if receiveDir == "" {

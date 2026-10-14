@@ -18,11 +18,14 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/2fa0/snapover/internal/settings"
 )
 
 const MaxTimeout = 10 * time.Minute
 
-const maxRequestBytes = 6<<20 + 64<<10 // A 1 MiB text can expand sixfold in JSON.
+// JSON escaping can expand text sixfold.
+const maxRequestBytes = (settings.MaxTextMB<<20)*6 + 64<<10
 
 type Request struct {
 	Kind      string `json:"kind"`

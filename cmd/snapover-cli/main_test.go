@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/2fa0/snapover/internal/control"
+	"github.com/2fa0/snapover/internal/settings"
 )
 
 func TestParseTextAndStdinPreserveContent(t *testing.T) {
@@ -38,9 +39,25 @@ func TestParseRejectsInvalidInput(t *testing.T) {
 			t.Fatalf("accepted %q", args)
 		}
 	}
-	for _, data := range []string{strings.Repeat("a", (1<<20)+1), "\ufeff" + strings.Repeat("a", 1<<20)} {
+	for _, data := range []string{strings.Repeat("a", (settings.MaxTextMB<<20)+1), "\ufeff" + strings.Repeat("a", settings.MaxTextMB<<20)} {
 		if _, err := parse(context.Background(), []string{"send", "text", "--stdin", "--data", "unused"}, strings.NewReader(data)); err == nil {
 			t.Fatal("oversize input silently truncated")
+		}
+	}
+}
+
+func TestParseLongTextDefersConfiguredLimitToApp(t *testing.T) {
+	body := strings.Repeat("a", settings.MaxTextMB<<20)
+	for _, stdin := range []bool{false, true} {
+		args := []string{"send", "text", "--data", "unused"}
+		if stdin {
+			args = append(args, "--stdin")
+		} else {
+			args = append(args, body)
+		}
+		cmd, err := parse(context.Background(), args, strings.NewReader(body))
+		if err != nil || cmd.request.Value != body {
+			t.Fatalf("stdin=%v: long text changed, err=%v", stdin, err)
 		}
 	}
 }

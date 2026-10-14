@@ -18,8 +18,9 @@ import (
 var errEmptyWrite = errors.New("没有可写入的内容")
 
 const (
-	// MaxTextBytes is the largest text body that will be synced.
-	MaxTextBytes = 1 << 20
+	DefaultMaxTextBytes = 1 << 20
+	// MaxTextBytes bounds text storage and transport; users may choose less.
+	MaxTextBytes = 20 << 20
 	// MaxImageBytes is the largest PNG that will be synced.
 	MaxImageBytes = 20 << 20
 	// MaxPixels rejects decompression bombs. 40e6 covers a 5K screenshot
@@ -60,16 +61,30 @@ func (it Item) Empty() bool {
 
 // FromText validates and hashes a clipboard string.
 func FromText(s string) (Item, error) {
+	return FromTextWithLimit(s, MaxTextBytes)
+}
+
+// FromTextWithLimit applies the current capture limit before hashing the text.
+func FromTextWithLimit(s string, limit int) (Item, error) {
 	if s == "" {
 		return Item{}, errors.New("空文本")
 	}
-	n := len([]byte(s))
-	if n > MaxTextBytes {
-		return Item{}, fmt.Errorf("文本 %d 字节，超过 %d", n, MaxTextBytes)
+	if err := CheckTextSize(s, limit); err != nil {
+		return Item{}, err
 	}
 	s = normalizeNewlines(s)
-	n = len(s)
-	return Item{Kind: KindText, Text: s, Hash: HashText(s), Size: n}, nil
+	return Item{Kind: KindText, Text: s, Hash: HashText(s), Size: len(s)}, nil
+}
+
+func CheckTextSize(s string, limit int) error {
+	if limit <= 0 || limit > MaxTextBytes {
+		limit = MaxTextBytes
+	}
+	n := len(s)
+	if n > limit {
+		return fmt.Errorf("文本 %d 字节，超过 %d MB 上限，可在设置中调整文本大小上限", n, limit>>20)
+	}
+	return nil
 }
 
 // FromPNG validates a PNG, checks the pixel budget, and hashes decoded pixels.

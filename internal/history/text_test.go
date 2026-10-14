@@ -19,8 +19,11 @@ func TestLongTextRoundTripAndCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := " \n" + strings.Repeat("你好\n", 10000) + "尾部内容 \n"
-	item, _ := clip.FromText(body)
+	body := " \n" + strings.Repeat("你好\n", 200000) + "尾部内容 \n"
+	item, err := clip.FromText(body)
+	if err != nil {
+		t.Fatal(err)
+	}
 	entry, err := s.Add(DirLocal, "Mac", item)
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +38,10 @@ func TestLongTextRoundTripAndCleanup(t *testing.T) {
 	back, err := reopened.Item(entry.ID)
 	if err != nil || back.Text != item.Text || back.Hash != item.Hash {
 		t.Fatal("full text changed")
+	}
+	back, err = reopened.PasteItem(entry.ID)
+	if err != nil || back.Text != item.Text {
+		t.Fatal("long history could not be pasted")
 	}
 	if err := reopened.SetPinned(entry.ID, true); err != nil {
 		t.Fatal(err)

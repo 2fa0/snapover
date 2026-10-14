@@ -9,11 +9,17 @@ import (
 
 const DefaultMaxImageMB = 20
 
+const (
+	DefaultMaxTextMB = 1
+	MaxTextMB        = 20
+)
+
 // Values is the small set of options the settings page can change.
 type Values struct {
 	Paused        bool   `json:"paused"`
 	TextOnly      bool   `json:"text_only"`
 	MaxImageMB    int    `json:"max_image_mb"`
+	MaxTextMB     int    `json:"max_text_mb"`
 	OpenAtLogin   bool   `json:"open_at_login"`
 	ReceiveDir    string `json:"receive_dir,omitempty"`
 	DisableSendTo bool   `json:"disable_send_to,omitempty"`
@@ -41,7 +47,7 @@ type File struct {
 func Load(dataDir string) (*File, error) {
 	f := &File{
 		Path:   filepath.Join(dataDir, "settings.json"),
-		Values: Values{MaxImageMB: DefaultMaxImageMB},
+		Values: Values{MaxImageMB: DefaultMaxImageMB, MaxTextMB: DefaultMaxTextMB},
 	}
 	buf, err := os.ReadFile(f.Path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -57,11 +63,13 @@ func Load(dataDir string) (*File, error) {
 		return nil, err
 	}
 	f.Values.MaxImageMB = clampMB(f.Values.MaxImageMB)
+	f.Values.MaxTextMB = clampTextMB(f.Values.MaxTextMB)
 	return f, nil
 }
 
 func (f *File) Save() error {
 	f.Values.MaxImageMB = clampMB(f.Values.MaxImageMB)
+	f.Values.MaxTextMB = clampTextMB(f.Values.MaxTextMB)
 	buf, err := json.MarshalIndent(f.Values, "", "  ")
 	if err != nil {
 		return err
@@ -75,6 +83,16 @@ func (f *File) Save() error {
 		return err
 	}
 	return os.Rename(tmp, f.Path)
+}
+
+func clampTextMB(n int) int {
+	if n < 1 {
+		return DefaultMaxTextMB
+	}
+	if n > MaxTextMB {
+		return MaxTextMB
+	}
+	return n
 }
 
 func clampMB(n int) int {

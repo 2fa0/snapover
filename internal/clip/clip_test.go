@@ -57,6 +57,27 @@ func TestFromTextLimit(t *testing.T) {
 	}
 }
 
+func TestConfiguredTextLimitCountsBytesBeforeNormalizing(t *testing.T) {
+	limit := DefaultMaxTextBytes
+	// Chinese characters take three UTF-8 bytes. Exactly the cap is accepted.
+	text := string(bytes.Repeat([]byte("中"), limit/3)) + "a"
+	if len(text) != limit {
+		t.Fatal("invalid boundary fixture")
+	}
+	if _, err := FromTextWithLimit(text, limit); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FromTextWithLimit(text+"a", limit); err == nil {
+		t.Fatal("byte limit was ignored")
+	}
+	if _, err := FromTextWithLimit(text+"a", 2*limit); err != nil {
+		t.Fatal("raised limit did not accept long text")
+	}
+	if _, err := FromTextWithLimit(text[:len(text)-1]+"\r\n", limit); err == nil {
+		t.Fatal("CRLF was normalized before checking the input size")
+	}
+}
+
 func TestSensitive(t *testing.T) {
 	read := func(name string) ([]byte, bool) {
 		if name == "CanIncludeInClipboardHistory" {

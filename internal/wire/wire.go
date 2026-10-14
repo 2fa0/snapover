@@ -1,5 +1,5 @@
 // Package wire is the length-prefixed MessagePack framing used between peers.
-// One frame is at most a little over 1 MiB. Images are split into chunks.
+// One frame is at most a little over 20 MiB. Images are split into chunks.
 package wire
 
 import (
@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	// MaxFrame is the type byte plus payload. Text is capped at 1 MiB;
+	// MaxFrame is the type byte plus payload. Text is capped at 20 MiB;
 	// the extra kibibyte is the MessagePack envelope.
-	MaxFrame = 1<<20 + 1024
+	MaxFrame = 20<<20 + 1024
 	// ChunkSize is the PNG slice carried by one ImageChunk.
 	ChunkSize = 256 << 10
 

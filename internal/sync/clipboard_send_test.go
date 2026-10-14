@@ -41,6 +41,38 @@ func TestSendClipboardConfirmsWithoutChangingLocalBoard(t *testing.T) {
 	}
 }
 
+func TestLargeTextUsesConfiguredLimitsWithoutReconnect(t *testing.T) {
+	a, b := newPair(t)
+	item := mustText(t, strings.Repeat("a", clip.MaxTextBytes))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := a.SendClipboard(ctx, b.LocalID, item); err == nil || !strings.Contains(err.Error(), "1 MB") {
+		t.Fatalf("default sender limit was ignored: %v", err)
+	}
+	a.SetTextLimit(clip.MaxTextBytes)
+	if err := a.SendClipboard(ctx, b.LocalID, item); err == nil || !strings.Contains(err.Error(), "对端未接收") {
+		t.Fatalf("default receiver limit was ignored: %v", err)
+	}
+	if len(b.Board.(*memBoard).Writes()) != 0 {
+		t.Fatal("receiver wrote text above its limit")
+	}
+	b.SetTextLimit(clip.MaxTextBytes)
+	if err := a.SendClipboard(ctx, b.LocalID, item); err != nil {
+		t.Fatal(err)
+	}
+	writes := b.Board.(*memBoard).Writes()
+	if len(writes) != 1 || writes[0].Text != item.Text {
+		t.Fatal("long text was lost or truncated in transport")
+	}
+	b.SetTextLimit(clip.DefaultMaxTextBytes)
+	if err := a.SendClipboard(ctx, b.LocalID, item); err == nil {
+		t.Fatal("lowered limit did not take effect")
+	}
+	if err := a.SendClipboard(ctx, b.LocalID, mustText(t, "still connected")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSendClipboardReportsRemoteRejections(t *testing.T) {
 	for _, reason := range []string{"paused", "recent-copy", "write-failed"} {
 		t.Run(reason, func(t *testing.T) {

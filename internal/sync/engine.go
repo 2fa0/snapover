@@ -3,6 +3,7 @@ package sync
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"strconv"
@@ -49,6 +50,7 @@ type Engine struct {
 	paused      bool
 	textOnly    bool
 	maxImage    int
+	maxText     int
 	receiveDir  string
 	sess        *Session
 	link        Link
@@ -79,6 +81,13 @@ func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
 	}
 	if item.Kind == "" {
 		return
+	}
+	if item.Kind == clip.KindText {
+		if err := clip.CheckTextSize(item.Text, e.TextLimit()); err != nil {
+			e.Log.Info("跳过剪贴板", "reason", err.Error())
+			e.notify(Notice{Kind: NoticeStatus, Message: "跳过：" + err.Error()})
+			return
+		}
 	}
 	if e.Guard.IsEcho(item.Hash) {
 		return
@@ -119,18 +128,53 @@ func (e *Engine) SetPolicy(paused, textOnly bool, maxImage int) {
 }
 
 func (e *Engine) policyLocked() policy {
-	return policy{Paused: e.paused, TextOnly: e.textOnly, MaxImage: e.maxImage}
+	return policy{Paused: e.paused, TextOnly: e.textOnly, MaxImage: e.maxImage, MaxText: e.textLimitLocked()}
+}
+
+func (e *Engine) SetTextLimit(maxBytes int) {
+	if maxBytes <= 0 {
+		maxBytes = clip.DefaultMaxTextBytes
+	}
+	if maxBytes > clip.MaxTextBytes {
+		maxBytes = clip.MaxTextBytes
+	}
+	e.mu.Lock()
+	e.maxText = maxBytes
+	e.mu.Unlock()
+}
+
+func (e *Engine) textLimitLocked() int {
+	if e.maxText == 0 {
+		return clip.DefaultMaxTextBytes
+	}
+	return e.maxText
+}
+
+func (e *Engine) TextLimit() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.textLimitLocked()
 }
 
 type policy struct {
 	Paused   bool
 	TextOnly bool
 	MaxImage int
+	MaxText  int
 }
 
 // localSend decides whether a local clipboard item is pushed to the peer.
 // Items that are not sent are still recorded in history by the caller.
 func localSend(p policy, item clip.Item, connected bool) (bool, string) {
+	if item.Kind == clip.KindText {
+		limit := p.MaxText
+		if limit == 0 {
+			limit = clip.DefaultMaxTextBytes
+		}
+		if err := clip.CheckTextSize(item.Text, limit); err != nil {
+			return false, err.Error()
+		}
+	}
 	switch {
 	case p.Paused:
 		return false, "已暂停，未发送"
@@ -154,6 +198,7 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 	var paused, active, attempted bool
 	var link Link
 	var err error
+	var textErr error
 	write := func() {
 		e.mu.Lock()
 		defer e.mu.Unlock()
@@ -164,6 +209,12 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 		active = time.Since(e.localActive) < localPriority
 		if paused || active {
 			return
+		}
+		if item.Kind == clip.KindText {
+			textErr = clip.CheckTextSize(item.Text, e.textLimitLocked())
+			if textErr != nil {
+				return
+			}
 		}
 		link = e.link
 		attempted = true
@@ -190,6 +241,11 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 		return errors.New("对端刚复制过内容，未覆盖剪贴板，请稍后重试")
 	}
 
+	if textErr != nil {
+		e.clipMu.Unlock()
+		e.notify(Notice{Kind: NoticeStatus, Message: "未接收：" + textErr.Error()})
+		return fmt.Errorf("对端未接收：%w", textErr)
+	}
 	if !attempted {
 		e.clipMu.Unlock()
 		return errors.New("连接已改变，未写入剪贴板")
