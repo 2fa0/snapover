@@ -15,6 +15,7 @@ import (
 	"github.com/2fa0/snapover/internal/discovery"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/keepalive"
 	"github.com/2fa0/snapover/internal/lan"
 	"github.com/2fa0/snapover/internal/paste"
 	"github.com/2fa0/snapover/internal/settings"
@@ -38,6 +39,8 @@ type app struct {
 	name        string
 	listen      string
 	addrs       []string
+
+	remoteActivity *keepalive.Controller
 
 	cfg          *settings.File
 	paused       bool
@@ -153,6 +156,7 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		entries: hist.List(),
 		devices: devices,
 	}
+	a.remoteActivity = keepalive.New()
 	for _, dev := range devices {
 		if dev.Peer.Addr == peer && peer != "" {
 			a.targetPeerID = dev.ID
@@ -204,6 +208,10 @@ func (a *app) open(ctx context.Context) {
 	}))
 	a.restoreLogin()
 	a.initSendTo()
+	if keepalive.Supported {
+		a.remoteActivity.SetEnabled(a.cfg.Values.KeepRemoteActive)
+		go a.remoteActivity.Run(ctx, a.engine.Log)
+	}
 	a.startTray()
 	if (!mygo.App.WasOpenedAtLogin() && a.pendingFileRequest == nil) || a.tray == nil {
 		a.openMainWindow()
@@ -427,6 +435,14 @@ func (a *app) settingsPage(c *ui.Context) {
 			a.setOpenAtLogin(a.openAtLogin)
 		}
 	})
+	if keepalive.Supported {
+		settingsGroup(c, "远程桌面", func() {
+			on := a.cfg.Values.KeepRemoteActive
+			if settingSwitch(c, &on, "保持远程会话活跃", "默认关闭。开启后，远程会话空闲约 2 分钟时轻移鼠标并移回；锁屏或断开时暂停。") {
+				a.setKeepRemoteActive(on)
+			}
+		})
+	}
 	settingsGroup(c, "接收文件", func() { a.receiveSettings(c) })
 	settingsGroup(c, "本机与诊断", func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {

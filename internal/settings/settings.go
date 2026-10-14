@@ -21,6 +21,8 @@ type Values struct {
 	WindowsNetworkGuideDismissed bool `json:"windows_network_guide_dismissed,omitempty"`
 	MacNetworkGuideDismissed     bool `json:"mac_network_guide_dismissed,omitempty"`
 
+	KeepRemoteActive bool `json:"keep_remote_active,omitempty"`
+
 	// DiscoveryMode is empty when every physical segment is used, including
 	// segments that appear later. "selected" limits discovery to DiscoveryNets.
 	// DiscoverySeen records segments present at the last explicit edit, so a
