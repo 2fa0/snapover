@@ -17,6 +17,10 @@ type Values struct {
 	OpenAtLogin   bool   `json:"open_at_login"`
 	ReceiveDir    string `json:"receive_dir,omitempty"`
 	DisableSendTo bool   `json:"disable_send_to,omitempty"`
+
+	WindowsNetworkGuideDismissed bool `json:"windows_network_guide_dismissed,omitempty"`
+	MacNetworkGuideDismissed     bool `json:"mac_network_guide_dismissed,omitempty"`
+
 	// DiscoveryMode is empty when every physical segment is used, including
 	// segments that appear later. "selected" limits discovery to DiscoveryNets.
 	// DiscoverySeen records segments present at the last explicit edit, so a

@@ -12,6 +12,7 @@ import (
 func (a *app) devicesPage(c *ui.Context) {
 	t := c.Theme()
 	pageHeading(c, "连接设备", "连接同一局域网内的电脑，配对后自动重连。")
+	a.networkSetupHint(c)
 	pending, waiting := a.engine.PendingPair()
 	until := a.engine.PairingUntil()
 	adding := time.Now().Before(until)
@@ -159,6 +160,7 @@ func (a *app) devicesPage(c *ui.Context) {
 		if a.discoveryMessage != "" {
 			ui.Text(c, a.discoveryMessage).FontSize(12).TextColor(t.TextMuted)
 		}
+		a.networkHelp(c)
 	})
 	ui.Column(c).Gap(10).Children(func() {
 		ui.Text(c, "通过地址连接").Bold()

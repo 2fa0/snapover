@@ -103,6 +103,7 @@ type app struct {
 	dialCancel         context.CancelFunc
 	dialAddr           string
 	fileWin            *mygo.Window
+	networkGuide       *networkGuide
 	filePath           string
 	fileSize           int64
 	fileBusy           bool
@@ -277,6 +278,7 @@ func (a *app) update(fn func()) {
 		if a.fileWin != nil {
 			a.fileWin.Invalidate()
 		}
+		a.refreshNetworkGuide()
 	})
 }
 
