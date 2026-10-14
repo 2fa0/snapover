@@ -239,7 +239,7 @@ func (a *app) pickerView(c *ui.Context) {
 				entry := shown[i]
 				sel := i == a.pickSel
 				row := ui.Row(c).Padding(9, 6).Gap(10).AlignItems(ui.Center)
-				if row.Hovered() && entry.Kind == string(clip.KindImage) {
+				if row.Hovered() && (entry.Kind == string(clip.KindImage) || entry.Kind == string(clip.KindText)) {
 					hoverID, hoverBounds = entry.ID, row.Bounds()
 				}
 				if row.DoubleClicked() {

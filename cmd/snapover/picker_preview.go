@@ -48,7 +48,7 @@ type pickerPreview struct {
 	anchor mygo.Rectangle
 	win    *mygo.Window
 	id     string
-	// A request identity prevents a late decode from reopening a dismissed preview.
+	// A request identity prevents a late load from reopening a dismissed preview.
 	request *struct{ id string }
 }
 
@@ -118,7 +118,7 @@ func previewImageSize(width, height int) (int, int) {
 
 func (a *app) loadPickPreview(id string) {
 	// Keep the limit on the app: closing a picker must not start another
-	// decode while its previous request is still running.
+	// load while its previous request is still running.
 	if a.pickLoading {
 		return
 	}
@@ -134,7 +134,16 @@ func (a *app) loadPickPreview(id string) {
 		}
 	}
 	go func() {
-		bmp, err := previewBitmap(a.hist, id)
+		var bmp *ui.Bitmap
+		var text string
+		var more bool
+		var err error
+		isText := entry.Kind == string(clip.KindText)
+		if isText {
+			text, more, err = a.hist.TextPreview(id)
+		} else {
+			bmp, err = previewBitmap(a.hist, id)
+		}
 		mygo.RunOnMain(func() {
 			a.pickLoading = false
 			if a.picker != nil {
@@ -149,6 +158,9 @@ func (a *app) loadPickPreview(id string) {
 				return
 			}
 			w, h := previewImageSize(entry.Width, entry.Height)
+			if isText {
+				w, h = 396, 300
+			}
 			if err != nil {
 				w, h = 240, 60
 			}
@@ -165,21 +177,34 @@ func (a *app) loadPickPreview(id string) {
 						parent.Invalidate()
 					}
 					box.Children(func() {
-						if bmp == nil {
+						if isText {
+							pickTextPreview(c, text, err)
+						} else if bmp == nil {
 							ui.Text(c, "图片预览加载失败，请重新悬停重试").TextColor(t.TextMuted)
 						} else {
 							ui.Image(c, bmp).Size(float32(w), float32(h)).Fit(ui.Contain)
 						}
 						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.Text(c, fmt.Sprintf("%d × %d", entry.Width, entry.Height)).FontSize(11).TextColor(t.TextMuted).Grow(1)
+							meta := fmt.Sprintf("%d × %d", entry.Width, entry.Height)
 							label := "查看原图"
+							if isText {
+								label, meta = "查看全文", formatSize(entry.Size)
+								if more {
+									meta += " · 还有更多内容"
+								}
+							}
+							ui.Text(c, meta).FontSize(11).TextColor(t.TextMuted).Grow(1)
 							if a.pickLoading {
 								label = "正在加载…"
 							}
 							if ui.Button(c, label).Disabled(a.pickLoading).Clicked() {
 								parent.Update(func() {
 									if a.picker == parent {
-										a.loadPickImage(id, parent)
+										if isText {
+											a.loadPickText(id, parent)
+										} else {
+											a.loadPickImage(id, parent)
+										}
 									}
 								})
 							}
@@ -191,6 +216,7 @@ func (a *app) loadPickPreview(id string) {
 			p.OnClosed(func() {
 				// Native windows can outlive their content closures.
 				bmp = nil
+				text = ""
 				if a.pickPreview.win == p {
 					a.pickPreview.win = nil
 					a.pickPreview.inside = false
