@@ -35,13 +35,13 @@ func (a *app) startTray() {
 		a.refreshTray()
 		return
 	}
-	a.tray.OnClick(func() { a.togglePicker() })
-	a.tray.OnRightClick(func() {
+	a.tray.OnClick(func() {
 		a.closePicker()
 		a.tray.SetMenu(a.trayMenu())
 		defer a.tray.SetMenu(nil)
 		a.tray.PopUpMenu()
 	})
+	a.tray.OnRightClick(func() { a.togglePicker() })
 	if !template {
 		mygo.Theme.OnUpdated(func() {
 			icon, err := a.menuIcon(false)

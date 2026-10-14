@@ -41,7 +41,7 @@ func (a *app) registerPickerShortcut() {
 	if len(failed) == 0 {
 		return
 	}
-	a.status = "快捷键被占用：" + strings.Join(failed, "、") + "。点菜单栏图标也能打开"
+	a.status = "快捷键被占用：" + strings.Join(failed, "、") + "。从托盘／菜单栏菜单选择「快速历史」也能打开"
 }
 
 func (a *app) togglePicker() {
