@@ -128,22 +128,25 @@ type Error struct {
 }
 
 func WriteMsg(w io.Writer, typ byte, v any) error {
-	var payload []byte
+	// Reserve the header in the encoded buffer so large text is not copied
+	// into a second, equally large frame before every socket write.
+	frame := bytes.NewBuffer(make([]byte, 5, 256))
 	if v != nil {
-		var err error
-		payload, err = msgpack.Marshal(v)
+		enc := msgpack.GetEncoder()
+		enc.Reset(frame)
+		err := enc.Encode(v)
+		msgpack.PutEncoder(enc)
 		if err != nil {
 			return err
 		}
 	}
-	if len(payload)+1 > MaxFrame {
-		return fmt.Errorf("帧长度 %d 超过 %d", len(payload)+1, MaxFrame)
+	if frame.Len()-4 > MaxFrame {
+		return fmt.Errorf("帧长度 %d 超过 %d", frame.Len()-4, MaxFrame)
 	}
-	frame := make([]byte, 5+len(payload))
-	binary.BigEndian.PutUint32(frame[:4], uint32(len(payload)+1))
-	frame[4] = typ
-	copy(frame[5:], payload)
-	_, err := w.Write(frame)
+	header := frame.Bytes()[:5]
+	binary.BigEndian.PutUint32(header[:4], uint32(frame.Len()-4))
+	header[4] = typ
+	_, err := frame.WriteTo(w)
 	return err
 }
 

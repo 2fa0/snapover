@@ -71,6 +71,28 @@ func TestShortRead(t *testing.T) {
 	}
 }
 
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) { return len(p) - 1, nil }
+
+func TestWriteMsgRejectsShortWrite(t *testing.T) {
+	if err := WriteMsg(shortWriter{}, TypePing, nil); err != io.ErrShortWrite {
+		t.Fatalf("short write reported %v, want %v", err, io.ErrShortWrite)
+	}
+}
+
+func BenchmarkWriteLargeText(b *testing.B) {
+	msg := Text{ItemID: "text", Text: string(bytes.Repeat([]byte{'a'}, 20<<20))}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(msg.Text)))
+	b.ResetTimer()
+	for range b.N {
+		if err := WriteMsg(io.Discard, TypeText, msg); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestHelloListenPortCompatibility(t *testing.T) {
 	for _, port := range []string{"", "49000"} {
 		var buf bytes.Buffer

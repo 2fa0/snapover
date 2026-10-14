@@ -128,7 +128,9 @@ func (s *Session) Close() {
 		s.queuedBytes = 0
 		s.mu.Unlock()
 		close(s.done)
-		_ = s.conn.Close()
+		// Session shutdown also runs while the engine lock is held. Close the
+		// transport directly so TLS close-notify cannot wait on an idle peer.
+		_ = s.conn.NetConn().Close()
 	})
 }
 

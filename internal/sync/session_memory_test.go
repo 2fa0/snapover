@@ -9,6 +9,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/wire"
@@ -85,6 +86,27 @@ func TestConcurrentQueueCloseReleasesPayloads(t *testing.T) {
 	wg.Wait()
 	if s.queuedBytes != 0 || len(s.out) != 0 || s.enqueue(clip.Item{Text: "closed"}) {
 		t.Fatal("closed queue retained payloads")
+	}
+}
+
+func TestSessionCloseDoesNotWaitForIdlePeer(t *testing.T) {
+	left, right := newIdentities(t)
+	client, server := handshakePair(t, left, right)
+	defer client.NetConn().Close()
+	defer server.NetConn().Close()
+	s := newSession(client, "peer", true, discardLog(), nil)
+	done := make(chan struct{})
+	go func() {
+		s.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		// Unblock the old TLS close-notify path before failing the test.
+		server.NetConn().Close()
+		<-done
+		t.Fatal("session close waited for the peer to read a TLS close notification")
 	}
 }
 
