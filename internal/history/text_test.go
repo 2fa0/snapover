@@ -215,6 +215,16 @@ func TestLegacyIndexFormatsAndTextPaths(t *testing.T) {
 	}
 }
 
+func TestTitleTruncatedOnlyWhenListDropsText(t *testing.T) {
+	if TitleTruncated(Entry{Text: "短文本"}) || TitleTruncated(Entry{Text: "你好\n世界"}) ||
+		TitleTruncated(Entry{Kind: string(clip.KindImage), Text: strings.Repeat("图", 100)}) {
+		t.Fatal("complete text or an image was treated as truncated")
+	}
+	if !TitleTruncated(Entry{Text: strings.Repeat("文", 81)}) || !TitleTruncated(Entry{Text: "短", TextFile: "x.txt"}) {
+		t.Fatal("cut or offloaded text was treated as complete")
+	}
+}
+
 func BenchmarkOpenOffloadedHistory(b *testing.B) {
 	s, err := Open(b.TempDir())
 	if err != nil {

@@ -132,7 +132,7 @@ func (s *Store) loadIndex(dec *json.Decoder) (bool, error) {
 	return migrated, nil
 }
 
-// Title describes a record using at most 80 text runes.
+// Title describes a record using at most maxTitleRunes text runes.
 func Title(entry Entry) string {
 	if entry.Kind == string(clip.KindImage) {
 		if entry.Width > 0 {
@@ -145,10 +145,10 @@ func Title(entry Entry) string {
 		return "空文本"
 	}
 	var title strings.Builder
-	title.Grow(80)
+	title.Grow(maxTitleRunes)
 	n := 0
 	for _, r := range text {
-		if n == 80 {
+		if n == maxTitleRunes {
 			title.WriteRune('…')
 			break
 		}
@@ -159,6 +159,17 @@ func Title(entry Entry) string {
 		n++
 	}
 	return title.String()
+}
+
+const maxTitleRunes = 80
+
+// TitleTruncated reports that the list title dropped part of the text.
+// Offloaded bodies keep only that title in memory.
+func TitleTruncated(entry Entry) bool {
+	if entry.Kind == string(clip.KindImage) {
+		return false
+	}
+	return entry.TextFile != "" || utf8.RuneCountInString(strings.TrimSpace(entry.Text)) > maxTitleRunes
 }
 
 // Matches checks inline text and display fields without copying long bodies.

@@ -6,6 +6,8 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/history"
 )
 
 func pickTextPreview(c *ui.Context, text string, err error) {
@@ -16,6 +18,31 @@ func pickTextPreview(c *ui.Context, text string, err error) {
 	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 		ui.Text(c, text).FontSize(14).FillWidth()
 	})
+}
+
+// rowNeedsPreview keeps hover previews for images and text the list cannot
+// show whole. A short, uncut title is already the item.
+func rowNeedsPreview(c *ui.Context, entry history.Entry, shown string, title ui.Element) bool {
+	switch entry.Kind {
+	case string(clip.KindImage):
+		return true
+	case string(clip.KindText):
+		return textRowTruncated(c, entry, shown, title)
+	default:
+		return false
+	}
+}
+
+func textRowTruncated(c *ui.Context, entry history.Entry, shown string, title ui.Element) bool {
+	if history.TitleTruncated(entry) {
+		return true
+	}
+	box := title.Bounds()
+	if box.W <= 1 {
+		return false
+	}
+	width, _ := c.MeasureText(0, ui.Span{Text: shown})
+	return width > box.W+0.5
 }
 
 func (a *app) loadPickText(id string, parent *mygo.Window) {

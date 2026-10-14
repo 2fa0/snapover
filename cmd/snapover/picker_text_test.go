@@ -94,6 +94,44 @@ func TestTextReaderPagesPreserveUTF8AndAllWhitespace(t *testing.T) {
 	}
 }
 
+func TestTextPreviewOnlyWhenRowTruncates(t *testing.T) {
+	wide := strings.Repeat("宽", 40)
+	for _, tc := range []struct {
+		name  string
+		entry history.Entry
+		want  bool
+	}{
+		{"short", history.Entry{Kind: string(clip.KindText), Text: "短文本"}, false},
+		{"lines", history.Entry{Kind: string(clip.KindText), Text: "你好\n世界"}, false},
+		{"long", history.Entry{Kind: string(clip.KindText), Text: strings.Repeat("文", 81)}, true},
+		{"file", history.Entry{Kind: string(clip.KindText), Text: "短", TextFile: "x.txt"}, true},
+		{"wide", history.Entry{Kind: string(clip.KindText), Text: wide}, true},
+		{"image", history.Entry{Kind: string(clip.KindImage), Width: 12, Height: 8}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			shown := entryTitle(tc.entry)
+			var got bool
+			tt := ui.NewTester(func(c *ui.Context) {
+				ui.Column(c).Fill().Padding(14).Children(func() {
+					row := ui.Row(c).Padding(9, 6).Gap(10).AlignItems(ui.Center)
+					var title ui.Element
+					row.Children(func() {
+						ui.Column(c).Size(30, 30)
+						ui.Column(c).Grow(1).Children(func() {
+							title = ui.Text(c, shown).SingleLine()
+						})
+					})
+					got = rowNeedsPreview(c, tc.entry, shown, title)
+				})
+			}, 380, 80)
+			tt.Frame()
+			if got != tc.want {
+				t.Fatalf("preview=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPickTextPreviewCanScrollAndReportLoadFailure(t *testing.T) {
 	body := "开头\n" + strings.Repeat("文本内容\n", 200) + "末尾"
 	tt := ui.NewTester(func(c *ui.Context) {

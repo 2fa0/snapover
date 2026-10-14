@@ -9,7 +9,6 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/paste"
 )
@@ -239,9 +238,8 @@ func (a *app) pickerView(c *ui.Context) {
 				entry := shown[i]
 				sel := i == a.pickSel
 				row := ui.Row(c).Padding(9, 6).Gap(10).AlignItems(ui.Center)
-				if row.Hovered() && (entry.Kind == string(clip.KindImage) || entry.Kind == string(clip.KindText)) {
-					hoverID, hoverBounds = entry.ID, row.Bounds()
-				}
+				var title ui.Element
+				titleText := entryTitle(entry)
 				if row.DoubleClicked() {
 					a.pickSel = i
 					a.pastePicked()
@@ -251,7 +249,7 @@ func (a *app) pickerView(c *ui.Context) {
 				row.Children(func() {
 					a.pickerThumb(c, entry, t, sel)
 					ui.Column(c).Grow(1).Gap(2).Children(func() {
-						ui.Text(c, entryTitle(entry)).SingleLine()
+						title = ui.Text(c, titleText).SingleLine()
 						ui.Row(c).Gap(5).Children(func() {
 							if entry.Pinned {
 								ui.Icon(c, pinIcon).FontSize(11).TextColor(rowMetaColor(t, sel))
@@ -260,6 +258,9 @@ func (a *app) pickerView(c *ui.Context) {
 						})
 					})
 				})
+				if row.Hovered() && rowNeedsPreview(c, entry, titleText, title) {
+					hoverID, hoverBounds = entry.ID, row.Bounds()
+				}
 			}).Grow(1)
 			if list.Submitted() {
 				a.pastePicked()
