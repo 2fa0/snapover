@@ -177,9 +177,9 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o bin/snapover-cli.exe ./cmd/s
 
 一键生成 Windows 11 x64 和 Mac M 系列（arm64）的包：
 
-- `dist/Snapover-0.2.0-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
+- `dist/Snapover-0.3.0-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
 - `dist/darwin-arm64/Snapover.app`
-- `dist/darwin-arm64/Snapover 0.2.0 arm64.dmg`：打开后拖入 Applications
+- `dist/darwin-arm64/Snapover 0.3.0 arm64.dmg`：打开后拖入 Applications
 
 文件名中的版本号自动读取 `mygo.json`。脚本的 Windows 步骤会避开 NSIS，生成 ZIP 包，不生成 Setup 安装器；macOS 沿用当前签名配置。
 
