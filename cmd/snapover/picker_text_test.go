@@ -12,6 +12,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 )
@@ -94,6 +95,28 @@ func TestTextReaderPagesPreserveUTF8AndAllWhitespace(t *testing.T) {
 	}
 }
 
+func TestPickTextReaderLargeMultilineStaysBounded(t *testing.T) {
+	prefix, line := "package main\n", "// 多行代码\n"
+	body := prefix + strings.Repeat(line, (clip.MaxTextBytes-len(prefix))/len(line))
+	r := &pickTextReader{text: body}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	tt := ui.NewTester(r.view, 720, 480)
+	runtime.ReadMemStats(&after)
+	t.Logf("opened %d bytes, allocated %.1f MiB", len(body), float64(after.TotalAlloc-before.TotalAlloc)/(1<<20))
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 32<<20 {
+		t.Fatalf("opening multiline text allocated %d bytes", allocated)
+	}
+	if len(r.pages) < 2 || r.editor.Buffer.Len() > textReaderPageBytes {
+		t.Fatal("large multiline text was loaded into one editor")
+	}
+	clickInterface(t, tt, "复制全文")
+	if tt.Clipboard() != body {
+		t.Fatal("copying full multiline text changed its content")
+	}
+}
+
 func TestTextPreviewOnlyWhenRowTruncates(t *testing.T) {
 	wide := strings.Repeat("宽", 40)
 	for _, tc := range []struct {
@@ -171,6 +194,84 @@ func TestPickTextPreviewEditorIsReadOnly(t *testing.T) {
 	tt.Key(ui.Cmd, ui.KeyV)
 	if state.Buffer.String() != body {
 		t.Fatal("preview editor changed the text")
+	}
+}
+
+func TestPickTextLanguageRecognizesCodeAndLeavesProsePlain(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want string
+	}{
+		{`{"message": "你好", "count": 42}`, "JSON"},
+		{"{\n  \"items\": [\n    1,", "JSON"}, // A truncated preview still highlights.
+		{"package main\n\nfunc main() { println(42) }", "Go"},
+		{"func (s *Store) Read() string { return \"正文\" }", "Go"},
+		{"def greet(name):\n    return \"你好\"", "Python"},
+		{"# Greeting\ndef greet(name):\n    return \"你好\"", "Python"},
+		{"const count = 42;\nconsole.log(count);", "TypeScript"},
+		{"export interface User { name: string }", "TypeScript"},
+		{"pub fn main() { println!(\"你好\"); }", "Rust"},
+		{"#!/bin/bash\necho \"你好\"", "Shell"},
+		{"SELECT name FROM users WHERE id = 42;", "SQL"},
+		{"<div class=\"message\">你好</div>", "HTML"},
+		{"<?xml version=\"1.0\"?><root />", "XML"},
+		{"# 标题\n\n```go\nfunc main() {}\n```", "Markdown"},
+		{"你好，今天的会议在下午三点。\n请带上资料。", ""},
+		{"Please return the package tomorrow.", ""},
+		{"https://github.com/egoist/mygo/releases", ""},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			language := pickTextLanguage(tc.text)
+			got := ""
+			if language != nil {
+				got = language.Name
+			}
+			if got != tc.want {
+				t.Fatalf("language=%q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPickTextPreviewRendersHighlightAndLineNumbersWithoutCopyingThem(t *testing.T) {
+	body := "{\n  \"message\": \"你好\",\n  \"count\": 42\n}"
+	render := func(state *editor.State) *ui.Tester {
+		return ui.NewTester(func(c *ui.Context) {
+			ui.Column(c).Fill().Children(func() { pickTextPreview(c, state, nil) })
+		}, 396, 300)
+	}
+	state := newPickTextPreview(body)
+	tt := render(state)
+	plain := newPickTextPreview(body)
+	plain.Buffer.SetLanguage(nil)
+	if bytes.Equal(tt.Image().Pix, render(plain).Image().Pix) {
+		t.Fatal("recognized code rendered without syntax highlighting")
+	}
+	unnumbered := newPickTextPreview(body)
+	unnumbered.LineNumbers = editor.LineNumbersOff
+	if bytes.Equal(tt.Image().Pix, render(unnumbered).Image().Pix) {
+		t.Fatal("line numbers were not rendered")
+	}
+	clickInterface(t, tt, "文本预览")
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(ui.Cmd, ui.KeyC)
+	if tt.Clipboard() != body {
+		t.Fatal("copying highlighted code changed text or included line numbers")
+	}
+	tt.Type("不可编辑")
+	if state.Buffer.String() != body {
+		t.Fatal("highlighted preview was editable")
+	}
+	reader := &pickTextReader{text: body}
+	full := ui.NewTester(reader.view, 720, 480)
+	full.Key(ui.Cmd, ui.KeyA)
+	full.Key(ui.Cmd, ui.KeyC)
+	if full.Clipboard() != body {
+		t.Fatal("full reader copied line numbers or changed highlighted code")
+	}
+	full.Type("不可编辑")
+	if reader.editor.Buffer.String() != body {
+		t.Fatal("highlighted full reader was editable")
 	}
 }
 

@@ -12,12 +12,18 @@ import (
 )
 
 func newPickTextPreview(text string) *editor.State {
+	return newPickTextEditor(text, "文本预览", pickTextLanguage(text))
+}
+
+func newPickTextEditor(text, label string, language *editor.Language) *editor.State {
+	buffer := editor.NewBuffer(text)
+	buffer.SetLanguage(language)
 	return &editor.State{
-		Buffer:          editor.NewBuffer(text),
-		Label:           "文本预览",
+		Buffer:          buffer,
+		Label:           label,
 		ReadOnly:        true,
 		SoftWrap:        true,
-		LineNumbers:     editor.LineNumbersOff,
+		LineNumbers:     editor.LineNumbersOn,
 		NoIndentGuides:  true,
 		NoFolding:       true,
 		NoActiveLine:    true,
@@ -88,31 +94,32 @@ func (a *app) loadPickText(id string, parent *mygo.Window) {
 
 type pickTextReader struct {
 	text     string
-	started  bool
 	pages    []string
 	page     int
 	pageText string
 	prepared bool
+	language *editor.Language
+	editor   *editor.State
 }
 
 func (r *pickTextReader) view(c *ui.Context) {
 	if !r.prepared {
-		if hasLongTextLine(r.text) {
+		if len(r.text) > textReaderMaxEditorBytes || hasLongTextLine(r.text) {
 			r.pages = textReaderPages(r.text)
 			r.pageText = r.pages[0]
 		}
+		r.language = pickTextLanguage(r.text)
 		r.prepared = true
 	}
-	ui.Column(c).Fill().Gap(8).Children(func() {
-		text := &r.text
+	if r.editor == nil {
+		text := r.text
 		if len(r.pages) > 0 {
-			text = &r.pageText
+			text = r.pageText
 		}
-		area := ui.TextAreaBase(c.Key("full-text").Key(r.page), text).Label("文本全文").ReadOnly(true).FontSize(14).Fill().AutoFocus()
-		if !r.started {
-			area.SetTextSelection(0, 0)
-			r.started = true
-		}
+		r.editor = newPickTextEditor(text, "文本全文", r.language)
+	}
+	ui.Column(c).Fill().Gap(8).Children(func() {
+		editor.View(c.Key("full-text").Key(r.page), r.editor).Fill().AutoFocus()
 		if len(r.pages) > 0 {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				if ui.Button(c, "上一段").Disabled(r.page == 0).Clicked() {
@@ -126,12 +133,15 @@ func (r *pickTextReader) view(c *ui.Context) {
 					c.WriteClipboard(r.text)
 				}
 			})
-			ui.Text(c, "文本包含超长行，分段显示；全选复制当前段，复制全文保留完整内容。").FontSize(11).TextColor(c.Theme().TextMuted)
+			ui.Text(c, "大文本或超长行分段显示；全选复制当前段，复制全文保留完整内容。").FontSize(11).TextColor(c.Theme().TextMuted)
 		}
 	})
 }
 
-const textReaderPageBytes = 16 << 10
+const (
+	textReaderPageBytes      = 16 << 10
+	textReaderMaxEditorBytes = 256 << 10
+)
 
 func hasLongTextLine(text string) bool {
 	for {
@@ -161,7 +171,7 @@ func textReaderPages(text string) []string {
 }
 
 func (r *pickTextReader) setPage(c *ui.Context, page int) {
-	r.page, r.pageText, r.started = page, r.pages[page], false
+	r.page, r.pageText, r.editor = page, r.pages[page], nil
 	c.Invalidate()
 }
 
@@ -185,6 +195,8 @@ func (a *app) openPickText(text string) {
 			})
 		}),
 	})
+	// An empty menu overrides the application menu; nil inherits it on Windows.
+	viewer.SetMenu(mygo.NewMenu(nil))
 	a.pickOriginal = viewer
 	viewer.OnClosed(func() {
 		*reader = pickTextReader{}
