@@ -60,6 +60,7 @@ func (a *app) openPicker(atCaret bool) {
 	if t := paste.Capture(); t.Valid() {
 		a.pasteTo = t
 	}
+	a.pickNeedsAccess = runtime.GOOS == "darwin" && !paste.Allowed()
 	if a.hist != nil {
 		a.refreshEntries()
 	}
@@ -268,7 +269,7 @@ func (a *app) pickerView(c *ui.Context) {
 			ui.Text(c, a.pickFlash).FontSize(12).TextColor(t.TextMuted)
 		}
 		hint := "↑↓ 选择，回车或双击粘贴到光标处，Esc 关闭"
-		if runtime.GOOS == "darwin" && !paste.Allowed() {
+		if a.pickNeedsAccess {
 			hint = "首次粘贴需要在辅助功能里允许 Snapover"
 		}
 		ui.Text(c, hint).FontSize(11).TextColor(t.TextMuted)

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/history"
 )
 
@@ -101,5 +102,19 @@ func BenchmarkEntryTitleLarge(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		entryTitle(e)
+	}
+}
+
+func BenchmarkPickerInteraction(b *testing.B) {
+	a := &app{pickSel: 0}
+	a.pickList.Selected = &a.pickSel
+	for i := range 1000 {
+		a.entries = append(a.entries, history.Entry{ID: fmt.Sprint(i), Kind: "text", Text: "测试剪贴板历史内容", At: time.Now()})
+	}
+	tt := ui.NewTester(a.pickerView, 380, 440)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		tt.Key(0, ui.KeyDown)
 	}
 }

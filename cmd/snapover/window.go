@@ -98,6 +98,7 @@ type app struct {
 	pickList           ui.ListState
 	pickFlash          string
 	pickBusy           bool
+	pickNeedsAccess    bool
 	pasteTo            paste.Target
 	dialCancel         context.CancelFunc
 	dialAddr           string

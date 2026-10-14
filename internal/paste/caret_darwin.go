@@ -4,12 +4,14 @@ package paste
 
 import (
 	"math"
+	"time"
 	"unsafe"
 )
 
 const (
 	axValueCGRect  = 3
 	axValueCFRange = 4
+	caretTimeout   = 40 * time.Millisecond
 )
 
 // CaretBounds reads the focused text element before the picker takes focus.
@@ -23,13 +25,24 @@ func (t Target) CaretBounds() (Rectangle, bool) {
 		return Rectangle{}, false
 	}
 	defer axRelease(app)
-	// An unresponsive target must not hold up the shortcut.
-	axSetTimeout(app, 0.2)
+	// Timeouts belong to individual AX objects, not their descendants.
+	// Share one budget across all three messages before showing the picker.
+	deadline := time.Now().Add(caretTimeout)
+	setTimeout := func(element uintptr) bool {
+		left := time.Until(deadline)
+		return left > 0 && axSetTimeout(element, float32(left.Seconds())) == 0
+	}
+	if !setTimeout(app) {
+		return Rectangle{}, false
+	}
 	var element uintptr
 	if axCopyAttribute(app, uintptr(nsString("AXFocusedUIElement")), &element) != 0 || element == 0 {
 		return Rectangle{}, false
 	}
 	defer axRelease(element)
+	if !setTimeout(element) {
+		return Rectangle{}, false
+	}
 	var selected uintptr
 	if axCopyAttribute(element, uintptr(nsString("AXSelectedTextRange")), &selected) != 0 || selected == 0 {
 		return Rectangle{}, false
@@ -45,6 +58,9 @@ func (t Target) CaretBounds() (Rectangle, bool) {
 		return Rectangle{}, false
 	}
 	defer axRelease(rangeValue)
+	if !setTimeout(element) {
+		return Rectangle{}, false
+	}
 	var bounds uintptr
 	if axCopyParameterized(element, uintptr(nsString("AXBoundsForRange")), rangeValue, &bounds) != 0 || bounds == 0 {
 		return Rectangle{}, false
