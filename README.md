@@ -1,6 +1,6 @@
 # Snapover
 
-当前版本 **0.5.0**，更新内容见 [0.5.0 更新说明](docs/release-notes-0.5.0.md)，本次审计见 [代码审计](docs/code-review-2026-10-15.md)。
+当前版本 **0.5.1**，更新内容见 [0.5.1 更新说明](docs/release-notes-0.5.1.md)，本次审计见 [代码审计](docs/code-review-2026-10-15.md)。
 
 上一轮代码审核的修复、内存测量和验证范围见 [代码审核与内存优化](docs/code-review-2026-10-14.md)。
 
@@ -187,7 +187,7 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o bin/snapover-cli.exe ./cmd/s
 
 ## 编译
 
-依赖钉在 MyGo v0.5.0。本机需要 Go 1.27。
+依赖钉在 MyGo v0.5.1。本机需要 Go 1.27。
 
 在 Mac 上双击 `build.command`，或在项目目录运行：
 
@@ -197,9 +197,9 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o bin/snapover-cli.exe ./cmd/s
 
 一键生成 Windows 11 x64 和 Mac M 系列（arm64）的包：
 
-- `dist/Snapover-0.5.0-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
+- `dist/Snapover-0.5.1-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
 - `dist/darwin-arm64/Snapover.app`
-- `dist/darwin-arm64/Snapover 0.5.0 arm64.dmg`：打开后拖入 Applications
+- `dist/darwin-arm64/Snapover 0.5.1 arm64.dmg`：打开后拖入 Applications
 
 文件名中的版本号自动读取 `mygo.json`。脚本的 Windows 步骤会避开 NSIS，生成 ZIP 包，不生成 Setup 安装器；macOS 沿用当前签名配置。
 
