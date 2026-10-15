@@ -90,10 +90,14 @@ func newSession(conn *tls.Conn, peerID string, weDialed bool, log *slog.Logger, 
 func queuedSize(item clip.Item) int { return len(item.PNG) + len(item.Text) }
 
 func (s *Session) enqueue(item clip.Item) bool {
-	return s.enqueueID(item, "")
+	return s.enqueueCopy(item, "", true)
 }
 
 func (s *Session) enqueueID(item clip.Item, id string) bool {
+	return s.enqueueCopy(item, id, false)
+}
+
+func (s *Session) enqueueCopy(item clip.Item, id string, automatic bool) bool {
 	// The peer needs the original bytes, not our local thumbnail.
 	item.Thumbnail = nil
 	item.Preview = nil
@@ -103,12 +107,14 @@ func (s *Session) enqueueID(item clip.Item, id string) bool {
 	if s.closed || n > queueBytes-s.queuedBytes {
 		return false
 	}
-	automatic := id == "" && s.clipboardResultSupported
+	automatic = automatic && s.clipboardResultSupported
 	if automatic {
 		if len(s.clipboardPending) >= queueSize+1 {
 			return false
 		}
-		id = ulid.Make().String()
+		if id == "" {
+			id = ulid.Make().String()
+		}
 	}
 	select {
 	case s.out <- queuedItem{Item: item, id: id, automatic: automatic}:

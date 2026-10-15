@@ -7,11 +7,13 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/wire"
+	"github.com/oklog/ulid/v2"
 )
 
 const localPriority = 2 * time.Second
@@ -60,6 +62,7 @@ type Engine struct {
 	localActive time.Time
 	lastHash    [32]byte
 	haveLast    bool
+	lastSendID  string
 	suppressSeq uint64
 }
 
@@ -103,6 +106,8 @@ func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
 	}
 	e.lastHash = item.Hash
 	e.haveLast = true
+	id := ulid.Make().String()
+	e.lastSendID = id
 	e.localActive = time.Now()
 	sess := e.sess
 	policy := e.policyLocked()
@@ -111,15 +116,25 @@ func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
 	send, msg := localSend(policy, item, sess != nil)
 	switch {
 	case !send:
+		e.allowLocalRetry(sess, id)
 		e.Log.Info(msg, "kind", item.Kind, "bytes", item.Size)
-	case !sess.enqueue(item):
+	case !sess.enqueueCopy(item, id, true):
+		e.allowLocalRetry(sess, id)
 		e.Log.Info("发送队列已满，丢弃", "kind", item.Kind, "bytes", item.Size)
 		msg = "发送队列已满"
 	default:
 		msg = ""
-		e.Log.Debug("剪贴板已入队", "kind", item.Kind, "bytes", item.Size)
+		e.Log.Info("剪贴板已入队", "item", id, "kind", item.Kind, "bytes", item.Size)
 	}
 	e.notify(Notice{Kind: NoticeLocal, Item: item, Message: msg})
+}
+
+func (e *Engine) allowLocalRetry(source *Session, id string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.sess == source && e.lastSendID == id {
+		e.haveLast = false
+	}
 }
 
 // SetPolicy updates the options the settings page can change.
@@ -203,11 +218,22 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 	var link Link
 	var err error
 	var textErr error
+	var sequence uint64
+	var haveSequence bool
+	attempt := 0
 	write := func() {
 		e.mu.Lock()
 		defer e.mu.Unlock()
-		if source != nil && e.sess != source {
-			return
+		attempted = false
+		if source != nil {
+			if e.sess != source {
+				return
+			}
+			select {
+			case <-source.done:
+				return
+			default:
+			}
 		}
 		paused = e.paused
 		active = time.Since(e.localActive) < localPriority
@@ -224,16 +250,45 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 		if active {
 			return
 		}
+		seq, seqErr := e.Board.Sequence()
+		if attempt == 0 {
+			sequence, haveSequence = seq, seqErr == nil
+		} else if haveSequence && (seqErr != nil || seq != sequence) {
+			// A new local copy must win even before the watcher has settled it.
+			active = true
+			return
+		}
 		attempted = true
-		e.Guard.Mark(item.Hash)
 		err = e.Board.Write(item)
+		if err == nil {
+			e.Guard.Mark(item.Hash)
+		}
 	}
 	// Validate and write in the same UI callback: revocation must neither
 	// wait for a queued UI write nor allow it to run after the session is gone.
-	if e.RunOnBoard != nil {
-		e.RunOnBoard(write)
-	} else {
-		write()
+	for {
+		if e.RunOnBoard != nil {
+			e.RunOnBoard(write)
+		} else {
+			write()
+		}
+		if !attempted || !clipboardBusy(err) || attempt == 7 {
+			break
+		}
+		attempt++
+		// Wait on the receiving goroutine, outside both the UI callback and e.mu.
+		timer := time.NewTimer(time.Duration(attempt) * 25 * time.Millisecond)
+		var disconnected <-chan struct{}
+		if source != nil {
+			disconnected = source.done
+		}
+		select {
+		case <-timer.C:
+		case <-disconnected:
+			timer.Stop()
+			e.clipMu.Unlock()
+			return errors.New("连接已改变，未写入剪贴板")
+		}
 	}
 	if paused {
 		e.clipMu.Unlock()
@@ -273,12 +328,24 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 	e.clipMu.Unlock()
 	if err != nil {
 		e.Log.Error("写入剪贴板失败", "err", err)
-		e.notify(Notice{Kind: NoticeError, Message: "写入剪贴板失败"})
-		return errors.New("对端写入剪贴板失败，请检查对端剪贴板后重试")
+		if historyErr := e.notify(Notice{Kind: NoticeRemote, Item: item, PeerID: link.ID, PeerName: link.Name}); historyErr != nil {
+			e.Log.Error("保存对端历史失败", "err", historyErr)
+			return fmt.Errorf("对端写入剪贴板失败，保存历史也失败：%w", historyErr)
+		}
+		e.notify(Notice{Kind: NoticeError, Message: "写入剪贴板失败，已保存到历史"})
+		return errors.New("对端写入剪贴板失败，已存入对端历史，可稍后重新复制")
 	}
 	e.Log.Info("已写入剪贴板", "kind", item.Kind, "bytes", item.Size)
-	e.notify(Notice{Kind: NoticeRemote, Item: item, PeerID: link.ID, PeerName: link.Name})
+	if historyErr := e.notify(Notice{Kind: NoticeRemote, Item: item, PeerID: link.ID, PeerName: link.Name}); historyErr != nil {
+		e.Log.Error("保存对端历史失败", "err", historyErr)
+		return fmt.Errorf("对端已写入剪贴板，但保存历史失败：%w", historyErr)
+	}
 	return nil
+}
+
+func clipboardBusy(err error) bool {
+	// MyGo currently exposes HRESULTs as text rather than a typed error.
+	return err != nil && strings.Contains(err.Error(), "OleSetClipboard failed (HRESULT 0x800401d0)")
 }
 
 // Connected reports whether a peer session is up.
@@ -351,6 +418,10 @@ func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) er
 	sess := newSession(conn, peer.id, weDialed, e.Log, nil)
 	sess.onItem = func(item clip.Item) error { return e.deliverFrom(sess, item) }
 	sess.onClipboardResult = func(result wire.Ack) {
+		if result.State != "complete" {
+			e.allowLocalRetry(sess, result.ItemID)
+		}
+		e.Log.Info("对端剪贴板处理结果", "item", result.ItemID, "state", result.State, "message", result.Message)
 		e.notify(Notice{Kind: NoticeSync, Message: result.Message, PeerID: peer.id, PeerName: hello.Name, ClipboardState: result.State, SessionID: sess.sessionID})
 	}
 	for _, cap := range hello.Capabilities {
@@ -476,6 +547,8 @@ func (e *Engine) adopt(s *Session, link Link) bool {
 		}
 		e.sess = s
 		e.link = link
+		e.haveLast = false
+		e.lastSendID = ""
 		return true
 	}
 	newWins := keep(e.LocalID, s.peerID, s.weDialed) && !keep(e.LocalID, s.peerID, cur.weDialed)
@@ -483,6 +556,8 @@ func (e *Engine) adopt(s *Session, link Link) bool {
 		cur.Close()
 		e.sess = s
 		e.link = link
+		e.haveLast = false
+		e.lastSendID = ""
 		return true
 	}
 	s.Close()
