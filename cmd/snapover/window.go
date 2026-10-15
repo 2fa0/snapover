@@ -424,6 +424,7 @@ func (a *app) view(c *ui.Context) {
 		ui.Column(c).Width(184).FillHeight().Padding(12, 8).Gap(12).Background(t.Surface).Children(func() {
 			ui.Column(c).Padding(10, 12, 16, 12).Gap(4).Children(func() {
 				ui.Text(c, "Snapover").FontSize(18).Bold()
+				ui.Text(c, appVersionLabel()).FontSize(11).TextColor(t.TextMuted).SingleLine()
 				ui.Text(c, a.name).FontSize(11).TextColor(t.TextMuted).SingleLine()
 			})
 			if ui.Sidebar(c, &a.page, func() {

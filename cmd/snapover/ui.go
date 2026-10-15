@@ -4,6 +4,7 @@ import (
 	"embed"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
@@ -38,6 +39,13 @@ var (
 	pageMotion    = ui.ElementTransition{Animation: &pageAnimation, Enter: &ui.Motion{Y: 4}}
 	navMotion     = ui.ElementTransition{Duration: 120 * time.Millisecond, Colors: true}
 )
+
+func appVersionLabel() string {
+	if version := mygo.App.Version(); version != "" {
+		return "版本 " + version
+	}
+	return "开发版"
+}
 
 func pageHeading(c *ui.Context, title, description string) {
 	ui.Column(c).Gap(5).Margin(0, 0, 4, 0).Children(func() {

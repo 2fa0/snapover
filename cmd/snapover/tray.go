@@ -84,6 +84,7 @@ func (a *app) trayMenu() *mygo.Menu {
 		status = "Snapover"
 	}
 	return mygo.NewMenu([]*mygo.MenuItem{
+		{Label: "Snapover · " + appVersionLabel(), Disabled: true},
 		{Label: status, Disabled: true},
 		{Label: "快速历史", Click: func(*mygo.MenuItem, *mygo.Window) { a.togglePicker() }},
 		{Label: "发送文件…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openFiles() }},
