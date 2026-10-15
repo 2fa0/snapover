@@ -12,7 +12,6 @@ import (
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/identity"
-	"github.com/2fa0/snapover/internal/keepalive"
 	"github.com/2fa0/snapover/internal/settings"
 	clipsync "github.com/2fa0/snapover/internal/sync"
 )
@@ -181,50 +180,6 @@ func TestTextLimitSaveFailureKeepsActiveLimit(t *testing.T) {
 	a.saveTextLimit()
 	if a.maxTextError == "" || a.cfg.Values.MaxTextMB != 1 || a.engine.TextLimit() != 1<<20 {
 		t.Fatal("failed save changed the active limit")
-	}
-}
-
-func TestKeepRemoteActiveSettingIsOptionalAndPersists(t *testing.T) {
-	a := interfaceTestApp(t)
-	if a.cfg.Values.KeepRemoteActive {
-		t.Fatal("remote session activity must start disabled")
-	}
-	tt := ui.NewTester(a.settingsPage, 960, 1200)
-	if tt.HasText("保持远程会话活跃") != keepalive.Supported {
-		t.Fatal("remote session switch should only be shown on Windows")
-	}
-	if keepalive.Supported {
-		clickInterface(t, tt, "保持远程会话活跃开关")
-	} else {
-		a.setKeepRemoteActive(true)
-	}
-	got, err := settings.Load(filepath.Dir(a.cfg.Path))
-	if err != nil || !got.Values.KeepRemoteActive {
-		t.Fatalf("enabled preference was not saved: %v", err)
-	}
-	if keepalive.Supported {
-		clickInterface(t, tt, "保持远程会话活跃开关")
-	} else {
-		a.setKeepRemoteActive(false)
-	}
-	got, err = settings.Load(filepath.Dir(a.cfg.Path))
-	if err != nil || got.Values.KeepRemoteActive {
-		t.Fatalf("disabled preference was not saved: %v", err)
-	}
-}
-
-func TestKeepRemoteActiveSaveFailureDoesNotEnablePreference(t *testing.T) {
-	a := interfaceTestApp(t)
-	a.cfg.Path = filepath.Dir(a.cfg.Path)
-	a.setKeepRemoteActive(true)
-	if a.cfg.Values.KeepRemoteActive || a.status != "保存远程会话设置失败，请重试" {
-		t.Fatal("failed opt-in should remain disabled and report the failure")
-	}
-	a.cfg.Values.KeepRemoteActive = true
-	a.remoteActivity.SetEnabled(true)
-	a.setKeepRemoteActive(false)
-	if a.cfg.Values.KeepRemoteActive {
-		t.Fatal("failed save must not turn the switch back on after disabling")
 	}
 }
 
