@@ -1,7 +1,7 @@
 {
   "name": "Snapover",
   "identifier": "app.snapover.desktop",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "main": "./cmd/snapover",
   "icon": "resources/app.png",
   "out": "dist",
