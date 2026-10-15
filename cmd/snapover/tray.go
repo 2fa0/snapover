@@ -62,7 +62,7 @@ func (a *app) refreshTray() {
 	if a.tray == nil {
 		return
 	}
-	status := a.status
+	status := a.displayStatus()
 	if a.paused {
 		status = "已暂停"
 	}
@@ -76,7 +76,7 @@ func (a *app) refreshTray() {
 }
 
 func (a *app) trayMenu() *mygo.Menu {
-	status := a.status
+	status := a.displayStatus()
 	if a.paused {
 		status = "已暂停"
 	}

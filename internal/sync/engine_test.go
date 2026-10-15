@@ -32,7 +32,7 @@ func TestKeepTieBreak(t *testing.T) {
 
 func TestLocalSendPolicy(t *testing.T) {
 	item := mustText(t, "hi")
-	if send, msg := localSend(policy{}, item, true); !send || msg != "已发送" {
+	if send, msg := localSend(policy{}, item, true); !send || msg != "" {
 		t.Fatalf("send=%v %s", send, msg)
 	}
 	if send, _ := localSend(policy{Paused: true}, item, true); send {

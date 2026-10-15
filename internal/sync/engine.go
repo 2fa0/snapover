@@ -116,7 +116,8 @@ func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
 		e.Log.Info("发送队列已满，丢弃", "kind", item.Kind, "bytes", item.Size)
 		msg = "发送队列已满"
 	default:
-		e.Log.Info("已发送", "kind", item.Kind, "bytes", item.Size)
+		msg = ""
+		e.Log.Debug("剪贴板已入队", "kind", item.Kind, "bytes", item.Size)
 	}
 	e.notify(Notice{Kind: NoticeLocal, Item: item, Message: msg})
 }
@@ -188,7 +189,7 @@ func localSend(p policy, item clip.Item, connected bool) (bool, string) {
 	case !connected:
 		return false, "已复制，未连接"
 	default:
-		return true, "已发送"
+		return true, ""
 	}
 }
 
@@ -276,7 +277,7 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 		return errors.New("对端写入剪贴板失败，请检查对端剪贴板后重试")
 	}
 	e.Log.Info("已写入剪贴板", "kind", item.Kind, "bytes", item.Size)
-	e.notify(Notice{Kind: NoticeRemote, Item: item, Message: "已写入剪贴板", PeerID: link.ID, PeerName: link.Name})
+	e.notify(Notice{Kind: NoticeRemote, Item: item, PeerID: link.ID, PeerName: link.Name})
 	return nil
 }
 
@@ -349,6 +350,9 @@ func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) er
 
 	sess := newSession(conn, peer.id, weDialed, e.Log, nil)
 	sess.onItem = func(item clip.Item) error { return e.deliverFrom(sess, item) }
+	sess.onClipboardResult = func(result wire.Ack) {
+		e.notify(Notice{Kind: NoticeSync, Message: result.Message, PeerID: peer.id, PeerName: hello.Name, ClipboardState: result.State, SessionID: sess.sessionID})
+	}
 	for _, cap := range hello.Capabilities {
 		if cap == wire.FileCapability {
 			sess.fileSupported = true
@@ -373,7 +377,7 @@ func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) er
 	if paired {
 		e.pairingUntil = time.Time{}
 	}
-	adopted := e.adopt(sess, Link{ID: peer.id, Name: hello.Name, Platform: hello.Platform, Addr: addr, FileTransfer: sess.fileSupported})
+	adopted := e.adopt(sess, Link{SessionID: sess.sessionID, ID: peer.id, Name: hello.Name, Platform: hello.Platform, Addr: addr, FileTransfer: sess.fileSupported})
 	e.authMu.Unlock()
 	if !adopted {
 		e.Log.Info("关掉重复连接", "peer", peer.id, "dialed", weDialed)

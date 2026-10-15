@@ -65,6 +65,9 @@ type app struct {
 	peer            string
 	query           string
 	status          string
+	syncStatus      string
+	syncFailure     string
+	syncSessionID   string
 	flash           string
 	confirm         bool
 	confirmClear    bool
@@ -357,6 +360,12 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 		}
 		a.page = pageDevices
 	case clipsync.NoticeStatus, clipsync.NoticeError:
+		if n.Kind == clipsync.NoticeStatus {
+			a.clearSyncFailure()
+			if link, up := a.engine.Link(); up && link.SessionID != a.syncSessionID {
+				a.syncStatus = ""
+			}
+		}
 		a.status = n.Message
 		a.devices = a.engine.Peers.List()
 		if link, up := a.engine.Link(); up && n.PeerID == link.ID && n.Kind == clipsync.NoticeStatus {
@@ -372,6 +381,23 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 	case clipsync.NoticeLocal, clipsync.NoticeRemote:
 		if n.Message != "" {
 			a.flash = n.Message
+		}
+	case clipsync.NoticeSync:
+		if n.SessionID != "" {
+			link, up := a.engine.Link()
+			if !up || link.SessionID != n.SessionID {
+				return
+			}
+		}
+		a.clearSyncFailure()
+		a.syncSessionID = n.SessionID
+		a.syncStatus = n.Message
+		if n.ClipboardState == "complete" {
+			a.syncStatus = "已确认写入对端剪贴板"
+		}
+		if n.ClipboardState != "complete" {
+			a.flash = n.Message
+			a.syncFailure = n.Message
 		}
 	case clipsync.NoticeFile:
 		a.receiveMessage = receivedMessage(n)
@@ -416,7 +442,7 @@ func (a *app) view(c *ui.Context) {
 					label = "同步已暂停"
 				}
 				ui.Text(c, label).FontSize(12).Bold().SingleLine().ContentTransition(ui.ContentTransition{})
-				ui.Text(c, a.status).FontSize(11).TextColor(t.TextMuted).MaxLines(3).ContentTransition(ui.ContentTransition{})
+				ui.Text(c, a.displayStatus()).FontSize(11).TextColor(t.TextMuted).MaxLines(3).ContentTransition(ui.ContentTransition{})
 			})
 			if ui.Button(c, "").Label("发送文件").Children(func() {
 				ui.Icon(c, sendIcon)
@@ -444,6 +470,9 @@ func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
 	pageHeading(c, "设置", "调整剪贴板同步、启动方式和文件接收位置。")
 	settingsGroup(c, "剪贴板同步", func() {
+		if a.syncStatus != "" {
+			ui.Text(c, "最近同步："+a.syncStatus).FontSize(12).TextColor(t.TextMuted)
+		}
 		if settingSwitch(c, &a.paused, "暂停同步", "暂停收发剪贴板，仍会保存本机复制历史。") {
 			a.saveSettings()
 		}
@@ -987,4 +1016,18 @@ func lanAddrs(listen string) []string {
 		physical = append(physical, label)
 	}
 	return append(physical, virtual...)
+}
+
+func (a *app) clearSyncFailure() {
+	if a.syncFailure != "" && a.flash == a.syncFailure {
+		a.flash = ""
+	}
+	a.syncFailure = ""
+}
+
+func (a *app) displayStatus() string {
+	if a.syncFailure != "" && !a.paused {
+		return a.syncFailure
+	}
+	return a.status
 }

@@ -18,20 +18,22 @@ import (
 )
 
 const (
-	pingEvery  = 15 * time.Second
-	readLimit  = 45 * time.Second
-	queueSize  = 8
-	queueBytes = clip.MaxImageBytes
+	pingEvery     = 15 * time.Second
+	readLimit     = 45 * time.Second
+	queueSize     = 8
+	queueBytes    = clip.MaxImageBytes
+	clipboardWait = 60 * time.Second
 )
 
 // Session is one live peer connection after Hello has been accepted.
 type Session struct {
-	conn     *tls.Conn
-	peerID   string
-	weDialed bool
-	log      *slog.Logger
-	onItem   func(clip.Item) error
-	out      chan queuedItem
+	conn      *tls.Conn
+	peerID    string
+	sessionID string
+	weDialed  bool
+	log       *slog.Logger
+	onItem    func(clip.Item) error
+	out       chan queuedItem
 
 	mu                       sync.Mutex
 	writeMu                  sync.Mutex
@@ -53,11 +55,15 @@ type Session struct {
 	clipboardResultMu        sync.Mutex
 	clipboardSendID          string
 	clipboardResults         chan wire.Ack
+	onClipboardResult        func(wire.Ack)
+	clipboardPending         map[string]time.Time
+	clipboardWake            chan struct{}
 }
 
 type queuedItem struct {
 	clip.Item
-	id string
+	id        string
+	automatic bool
 }
 
 type response struct {
@@ -67,15 +73,17 @@ type response struct {
 
 func newSession(conn *tls.Conn, peerID string, weDialed bool, log *slog.Logger, onItem func(clip.Item) error) *Session {
 	return &Session{
-		conn:      conn,
-		peerID:    peerID,
-		weDialed:  weDialed,
-		log:       log,
-		onItem:    onItem,
-		out:       make(chan queuedItem, queueSize),
-		responses: make(chan response, 16),
-		lastRecv:  time.Now(),
-		done:      make(chan struct{}),
+		conn:          conn,
+		peerID:        peerID,
+		sessionID:     ulid.Make().String(),
+		clipboardWake: make(chan struct{}, 1),
+		weDialed:      weDialed,
+		log:           log,
+		onItem:        onItem,
+		out:           make(chan queuedItem, queueSize),
+		responses:     make(chan response, 16),
+		lastRecv:      time.Now(),
+		done:          make(chan struct{}),
 	}
 }
 
@@ -95,9 +103,23 @@ func (s *Session) enqueueID(item clip.Item, id string) bool {
 	if s.closed || n > queueBytes-s.queuedBytes {
 		return false
 	}
+	automatic := id == "" && s.clipboardResultSupported
+	if automatic {
+		if len(s.clipboardPending) >= queueSize+1 {
+			return false
+		}
+		id = ulid.Make().String()
+	}
 	select {
-	case s.out <- queuedItem{Item: item, id: id}:
+	case s.out <- queuedItem{Item: item, id: id, automatic: automatic}:
 		s.queuedBytes += n
+		if automatic {
+			if s.clipboardPending == nil {
+				s.clipboardPending = make(map[string]time.Time)
+			}
+			s.clipboardPending[id] = time.Now().Add(clipboardWait)
+			s.wakeClipboard()
+		}
 		return true
 	default:
 		return false
@@ -136,7 +158,7 @@ func (s *Session) Close() {
 
 func (s *Session) run() {
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		s.readLoop()
@@ -144,6 +166,10 @@ func (s *Session) run() {
 	go func() {
 		defer wg.Done()
 		s.writeLoop()
+	}()
+	go func() {
+		defer wg.Done()
+		s.watchClipboard()
 	}()
 	wg.Wait()
 }
@@ -200,6 +226,7 @@ func (s *Session) readLoop() {
 		case wire.TypeAck:
 			var result wire.Ack
 			if wire.Unmarshal(payload, &result) == nil {
+				s.completeClipboard(result)
 				s.clipboardResultMu.Lock()
 				if result.ItemID == s.clipboardSendID && s.clipboardResults != nil {
 					select {
@@ -281,6 +308,9 @@ func (s *Session) writeLoop() {
 		case item := <-s.out:
 			if !s.releaseQueued(item) {
 				return
+			}
+			if !s.clipboardSendable(item, time.Now()) {
+				continue
 			}
 			if err := s.sendItem(item.Item, item.id); err != nil {
 				s.log.Warn("发送失败", "err", err)
