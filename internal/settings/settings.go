@@ -16,13 +16,14 @@ const (
 
 // Values is the small set of options the settings page can change.
 type Values struct {
-	Paused        bool   `json:"paused"`
-	TextOnly      bool   `json:"text_only"`
-	MaxImageMB    int    `json:"max_image_mb"`
-	MaxTextMB     int    `json:"max_text_mb"`
-	OpenAtLogin   bool   `json:"open_at_login"`
-	ReceiveDir    string `json:"receive_dir,omitempty"`
-	DisableSendTo bool   `json:"disable_send_to,omitempty"`
+	Paused         bool   `json:"paused"`
+	TextOnly       bool   `json:"text_only"`
+	MaxImageMB     int    `json:"max_image_mb"`
+	MaxTextMB      int    `json:"max_text_mb"`
+	OpenAtLogin    bool   `json:"open_at_login"`
+	ReceiveDir     string `json:"receive_dir,omitempty"`
+	DisableSendTo  bool   `json:"disable_send_to,omitempty"`
+	PickerShortcut string `json:"picker_shortcut,omitempty"`
 
 	WindowsNetworkGuideDismissed bool `json:"windows_network_guide_dismissed,omitempty"`
 	MacNetworkGuideDismissed     bool `json:"mac_network_guide_dismissed,omitempty"`

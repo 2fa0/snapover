@@ -42,12 +42,15 @@ type app struct {
 
 	remoteActivity *keepalive.Controller
 
-	cfg          *settings.File
-	paused       bool
-	textOnly     bool
-	maxImageText string
-	maxTextText  string
-	maxTextError string
+	cfg                       *settings.File
+	paused                    bool
+	textOnly                  bool
+	maxImageText              string
+	maxTextText               string
+	maxTextError              string
+	shortcutText              string
+	shortcutError             string
+	registeredPickerShortcuts []string
 
 	page            string
 	peer            string
@@ -163,6 +166,11 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		entries: hist.List(),
 		devices: devices,
 	}
+	a.shortcutText = cfg.Values.PickerShortcut
+	if a.shortcutText == "" {
+		a.shortcutText = pickerShortcuts()[0]
+	}
+	a.shortcutText = displayPickerShortcut(a.shortcutText)
 	a.remoteActivity = keepalive.New()
 	for _, dev := range devices {
 		if dev.Peer.Addr == peer && peer != "" {
@@ -455,6 +463,7 @@ func (a *app) settingsPage(c *ui.Context) {
 			}
 		})
 	})
+	settingsGroup(c, "快速历史快捷键", func() { a.shortcutSettings(c) })
 	settingsGroup(c, "启动", func() {
 		if settingSwitch(c, &a.openAtLogin, "开机启动", "登录电脑后在后台启动 Snapover。") {
 			a.setOpenAtLogin(a.openAtLogin)
@@ -593,7 +602,7 @@ func (a *app) historyPage(c *ui.Context) {
 			ui.Text(c, a.flash).FontSize(12).TextColor(t.TextMuted).SingleLine()
 		}
 	})
-	ui.Text(c, pickerHint()).FontSize(11).TextColor(t.TextMuted).MaxLines(2)
+	ui.Text(c, a.pickerHint()).FontSize(11).TextColor(t.TextMuted).MaxLines(2)
 }
 
 func (a *app) connect() {

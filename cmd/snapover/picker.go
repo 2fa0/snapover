@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -18,29 +17,6 @@ func pickerShortcuts() []string {
 		return []string{"Alt+Cmd+V", "Cmd+Shift+V"}
 	}
 	return []string{"Alt+V"}
-}
-
-func pickerHint() string {
-	if runtime.GOOS == "darwin" {
-		return "⌥⌘V 弹出快速历史，回车或双击粘贴到光标处。也能用 Cmd+Shift+V"
-	}
-	return "Alt+V 弹出快速历史，回车或双击粘贴到光标处"
-}
-
-func (a *app) registerPickerShortcut() {
-	var failed []string
-	for _, key := range pickerShortcuts() {
-		if err := mygo.GlobalShortcut.Register(key, func() { a.openPicker(true) }); err != nil {
-			failed = append(failed, key)
-			if a.engine.Log != nil {
-				a.engine.Log.Warn("全局快捷键没注册上", "key", key, "err", err)
-			}
-		}
-	}
-	if len(failed) == 0 {
-		return
-	}
-	a.status = "快捷键被占用：" + strings.Join(failed, "、") + "。从托盘／菜单栏菜单选择「快速历史」也能打开"
 }
 
 func (a *app) togglePicker() {

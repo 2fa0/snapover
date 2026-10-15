@@ -25,6 +25,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	f.Values.TextOnly = true
 	f.Values.MaxImageMB = 8
 	f.Values.MaxTextMB = 10
+	f.Values.PickerShortcut = "Ctrl+Alt+V"
 	f.Values.ReceiveDir = dir
 	f.Values.DisableSendTo = true
 	f.Values.KeepRemoteActive = true
@@ -40,6 +41,9 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	}
 	if !again.Values.Paused || !again.Values.TextOnly || again.Values.MaxImageMB != 8 || again.Values.ReceiveDir != dir || !again.Values.DisableSendTo || !again.Values.KeepRemoteActive {
 		t.Fatalf("%+v", again.Values)
+	}
+	if again.Values.PickerShortcut != "Ctrl+Alt+V" {
+		t.Fatal("shortcut not restored")
 	}
 	if again.Values.MaxTextMB != 10 {
 		t.Fatalf("text mb = %d", again.Values.MaxTextMB)
