@@ -309,8 +309,9 @@ func (a *app) show(page string) {
 	a.update(func() { a.reveal(page) })
 }
 
-func (a *app) onNotice(n clipsync.Notice) {
+func (a *app) onNotice(n clipsync.Notice) error {
 	var added *history.Entry
+	var storageErr error
 	if (n.Kind == clipsync.NoticeLocal || n.Kind == clipsync.NoticeRemote) && n.Item.Kind != "" {
 		dir := history.DirLocal
 		peer := a.name
@@ -320,13 +321,15 @@ func (a *app) onNotice(n clipsync.Notice) {
 		}
 		entry, err := a.hist.Add(dir, peer, n.Item)
 		if err != nil {
+			storageErr = err
 			n.Kind = clipsync.NoticeError
-			n.Message = "写入历史失败"
+			n.Message = "写入历史失败：" + err.Error()
 		} else {
 			added = &entry
 		}
 	}
 	a.update(func() { a.apply(n, added) })
+	return storageErr
 }
 
 func (a *app) apply(n clipsync.Notice, added *history.Entry) {

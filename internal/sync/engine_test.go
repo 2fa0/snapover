@@ -50,7 +50,7 @@ func TestLocalSendPolicy(t *testing.T) {
 func TestLocalCopyNotifiesWithoutPeer(t *testing.T) {
 	e := testEngine(t, &memBoard{})
 	var got []Notice
-	e.OnNotice = func(n Notice) { got = append(got, n) }
+	e.OnNotice = func(n Notice) error { got = append(got, n); return nil }
 	e.HandleLocal(1, mustText(t, "hi"))
 	if len(got) != 1 || got[0].Kind != NoticeLocal || got[0].Item.Text != "hi" {
 		t.Fatalf("%+v", got)
@@ -64,7 +64,7 @@ func TestLocalTextLimitSkipsHistoryAndCanBeRaised(t *testing.T) {
 	e := testEngine(t, &memBoard{})
 	item := mustText(t, strings.Repeat("a", clip.DefaultMaxTextBytes+1))
 	var got []Notice
-	e.OnNotice = func(n Notice) { got = append(got, n) }
+	e.OnNotice = func(n Notice) error { got = append(got, n); return nil }
 	e.HandleLocal(1, item)
 	if len(got) != 1 || got[0].Kind != NoticeStatus || got[0].Item.Kind != "" {
 		t.Fatal("oversize text was offered to history")

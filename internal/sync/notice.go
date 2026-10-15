@@ -40,17 +40,17 @@ type Link struct {
 	FileTransfer bool
 }
 
-func (e *Engine) notify(n Notice) {
+func (e *Engine) notify(n Notice) error {
 	e.mu.Lock()
 	fn := e.OnNotice
 	e.mu.Unlock()
 	if fn == nil {
-		return
+		return nil
 	}
 	if n.At.IsZero() {
 		n.At = time.Now()
 	}
-	fn(n)
+	return fn(n)
 }
 
 // Link reports the peer of the current session.

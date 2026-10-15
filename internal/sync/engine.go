@@ -16,6 +16,8 @@ import (
 
 const localPriority = 2 * time.Second
 
+var errHistoryOnly = errors.New("对端刚复制过内容，已存入对端历史，未覆盖剪贴板")
+
 // Engine ties one clipboard to at most one live peer.
 type Engine struct {
 	LocalID     string
@@ -29,8 +31,9 @@ type Engine struct {
 	Guard       *clip.EchoGuard
 	Log         *slog.Logger
 	// OnNotice is called without engine locks, from the goroutine that
-	// observed the change. It may be nil.
-	OnNotice func(Notice)
+	// observed the change. Clipboard events return history storage errors.
+	// It may be nil.
+	OnNotice func(Notice) error
 	// RunOnBoard runs a write synchronously on the clipboard's owning thread.
 	// It may be nil for boards that can write directly from a goroutine.
 	RunOnBoard func(func())
@@ -207,7 +210,7 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 		}
 		paused = e.paused
 		active = time.Since(e.localActive) < localPriority
-		if paused || active {
+		if paused {
 			return
 		}
 		if item.Kind == clip.KindText {
@@ -217,6 +220,9 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 			}
 		}
 		link = e.link
+		if active {
+			return
+		}
 		attempted = true
 		e.Guard.Mark(item.Hash)
 		err = e.Board.Write(item)
@@ -234,17 +240,18 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 		e.notify(Notice{Kind: NoticeStatus, Message: "已暂停，忽略对端内容"})
 		return errors.New("对端已暂停同步，未写入剪贴板")
 	}
-	if active {
-		e.clipMu.Unlock()
-		e.Log.Info("本地刚复制过，不覆盖剪贴板", "kind", item.Kind, "bytes", item.Size)
-		e.notify(Notice{Kind: NoticeStatus, Message: "本地刚复制过，未覆盖剪贴板"})
-		return errors.New("对端刚复制过内容，未覆盖剪贴板，请稍后重试")
-	}
-
 	if textErr != nil {
 		e.clipMu.Unlock()
 		e.notify(Notice{Kind: NoticeStatus, Message: "未接收：" + textErr.Error()})
 		return fmt.Errorf("对端未接收：%w", textErr)
+	}
+	if active {
+		e.clipMu.Unlock()
+		e.Log.Info("本地刚复制过，对端内容仅保存历史", "kind", item.Kind, "bytes", item.Size)
+		if err := e.notify(Notice{Kind: NoticeRemote, Item: item, PeerID: link.ID, PeerName: link.Name}); err != nil {
+			return fmt.Errorf("对端保存历史失败，未写入剪贴板：%w", err)
+		}
+		return errHistoryOnly
 	}
 	if !attempted {
 		e.clipMu.Unlock()

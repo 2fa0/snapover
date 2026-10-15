@@ -316,6 +316,9 @@ func (s *Session) deliverItem(id string, item clip.Item) {
 	result := wire.Ack{ItemID: id, State: "complete"}
 	if err := s.onItem(item); err != nil {
 		result.State, result.Message = "error", err.Error()
+		if errors.Is(err, errHistoryOnly) {
+			result.State = "history"
+		}
 	}
 	s.respond(wire.TypeAck, result)
 }

@@ -360,7 +360,7 @@ func TestRemovedSessionCannotWriteQueuedClipboard(t *testing.T) {
 			left, right := newIdentities(t)
 			a, b := engineFor(t, left, &memBoard{}), engineFor(t, right, &memBoard{})
 			notices := make(chan Notice, 16)
-			a.OnNotice = func(n Notice) { notices <- n }
+			a.OnNotice = func(n Notice) error { notices <- n; return nil }
 			a.SetPairing(true)
 			b.SetPairing(true)
 			startPair(t, a, b, left, right)

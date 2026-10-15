@@ -118,7 +118,7 @@ type ImageEnd struct {
 
 type Ack struct {
 	ItemID  string `msgpack:"item_id"`
-	State   string `msgpack:"state,omitempty"` // complete, error; absent on older peers
+	State   string `msgpack:"state,omitempty"` // complete, history, error; absent on older peers
 	Message string `msgpack:"message,omitempty"`
 }
 
