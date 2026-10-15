@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -127,10 +128,11 @@ type app struct {
 	fileSize           int64
 	fileBusy           bool
 	fileChoosing       bool
+	fileSent           bool
+	fileRecipient      string
 	fileDone           int64
 	fileMessage        string
 	receiveMessage     string
-	lastReceived       string
 	fileCommandHint    string
 	fileWaiting        bool
 	pendingFileRequest *fileRequest
@@ -227,14 +229,18 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 
 func (a *app) open(ctx context.Context) {
 	a.root = ctx
-	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-		{Role: mygo.RoleAppMenu},
-		{Label: "设置", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageSettings) }},
-		{Label: "连接设备", Accelerator: "CmdOrCtrl+2", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageDevices) }},
-		{Label: "复制历史", Accelerator: "CmdOrCtrl+3", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageHistory) }},
-		{Label: "发送文件…", Accelerator: "CmdOrCtrl+4", Click: func(*mygo.MenuItem, *mygo.Window) { a.openFiles() }},
-		{Role: mygo.RoleEditMenu},
-	}))
+	// Windows inherits the application menu in every ordinary window.
+	mygo.App.SetMenu(nil)
+	if runtime.GOOS == "darwin" {
+		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+			{Role: mygo.RoleAppMenu},
+			{Label: "设置", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageSettings) }},
+			{Label: "连接设备", Accelerator: "CmdOrCtrl+2", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageDevices) }},
+			{Label: "复制历史", Accelerator: "CmdOrCtrl+3", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageHistory) }},
+			{Label: "发送文件…", Accelerator: "CmdOrCtrl+4", Click: func(*mygo.MenuItem, *mygo.Window) { a.openFiles() }},
+			{Role: mygo.RoleEditMenu},
+		}))
+	}
 	a.restoreLogin()
 	a.initSendTo()
 	a.startTray()
@@ -395,9 +401,10 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 		}
 	case clipsync.NoticeFile:
 		a.receiveMessage = receivedMessage(n)
-		if n.FileState == "complete" {
-			a.lastReceived = n.FilePath
+		if n.FileState == "complete" || n.FileState == "error" {
 			a.flash = a.receiveMessage
+		}
+		if n.FileState == "complete" {
 			a.receivedNotification(n)
 		}
 	}
@@ -408,6 +415,7 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 }
 
 func (a *app) view(c *ui.Context) {
+	a.windowShortcuts(c)
 	a.pollHistoryStorage()
 	if a.historyCleanupPending != nil {
 		c.After(50 * time.Millisecond)

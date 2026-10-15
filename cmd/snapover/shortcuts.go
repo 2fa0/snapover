@@ -12,6 +12,23 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func (a *app) windowShortcuts(c *ui.Context) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	// Keep the menu's shortcuts available without a Windows menu bar.
+	switch {
+	case c.Shortcut(ui.Ctrl, ui.KeyComma):
+		a.show(pageSettings)
+	case c.Shortcut(ui.Ctrl, ui.Key2):
+		a.show(pageDevices)
+	case c.Shortcut(ui.Ctrl, ui.Key3):
+		a.show(pageHistory)
+	case c.Shortcut(ui.Ctrl, ui.Key4):
+		a.openFiles()
+	}
+}
+
 func normalizePickerShortcut(value string) (string, error) {
 	parts := strings.Split(strings.TrimSpace(value), "+")
 	mods := make(map[string]bool)

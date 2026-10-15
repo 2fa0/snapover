@@ -20,29 +20,28 @@ func (a *app) openFiles() {
 		return
 	}
 	a.fileWin = mygo.NewWindow(mygo.WindowOptions{
-		Title: "发送文件 · Snapover", Width: 520, Height: 490,
-		MinWidth: 480, MinHeight: 450, Content: ui.View(a.filesView),
+		Title: "发送文件 · Snapover", Width: 460, Height: 340,
+		MinWidth: 420, MinHeight: 300, Content: ui.View(a.filesView),
 	})
 	a.fileWin.OnClosed(func() { a.fileWin = nil })
 }
 
 func (a *app) filesView(c *ui.Context) {
+	a.windowShortcuts(c)
 	t := c.Theme()
 	link, online := a.engine.Link()
-	ui.Scroll(c).Fill().Background(t.Background).Padding(24).Gap(14).Children(func() {
-		ui.Text(c, "发送文件").FontSize(22).Bold()
-		if online {
-			ui.Text(c, "发送到 "+displayName(link.Name, link.ID)).TextColor(t.TextMuted)
-		} else {
-			ui.Text(c, "没有在线设备，请先在设置中连接设备。").TextColor(t.TextMuted)
+	ui.Scroll(c).Fill().Background(t.Background).Padding(24).Gap(20).Children(func() {
+		title := "发送文件"
+		if a.fileRecipient != "" && (a.fileBusy || a.fileSent) {
+			title = "发送到 " + a.fileRecipient
+		} else if online {
+			title = "发送到 " + displayName(link.Name, link.ID)
 		}
-		if online && !link.FileTransfer {
-			ui.Text(c, "对方版本不支持发送文件，请更新两边的 Snapover。").TextColor(t.TextMuted)
+		ui.Text(c, title).FontSize(20).Bold().MaxLines(2)
+		zone := ui.Column(c.Key("file-drop")).FillWidth().Padding(18).Gap(10).Background(t.Surface).Radius(8).Disabled(a.fileBusy || a.fileChoosing)
+		if a.filePath == "" {
+			zone.Border(1, t.Border)
 		}
-		if a.fileCommandHint != "" {
-			ui.Text(c, a.fileCommandHint).MaxLines(3)
-		}
-		zone := ui.Column(c.Key("file-drop")).FillWidth().Height(126).Padding(18).Gap(8).Border(1, t.Border).Radius(8).Disabled(a.fileBusy || a.fileChoosing)
 		if zone.FileDragOver() {
 			zone.Border(2, t.Accent)
 		}
@@ -52,56 +51,64 @@ func (a *app) filesView(c *ui.Context) {
 		zone.Children(func() {
 			if a.filePath == "" {
 				ui.Text(c, "把文件拖到这里").Bold()
-				ui.Text(c, "单个文件，最大 50 MB").TextColor(t.TextMuted)
+				ui.Text(c, "单个文件，最大 50 MB").FontSize(12).TextColor(t.TextMuted)
+				if ui.Button(c, "选择文件…").Disabled(a.fileBusy || a.fileChoosing).Clicked() {
+					a.chooseFile()
+				}
 			} else {
-				ui.Text(c, filepath.Base(a.filePath)).Bold().SingleLine()
-				ui.Text(c, formatSize(int(a.fileSize))).TextColor(t.TextMuted)
-			}
-			if ui.Button(c, "选择文件…").Disabled(a.fileBusy || a.fileChoosing).Clicked() {
-				a.chooseFile()
-			}
-		})
-		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			label := "发送"
-			if online {
-				label = "发送到 " + displayName(link.Name, link.ID)
-			}
-			if a.fileBusy {
-				label = "正在发送…"
-			}
-			if a.fileWaiting {
-				label = "正在连接…"
-			}
-			if ui.PrimaryButton(c, label).Disabled(!online || !link.FileTransfer || a.filePath == "" || a.fileBusy || a.fileChoosing).Clicked() {
-				a.sendSelectedFile(false)
-			}
-			if a.fileBusy {
-				ui.Text(c, "关闭窗口后仍会继续传输").FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, filepath.Base(a.filePath)).Bold().MaxLines(2).Tooltip(a.filePath)
+				ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, formatSize(int(a.fileSize))).FontSize(12).TextColor(t.TextMuted)
+					ui.Spacer(c)
+					if !a.fileBusy && ui.Button(c, "更换…").Disabled(a.fileChoosing).Clicked() {
+						a.chooseFile()
+					}
+				})
 			}
 		})
-		if a.fileBusy {
+		if a.fileBusy && !a.fileWaiting {
 			value := float64(0)
 			if a.fileSize > 0 {
 				value = float64(a.fileDone) / float64(a.fileSize)
 			}
 			ui.Progress(c, value).FillWidth().Label("文件发送进度")
 		}
-		if a.fileMessage != "" {
-			ui.Text(c, a.fileMessage).MaxLines(3)
-		}
-		if a.receiveMessage != "" {
-			ui.Text(c, a.receiveMessage).FontSize(12).TextColor(t.TextMuted).MaxLines(2)
-		}
-		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, "打开接收文件夹").Clicked() {
-				a.openReceiveFolder()
+		// Show one relevant status instead of stacking connection and transfer hints.
+		message := a.fileMessage
+		switch {
+		case a.fileCommandHint != "":
+			message = a.fileCommandHint
+		case !a.fileBusy && !a.fileSent && !online:
+			if message == "" {
+				message = "连接设备后即可发送"
 			}
-			if a.lastReceived != "" && ui.Button(c, "查看收到的文件").Clicked() {
-				path := a.lastReceived
-				go mygo.Shell.ShowItemInFolder(path)
+		case !a.fileBusy && !a.fileSent && !link.FileTransfer:
+			message = "对方暂不支持接收文件，请更新对方的 Snapover"
+		}
+		if message != "" {
+			ui.Text(c, message).TextColor(t.TextMuted).MaxLines(4)
+		}
+		if a.fileBusy {
+			ui.Text(c, "关闭窗口后仍会继续传输").FontSize(12).TextColor(t.TextMuted)
+			return
+		}
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Spacer(c)
+			switch {
+			case a.fileSent:
+				if ui.PrimaryButton(c, "完成").Clicked() && a.fileWin != nil {
+					a.fileWin.Close()
+				}
+			case !online:
+				if ui.Button(c, "连接设备").Clicked() {
+					a.show(pageDevices)
+				}
+			case a.filePath != "":
+				if ui.PrimaryButton(c, "发送").Disabled(!link.FileTransfer || a.fileChoosing).Clicked() {
+					a.sendSelectedFile(false)
+				}
 			}
 		})
-		ui.Text(c, "接收位置："+a.engine.ReceiveDir()).FontSize(12).TextColor(t.TextMuted).MaxLines(2)
 	})
 }
 
@@ -111,6 +118,7 @@ func (a *app) updateFiles(fn func()) {
 
 func (a *app) selectFile(paths []string) {
 	a.fileCommandHint = ""
+	a.fileSent, a.fileRecipient = false, ""
 	if len(paths) != 1 {
 		a.filePath = ""
 		a.fileMessage = "一次只能发送一个文件，请重新选择"
@@ -149,9 +157,11 @@ func (a *app) sendSelectedFile(background bool) {
 		return
 	}
 	a.fileCommandHint = ""
+	a.fileSent = false
 	a.fileBusy, a.fileDone, a.fileMessage = true, 0, "正在等待对方接收…"
 	path := a.filePath
 	link, _ := a.engine.Link()
+	a.fileRecipient = displayName(link.Name, link.ID)
 	ctx := a.root
 	if ctx == nil {
 		ctx = context.Background()
@@ -175,7 +185,7 @@ func (a *app) sendSelectedFile(background bool) {
 				}
 				return
 			}
-			a.fileMessage = "已保存到 " + displayName(link.Name, link.ID) + " 的接收文件夹：" + name
+			a.fileSent, a.fileMessage = true, "已发送"
 			if background && runtime.GOOS == "darwin" {
 				a.sentFileNotification(name, displayName(link.Name, link.ID))
 			}
@@ -232,7 +242,7 @@ func (a *app) openReceiveFolder() {
 func (a *app) shellResult(err error) {
 	if err != nil {
 		a.updateFiles(func() {
-			a.fileMessage = "打开接收位置失败：" + err.Error() + "。请从文件管理器打开接收文件夹"
+			a.status = "打开接收位置失败：" + err.Error() + "。请从文件管理器打开接收文件夹"
 		})
 	}
 }
