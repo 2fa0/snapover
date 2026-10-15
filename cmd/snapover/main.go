@@ -285,16 +285,33 @@ func portOf(listen string) string {
 }
 
 func newLogger(dataDir string, level slog.Level) *slog.Logger {
-	w := io.Writer(os.Stdout)
+	options := &slog.HandlerOptions{Level: level}
+	fallback := slog.New(slog.NewTextHandler(os.Stdout, options))
 	dir := filepath.Join(dataDir, "logs")
-	if err := os.MkdirAll(dir, 0o700); err == nil {
-		path := filepath.Join(dir, "snapover.log")
-		rotateLog(path)
-		if f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
-			w = io.MultiWriter(os.Stdout, f)
-		}
+	path := filepath.Join(dir, "snapover.log")
+	exe, _ := os.Executable()
+	fail := func(err error) *slog.Logger {
+		crashlog.Breadcrumb(fmt.Sprintf("普通日志初始化失败 path=%q exe=%q pid=%d logger=file-first-v2 err=%v", path, exe, os.Getpid(), err))
+		return fallback
 	}
-	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level}))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fail(err)
+	}
+	rotateLog(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fail(err)
+	}
+	// Check the actual file write independently of an absent Windows GUI console.
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "普通日志已启用", 0)
+	record.Add("path", path, "exe", exe, "pid", os.Getpid(), "logger", "file-first-v2")
+	if err := slog.NewTextHandler(f, options).Handle(context.Background(), record); err != nil {
+		_ = f.Close()
+		return fail(err)
+	}
+	crashlog.Breadcrumb(fmt.Sprintf("普通日志写入已验证 path=%q exe=%q pid=%d logger=file-first-v2", path, exe, os.Getpid()))
+	// Windows GUI builds may have no stdout; write the file before it.
+	return slog.New(slog.NewTextHandler(io.MultiWriter(f, os.Stdout), options))
 }
 
 func rotateLog(path string) {
