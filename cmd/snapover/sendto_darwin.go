@@ -3,28 +3,53 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/sendto"
 )
 
-const sendToEntryName = "Finder 快速操作"
+const sendToEntryName = "Finder 服务"
 
 func refreshSendTo() error { return sendto.Refresh() }
 
 func (a *app) initSendTo() {
+	a.sendToColdLaunch = sendto.WasOpenedForService()
+	cold := a.sendToColdLaunch
+	if err := sendto.Register(func(paths []string) error {
+		err := a.receiveFinderFiles(paths, cold)
+		if err == nil {
+			cold = false
+		}
+		return err
+	}); err != nil {
+		a.status = "注册 Finder 服务失败：" + err.Error()
+		if a.engine.Log != nil {
+			a.engine.Log.Error("注册 Finder 服务失败", "err", err)
+		}
+		return
+	}
 	if mygo.App.IsPackaged() {
 		a.setSendTo(!a.cfg.Values.DisableSendTo, false)
 	}
 }
 
+func (a *app) receiveFinderFiles(paths []string, cold bool) error {
+	if a.quitting || a.cfg.Values.DisableSendTo {
+		return errors.New("请在 Snapover 设置中启用 Finder 发送文件服务")
+	}
+	a.handleFileRequest(paths, cold)
+	return nil
+}
+
 func (a *app) sendToSettings(c *ui.Context) {
 	on := !a.cfg.Values.DisableSendTo
-	if ui.Checkbox(c, &on, "在 Finder「快速操作」中显示 Snapover").
-		Tooltip("右键文件 → 快速操作 → Snapover 发送文件。未显示时，在系统设置中启用该快速操作。").Disabled(a.sendToBusy).Changed() {
+	if ui.Checkbox(c, &on, "允许从 Finder 发送文件").
+		Tooltip("右键文件 → 服务 → Snapover 发送文件。菜单是否显示可在系统设置的「服务」中调整。").Disabled(a.sendToBusy).Changed() {
 		a.setSendTo(on, true)
 	}
-	if ui.Button(c, "重新安装快速操作").Disabled(a.sendToBusy || !on).Clicked() {
+	if ui.Button(c, "刷新 Finder 服务").Disabled(a.sendToBusy || !on).Clicked() {
 		a.setSendTo(true, true)
 	}
 }

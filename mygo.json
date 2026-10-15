@@ -11,7 +11,14 @@
     "infoPlist": {
       "LSApplicationCategoryType": "public.app-category.utilities",
       "NSLocalNetworkUsageDescription": "Snapover 需要发现并连接同一局域网内的电脑，用于配对、同步剪贴板和发送文件。",
-      "NSBonjourServices": ["_snapover._tcp"]
+      "NSBonjourServices": ["_snapover._tcp"],
+      "NSServices": [{
+        "NSMenuItem": {"default": "Snapover 发送文件"},
+        "NSMessage": "sendFiles",
+        "NSPortName": "Snapover",
+        "NSRequiredContext": {"NSApplicationIdentifier": "com.apple.finder"},
+        "NSSendFileTypes": ["public.item"]
+      }]
     }
   }
 }

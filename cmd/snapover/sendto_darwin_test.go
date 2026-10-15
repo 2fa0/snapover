@@ -79,3 +79,40 @@ func TestMacFileRequestReachesRunningInstanceWithoutOpeningMainWindow(t *testing
 		}
 	})
 }
+
+func TestFinderServiceUsesExistingFileRequestAndRespectsDisable(t *testing.T) {
+	if os.Getenv("SNAPOVER_TEST_UI") != "1" {
+		t.Skip("requires a desktop session; set SNAPOVER_TEST_UI=1")
+	}
+	a := interfaceTestApp(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a.root = ctx
+	path := filepath.Join(t.TempDir(), "中文 ' $() 报告.txt")
+	if err := os.WriteFile(path, []byte("test request"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mygo.RunOnMain(func() {
+		a.cfg.Values.DisableSendTo = true
+		if err := a.receiveFinderFiles([]string{path}, false); err == nil || a.fileWin != nil {
+			t.Error("disabled service accepted the request")
+		}
+		a.cfg.Values.DisableSendTo = false
+		if err := a.receiveFinderFiles([]string{path}, false); err != nil {
+			t.Error(err)
+		}
+		if a.win != nil || a.fileWin == nil || a.filePath != path {
+			t.Error("Finder request did not reach the existing file window")
+		}
+		a.fileBusy = true
+		if err := a.receiveFinderFiles([]string{filepath.Join(t.TempDir(), "other.txt")}, false); err != nil {
+			t.Error(err)
+		}
+		if a.filePath != path || !a.fileBusy || a.win != nil {
+			t.Error("Finder request replaced an ongoing send")
+		}
+		if a.fileWin != nil {
+			a.fileWin.Close()
+		}
+	})
+}

@@ -112,6 +112,7 @@ type app struct {
 	pickLoading        bool
 	pickOriginal       *mygo.Window
 	quitting           bool
+	sendToColdLaunch   bool
 	openAtLogin        bool
 	pickQuery          string
 	pickSel            int
@@ -244,7 +245,7 @@ func (a *app) open(ctx context.Context) {
 	a.restoreLogin()
 	a.initSendTo()
 	a.startTray()
-	if (!mygo.App.WasOpenedAtLogin() && a.pendingFileRequest == nil) || a.tray == nil {
+	if (!mygo.App.WasOpenedAtLogin() && !a.sendToColdLaunch && a.pendingFileRequest == nil) || a.tray == nil {
 		a.openMainWindow()
 	}
 	a.rememberPasteTarget()

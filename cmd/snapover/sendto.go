@@ -51,9 +51,9 @@ func (a *app) setSendTo(on, save bool) {
 					return
 				}
 				if on {
-					a.status = "已安装 " + sendToEntryName
+					a.status = "已启用 " + sendToEntryName
 				} else {
-					a.status = "已移除 " + sendToEntryName
+					a.status = "已停用 " + sendToEntryName
 				}
 			}
 		})
