@@ -30,10 +30,12 @@ func currentState() (sessionState, error) {
 	if err := windows.ProcessIdToSessionId(windows.GetCurrentProcessId(), &session); err != nil {
 		return s, err
 	}
+	s.sessionID = session
 	protocol, err := sessionValue(session, 16, 2) // WTSClientProtocolType: 2 is RDP.
 	if err != nil {
 		return s, err
 	}
+	s.protocol = protocol
 	s.remote = protocol == 2
 	if !s.remote {
 		return s, nil
@@ -46,7 +48,11 @@ func currentState() (sessionState, error) {
 	if !s.connected {
 		return s, nil
 	}
-	s.unlocked = inputDesktopUnlocked()
+	s.desktop, err = inputDesktopName()
+	if err != nil {
+		return s, err
+	}
+	s.unlocked = s.desktop == "Default"
 	if !s.unlocked {
 		return s, nil
 	}
@@ -57,6 +63,9 @@ func currentState() (sessionState, error) {
 	now, _, _ := getTickCount.Call()
 	// Both counters are DWORD milliseconds; subtraction handles their wraparound.
 	s.idle = time.Duration(uint32(now)-last.Tick) * time.Millisecond
+	// WTS and GetLastInputInfo expose separate observations. Keep the WTS query
+	// diagnostic-only so its failure does not stop the existing input behavior.
+	s.rdpLastInput, s.rdpIdle, s.rdpError = sessionInputTime(session)
 	for _, key := range []uintptr{0x01, 0x02, 0x04, 0x05, 0x06, 0x10, 0x11, 0x12, 0x5B, 0x5C} {
 		if down, _, _ := getKeyState.Call(key); down&0x8000 != 0 {
 			s.held = true
@@ -83,19 +92,54 @@ func sessionValue(session, kind, size uint32) (uint32, error) {
 	return *(*uint32)(unsafe.Pointer(buffer)), nil
 }
 
-func inputDesktopUnlocked() bool {
+// WTSINFOW uses 8-byte alignment for LARGE_INTEGER on Windows, including x86.
+type sessionInfo struct {
+	Counters       [8]uint32
+	Station        [32]uint16
+	Domain         [17]uint16
+	User           [21]uint16
+	_              uint32
+	ConnectTime    int64
+	DisconnectTime int64
+	LastInputTime  int64
+	LogonTime      int64
+	CurrentTime    int64
+}
+
+func sessionInputTime(session uint32) (int64, time.Duration, error) {
+	var buffer *sessionInfo
+	var length uint32
+	const wtsSessionInfo = 24
+	ok, _, err := querySession.Call(0, uintptr(session), wtsSessionInfo, uintptr(unsafe.Pointer(&buffer)), uintptr(unsafe.Pointer(&length)))
+	if ok == 0 {
+		return 0, 0, fmt.Errorf("WTSQuerySessionInformation(WTSSessionInfo): %w", err)
+	}
+	defer windows.WTSFreeMemory(uintptr(unsafe.Pointer(buffer)))
+	if buffer == nil || uintptr(length) < unsafe.Sizeof(sessionInfo{}) {
+		return 0, 0, fmt.Errorf("WTSQuerySessionInformation(WTSSessionInfo): incomplete response")
+	}
+	if buffer.LastInputTime <= 0 || buffer.CurrentTime < buffer.LastInputTime {
+		return 0, 0, fmt.Errorf("WTSQuerySessionInformation(WTSSessionInfo): invalid input time")
+	}
+	return buffer.LastInputTime, time.Duration(buffer.CurrentTime-buffer.LastInputTime) * 100 * time.Nanosecond, nil
+}
+
+func inputDesktopName() (string, error) {
 	const desktopReadObjects = 1
-	desktop, _, _ := openDesktop.Call(0, 0, desktopReadObjects)
+	desktop, _, err := openDesktop.Call(0, 0, desktopReadObjects)
 	if desktop == 0 {
-		return false
+		return "", fmt.Errorf("OpenInputDesktop: %w", err)
 	}
 	defer closeDesktop.Call(desktop)
 	var name [256]uint16
 	var needed uint32
 	const objectName = 2
-	ok, _, _ := getObjectInfo.Call(desktop, objectName, uintptr(unsafe.Pointer(&name[0])), uintptr(unsafe.Sizeof(name)), uintptr(unsafe.Pointer(&needed)))
+	ok, _, err := getObjectInfo.Call(desktop, objectName, uintptr(unsafe.Pointer(&name[0])), uintptr(unsafe.Sizeof(name)), uintptr(unsafe.Pointer(&needed)))
+	if ok == 0 {
+		return "", fmt.Errorf("GetUserObjectInformationW: %w", err)
+	}
 	// Lock, sign-in and UAC desktops must never receive the generated input.
-	return ok != 0 && windows.UTF16ToString(name[:]) == "Default"
+	return windows.UTF16ToString(name[:]), nil
 }
 
 type mouseInput struct {

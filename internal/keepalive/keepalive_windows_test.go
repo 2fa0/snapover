@@ -15,6 +15,12 @@ func TestInputNativeLayout(t *testing.T) {
 	}
 }
 
+func TestSessionInfoNativeLayout(t *testing.T) {
+	if unsafe.Sizeof(sessionInfo{}) != 216 || unsafe.Offsetof(sessionInfo{}.LastInputTime) != 192 || unsafe.Offsetof(sessionInfo{}.CurrentTime) != 208 {
+		t.Fatal("sessionInfo does not match WTSINFOW")
+	}
+}
+
 func TestAbsoluteCoordinatesRestorePixelsAcrossMonitors(t *testing.T) {
 	for _, screen := range []struct{ origin, extent int32 }{{0, 1920}, {-1920, 3840}, {0, 7680}} {
 		for pixel := int32(0); pixel < screen.extent; pixel++ {
