@@ -136,6 +136,10 @@ func main() {
 		log.Error("加载设置失败", "err", err)
 		die(1)
 	}
+	historyCapacityErr := hist.SetCapacity(int64(cfg.Values.HistoryMaxMB) << 20)
+	if historyCapacityErr != nil {
+		log.Warn("应用历史容量上限失败", "err", historyCapacityErr)
+	}
 	engine := &clipsync.Engine{
 		LocalID:     id.DeviceID,
 		Name:        hostname(),
@@ -156,6 +160,9 @@ func main() {
 	}
 	engine.SetReceiveDir(receiveDir)
 	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
+	if historyCapacityErr != nil {
+		uiApp.historyCapacityError = "历史维护失败，请在设置中重新应用上限：" + historyCapacityErr.Error()
+	}
 	mygo.App.OnActivate(func(hasVisibleWindows bool) {
 		if !hasVisibleWindows && uiApp.root != nil {
 			uiApp.reveal(uiApp.page)

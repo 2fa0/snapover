@@ -18,6 +18,9 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if f.Values.MaxTextMB != DefaultMaxTextMB {
 		t.Fatalf("default text mb = %d", f.Values.MaxTextMB)
 	}
+	if f.Values.HistoryMaxMB != DefaultHistoryMB || f.Values.PickerShortcut != "" {
+		t.Fatalf("unexpected defaults: %+v", f.Values)
+	}
 	if f.Values.KeepRemoteActive {
 		t.Fatal("remote session activity must be opt-in")
 	}
@@ -25,6 +28,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	f.Values.TextOnly = true
 	f.Values.MaxImageMB = 8
 	f.Values.MaxTextMB = 10
+	f.Values.HistoryMaxMB = 512
 	f.Values.PickerShortcut = "Ctrl+Alt+V"
 	f.Values.ReceiveDir = dir
 	f.Values.DisableSendTo = true
@@ -42,11 +46,11 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if !again.Values.Paused || !again.Values.TextOnly || again.Values.MaxImageMB != 8 || again.Values.ReceiveDir != dir || !again.Values.DisableSendTo || !again.Values.KeepRemoteActive {
 		t.Fatalf("%+v", again.Values)
 	}
-	if again.Values.PickerShortcut != "Ctrl+Alt+V" {
-		t.Fatal("shortcut not restored")
-	}
 	if again.Values.MaxTextMB != 10 {
 		t.Fatalf("text mb = %d", again.Values.MaxTextMB)
+	}
+	if again.Values.HistoryMaxMB != 512 || again.Values.PickerShortcut != "Ctrl+Alt+V" {
+		t.Fatalf("history or shortcut not restored: %+v", again.Values)
 	}
 	if again.Values.DiscoveryMode != "selected" || len(again.Values.DiscoveryNets) != 1 || again.Values.DiscoveryNets[0] != "en0/192.168.1.0/24" || len(again.Values.DiscoverySeen) != 2 {
 		t.Fatalf("discovery selection not restored: %+v", again.Values)

@@ -51,6 +51,15 @@ type app struct {
 	shortcutText              string
 	shortcutError             string
 	registeredPickerShortcuts []string
+	historyMaxText            string
+	historyCapacityError      string
+	historyUsage              history.Usage
+	historyUsageValid         bool
+	historyUsageError         string
+	historyUsageVersion       uint64
+	historyUsagePending       chan historyUsageResult
+	historyCleanupPending     chan historyCleanupResult
+	confirmStorageClear       bool
 
 	page            string
 	peer            string
@@ -133,6 +142,9 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 	if cfg.Values.MaxTextMB == 0 {
 		cfg.Values.MaxTextMB = settings.DefaultMaxTextMB
 	}
+	if cfg.Values.HistoryMaxMB <= 0 {
+		cfg.Values.HistoryMaxMB = settings.DefaultHistoryMB
+	}
 	engine.SetTextLimit(cfg.Values.MaxTextMB << 20)
 	devices := engine.Peers.List()
 	if peer == "" {
@@ -144,24 +156,25 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		}
 	}
 	a := &app{
-		engine:       engine,
-		hist:         hist,
-		cfg:          cfg,
-		board:        engine.Board,
-		deviceID:     id.DeviceID,
-		fingerprint:  identity.FormatFingerprint(id.Fingerprint),
-		name:         engine.Name,
-		listen:       listen,
-		addrs:        addrs,
-		paused:       cfg.Values.Paused,
-		textOnly:     cfg.Values.TextOnly,
-		maxImageText: strconv.Itoa(cfg.Values.MaxImageMB),
-		maxTextText:  strconv.Itoa(cfg.Values.MaxTextMB),
-		page:         pageDevices,
-		peer:         peer,
-		status:       "未连接",
-		histSel:      -1,
-		pickSel:      -1,
+		engine:         engine,
+		hist:           hist,
+		cfg:            cfg,
+		board:          engine.Board,
+		deviceID:       id.DeviceID,
+		fingerprint:    identity.FormatFingerprint(id.Fingerprint),
+		name:           engine.Name,
+		listen:         listen,
+		addrs:          addrs,
+		paused:         cfg.Values.Paused,
+		textOnly:       cfg.Values.TextOnly,
+		maxImageText:   strconv.Itoa(cfg.Values.MaxImageMB),
+		maxTextText:    strconv.Itoa(cfg.Values.MaxTextMB),
+		historyMaxText: strconv.Itoa(cfg.Values.HistoryMaxMB),
+		page:           pageDevices,
+		peer:           peer,
+		status:         "未连接",
+		histSel:        -1,
+		pickSel:        -1,
 
 		entries: hist.List(),
 		devices: devices,
@@ -277,7 +290,7 @@ func (a *app) openMainWindow() {
 		a.shownSource, a.shownEntries = nil, nil
 		// ListState holds its window host, including the closed UI's resources.
 		a.histList = ui.ListState{Key: a.histList.Key, Label: a.histList.Label, Selected: &a.histSel}
-		a.confirm, a.confirmClear = false, false
+		a.confirm, a.confirmClear, a.confirmStorageClear = false, false, false
 		if r := a.historyPaste; r != nil && r.picker == nil {
 			a.historyPaste = nil
 		}
@@ -320,12 +333,13 @@ func (a *app) onNotice(n clipsync.Notice) error {
 			peer = n.PeerName
 		}
 		entry, err := a.hist.Add(dir, peer, n.Item)
+		if entry.ID != "" {
+			added = &entry
+		}
 		if err != nil {
 			storageErr = err
 			n.Kind = clipsync.NoticeError
-			n.Message = "写入历史失败：" + err.Error()
-		} else {
-			added = &entry
+			n.Message = "写入或清理历史失败：" + err.Error()
 		}
 	}
 	a.update(func() { a.apply(n, added) })
@@ -333,6 +347,9 @@ func (a *app) onNotice(n clipsync.Notice) error {
 }
 
 func (a *app) apply(n clipsync.Notice, added *history.Entry) {
+	if added != nil {
+		a.refreshEntries()
+	}
 	switch n.Kind {
 	case clipsync.NoticePairing:
 		if n.Message != "" {
@@ -356,9 +373,6 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 		if n.Message != "" {
 			a.flash = n.Message
 		}
-		if added != nil {
-			a.refreshEntries()
-		}
 	case clipsync.NoticeFile:
 		a.receiveMessage = receivedMessage(n)
 		if n.FileState == "complete" {
@@ -374,6 +388,10 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 }
 
 func (a *app) view(c *ui.Context) {
+	a.pollHistoryStorage()
+	if a.historyCleanupPending != nil {
+		c.After(50 * time.Millisecond)
+	}
 	a.drainThumbnails()
 	t := c.Theme()
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(t.Background).Children(func() {
@@ -467,6 +485,7 @@ func (a *app) settingsPage(c *ui.Context) {
 		})
 	})
 	settingsGroup(c, "快速历史快捷键", func() { a.shortcutSettings(c) })
+	settingsGroup(c, "历史存储", func() { a.historyStorageSettings(c) })
 	settingsGroup(c, "启动", func() {
 		if settingSwitch(c, &a.openAtLogin, "开机启动", "登录电脑后在后台启动 Snapover。") {
 			a.setOpenAtLogin(a.openAtLogin)
@@ -713,6 +732,8 @@ func (a *app) filtered(query string) []history.Entry {
 func matchesEntry(entry history.Entry, q string) bool { return history.Matches(entry, q) }
 
 func (a *app) refreshEntries() {
+	a.historyUsageValid = false
+	a.historyUsageVersion++
 	a.entries = a.hist.List()
 	a.shownSource, a.shownEntries = nil, nil
 	a.historySearch.reset()
@@ -833,7 +854,8 @@ func (a *app) deleteSelected() {
 		return
 	}
 	if err := a.hist.Delete(entry.ID); err != nil {
-		a.flash = "删除失败"
+		a.refreshEntries()
+		a.flash = "删除未完全完成，请在设置中重新清理：" + err.Error()
 		return
 	}
 	if a.thumbs != nil {
@@ -851,7 +873,8 @@ func (a *app) clearHistory() {
 	}
 	a.confirmClear = false
 	if err := a.hist.Clear(); err != nil {
-		a.flash = "清空失败"
+		a.refreshEntries()
+		a.flash = "清空未完全完成，请在设置中重新清理：" + err.Error()
 		return
 	}
 	if a.thumbs != nil {

@@ -52,6 +52,7 @@ func (s *Store) preview(id string) ([]byte, image.Image, error) {
 	// A valid header can still precede a truncated or corrupt PNG body.
 	s.mu.Lock()
 	_ = os.Remove(path)
+	delete(s.contentSizes, entry.ID)
 	s.mu.Unlock()
 	data, err = s.makePreview(entry)
 	if err != nil {
@@ -65,7 +66,20 @@ func (s *Store) preview(id string) ([]byte, image.Image, error) {
 	s.mu.Lock()
 	// Deleting a record during decoding must not leave a new orphaned cache.
 	if _, exists := s.findLocked(id); exists {
-		_ = os.WriteFile(path, data, 0o600)
+		var used int64
+		measurable := true
+		for _, existing := range s.entries {
+			size, err := s.entryBytesLocked(existing)
+			if err != nil {
+				measurable = false
+				break
+			}
+			used += size
+		}
+		if measurable && (s.capacity <= 0 || used+int64(len(data)) <= s.capacity) {
+			_ = os.WriteFile(path, data, 0o600)
+			delete(s.contentSizes, entry.ID)
+		}
 	}
 	s.mu.Unlock()
 	img, err := decodePreview(data)

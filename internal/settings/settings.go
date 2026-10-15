@@ -9,6 +9,10 @@ import (
 
 const DefaultMaxImageMB = 20
 
+const DefaultHistoryMB = 2048
+
+const MaxHistoryMB = 1 << 20
+
 const (
 	DefaultMaxTextMB = 1
 	MaxTextMB        = 20
@@ -24,6 +28,7 @@ type Values struct {
 	ReceiveDir     string `json:"receive_dir,omitempty"`
 	DisableSendTo  bool   `json:"disable_send_to,omitempty"`
 	PickerShortcut string `json:"picker_shortcut,omitempty"`
+	HistoryMaxMB   int    `json:"history_max_mb"`
 
 	WindowsNetworkGuideDismissed bool `json:"windows_network_guide_dismissed,omitempty"`
 	MacNetworkGuideDismissed     bool `json:"mac_network_guide_dismissed,omitempty"`
@@ -48,7 +53,7 @@ type File struct {
 func Load(dataDir string) (*File, error) {
 	f := &File{
 		Path:   filepath.Join(dataDir, "settings.json"),
-		Values: Values{MaxImageMB: DefaultMaxImageMB, MaxTextMB: DefaultMaxTextMB},
+		Values: Values{MaxImageMB: DefaultMaxImageMB, MaxTextMB: DefaultMaxTextMB, HistoryMaxMB: DefaultHistoryMB},
 	}
 	buf, err := os.ReadFile(f.Path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -65,10 +70,22 @@ func Load(dataDir string) (*File, error) {
 	}
 	f.Values.MaxImageMB = clampMB(f.Values.MaxImageMB)
 	f.Values.MaxTextMB = clampTextMB(f.Values.MaxTextMB)
+	if f.Values.HistoryMaxMB <= 0 {
+		f.Values.HistoryMaxMB = DefaultHistoryMB
+	}
+	if f.Values.HistoryMaxMB > MaxHistoryMB {
+		f.Values.HistoryMaxMB = MaxHistoryMB
+	}
 	return f, nil
 }
 
 func (f *File) Save() error {
+	if f.Values.HistoryMaxMB <= 0 {
+		f.Values.HistoryMaxMB = DefaultHistoryMB
+	}
+	if f.Values.HistoryMaxMB > MaxHistoryMB {
+		f.Values.HistoryMaxMB = MaxHistoryMB
+	}
 	f.Values.MaxImageMB = clampMB(f.Values.MaxImageMB)
 	f.Values.MaxTextMB = clampTextMB(f.Values.MaxTextMB)
 	buf, err := json.MarshalIndent(f.Values, "", "  ")

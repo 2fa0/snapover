@@ -22,6 +22,14 @@ type pasteRequest struct {
 }
 
 func (a *app) startHistoryPaste(id string, picker *mygo.Window) {
+	if a.historyCleanupPending != nil {
+		if picker != nil {
+			a.pickFlash = "正在清理历史，请稍后再试"
+		} else {
+			a.flash = "正在清理历史，请稍后再试"
+		}
+		return
+	}
 	if a.historyPaste != nil {
 		return
 	}

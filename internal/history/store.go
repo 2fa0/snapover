@@ -57,6 +57,8 @@ type Store struct {
 	sequence     uint64
 	journalOps   int
 	journalBytes int64
+	capacity     int64
+	contentSizes map[string]int64
 }
 
 func Open(dir string) (*Store, error) {
@@ -75,7 +77,7 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "opened"), 0o700); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir}
+	s := &Store{dir: dir, capacity: DefaultMaxBytes, contentSizes: make(map[string]int64)}
 	f, err := os.Open(s.indexPath())
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -120,18 +122,20 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 		Peer:      peer,
 		SourceApp: clip.CleanSource(item.SourceApp),
 	}
+	if item.Kind == clip.KindImage && len(item.Thumbnail) == 0 {
+		item.Thumbnail, _ = thumbPNG(item.PNG, 160)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := s.offloadText(&entry); err != nil {
 		return Entry{}, err
 	}
 	if item.Kind == clip.KindImage {
 		entry.ImageFile = id + ".png"
 		if err := os.WriteFile(filepath.Join(s.dir, "blobs", entry.ImageFile), item.PNG, 0o600); err != nil {
-			return Entry{}, err
+			return Entry{}, errors.Join(err, s.removeFiles([]Entry{entry}))
 		}
 		thumb := item.Thumbnail
-		if len(thumb) == 0 {
-			thumb, _ = thumbPNG(item.PNG, 160)
-		}
 		if len(thumb) > 0 {
 			entry.ThumbFile = id + ".png"
 			if err := os.WriteFile(filepath.Join(s.dir, "thumbs", entry.ThumbFile), thumb, 0o600); err != nil {
@@ -142,18 +146,36 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 			_ = os.WriteFile(filepath.Join(s.dir, "previews", id+".png"), item.Preview, 0o600)
 		}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if s.capacity > 0 {
+		required, err := s.entryBytesLocked(entry)
+		if err != nil {
+			return Entry{}, errors.Join(err, s.removeFiles([]Entry{entry}))
+		}
+		for _, existing := range s.entries {
+			if existing.Pinned {
+				size, err := s.entryBytesLocked(existing)
+				if err != nil {
+					return Entry{}, errors.Join(err, s.removeFiles([]Entry{entry}))
+				}
+				required += size
+			}
+		}
+		if required > s.capacity {
+			return Entry{}, errors.Join(errors.New("历史容量不足，未保存本条内容，请提高上限或清理置顶记录"), s.removeFiles([]Entry{entry}))
+		}
+	}
 	before := s.entries
 	s.entries = append([]Entry{entry}, s.entries...)
-	drop := s.trimLocked()
+	drop, err := s.trimLocked()
+	if err != nil {
+		s.entries = before
+		return Entry{}, errors.Join(err, s.removeFiles([]Entry{entry}))
+	}
 	if err := s.persistLocked(historyChange{Op: "add", Entry: &entry, Drop: entryIDs(drop)}); err != nil {
 		s.entries = before
-		s.removeFiles([]Entry{entry})
-		return Entry{}, err
+		return Entry{}, errors.Join(err, s.removeFiles([]Entry{entry}))
 	}
-	s.removeFiles(drop)
-	return entry, nil
+	return entry, s.removeFiles(drop)
 }
 
 func (s *Store) List() []Entry {
@@ -279,8 +301,7 @@ func (s *Store) Delete(id string) error {
 			s.entries = before
 			return err
 		}
-		s.removeFiles([]Entry{entry})
-		return nil
+		return s.removeFiles([]Entry{entry})
 	}
 	return os.ErrNotExist
 }
@@ -304,15 +325,14 @@ func (s *Store) Clear() error {
 		s.entries = before
 		return err
 	}
-	s.removeFiles(drop)
-	return nil
+	return errors.Join(s.removeFiles(drop), s.cleanOrphansLocked())
 }
 
-func (s *Store) trimLocked() []Entry {
+func (s *Store) trimLocked() ([]Entry, error) {
 	return s.trimAtLocked(time.Now())
 }
 
-func (s *Store) trimAtLocked(now time.Time) []Entry {
+func (s *Store) trimAtLocked(now time.Time) ([]Entry, error) {
 	kept := make([]Entry, 0, len(s.entries))
 	var drop []Entry
 	unpinned := 0
@@ -328,25 +348,65 @@ func (s *Store) trimAtLocked(now time.Time) []Entry {
 		unpinned++
 		kept = append(kept, entry)
 	}
+	if s.capacity > 0 {
+		var total int64
+		for _, entry := range kept {
+			size, err := s.entryBytesLocked(entry)
+			if err != nil {
+				return nil, err
+			}
+			total += size
+		}
+		removed := make(map[string]bool)
+		for i := len(kept) - 1; i >= 0 && total > s.capacity; i-- {
+			entry := kept[i]
+			if !entry.Pinned {
+				size, _ := s.entryBytesLocked(entry)
+				total -= size
+				removed[entry.ID] = true
+				drop = append(drop, entry)
+			}
+		}
+		if len(removed) > 0 {
+			filtered := make([]Entry, 0, len(kept)-len(removed))
+			for _, entry := range kept {
+				if !removed[entry.ID] {
+					filtered = append(filtered, entry)
+				}
+			}
+			kept = filtered
+		}
+	}
 	s.entries = kept
-	return drop
+	return drop, nil
 }
 
-func (s *Store) removeFiles(entries []Entry) {
+func (s *Store) removeFiles(entries []Entry) error {
+	var failures []error
+	remove := func(path string) {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			failures = append(failures, err)
+		}
+	}
 	for _, entry := range entries {
+		delete(s.contentSizes, entry.ID)
 		if entry.TextFile != "" {
-			if path, err := s.textPath(entry.TextFile); err == nil {
-				_ = os.Remove(path)
+			path, err := s.textPath(entry.TextFile)
+			if err != nil {
+				failures = append(failures, err)
+			} else {
+				remove(path)
 			}
 		}
 		if entry.ImageFile != "" {
-			_ = os.Remove(filepath.Join(s.dir, "blobs", entry.ImageFile))
-			_ = os.Remove(filepath.Join(s.dir, "previews", entry.ID+".png"))
+			remove(filepath.Join(s.dir, "blobs", entry.ImageFile))
+			remove(filepath.Join(s.dir, "previews", entry.ID+".png"))
 		}
 		if entry.ThumbFile != "" {
-			_ = os.Remove(filepath.Join(s.dir, "thumbs", entry.ThumbFile))
+			remove(filepath.Join(s.dir, "thumbs", entry.ThumbFile))
 		}
 	}
+	return errors.Join(failures...)
 }
 
 func (s *Store) saveLocked() error {
