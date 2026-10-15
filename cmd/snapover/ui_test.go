@@ -116,8 +116,13 @@ func TestSettingsControlsPersistPolicy(t *testing.T) {
 	a := interfaceTestApp(t)
 	a.page = pageSettings
 	tt := ui.NewTester(a.view, 960, 640)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
 	clickInterface(t, tt, "暂停同步开关")
 	clickInterface(t, tt, "只同步文本开关")
+	if tt.HasText("图片大小上限，MB") || tt.HasText("文本大小上限，MB") {
+		t.Fatal("size limits should stay collapsed until requested")
+	}
+	clickInterface(t, tt, "大小限制")
 	clickInterface(t, tt, "图片大小上限，MB")
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("8")
@@ -134,6 +139,8 @@ func TestSettingsControlsPersistPolicy(t *testing.T) {
 func TestTextLimitInputAppliesAndRejectsInvalidValues(t *testing.T) {
 	a := interfaceTestApp(t)
 	tt := ui.NewTester(a.settingsPage, 960, 1200)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	clickInterface(t, tt, "大小限制")
 	clickInterface(t, tt, "文本大小上限，MB")
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("8")
@@ -231,5 +238,55 @@ func TestPairingCanCancelWithoutTrustingDevices(t *testing.T) {
 	clickInterface(t, tt, "取消添加")
 	if !a.engine.PairingUntil().IsZero() || len(a.engine.Peers.List()) != 0 {
 		t.Fatal("cancel should close pairing without trusting a device")
+	}
+}
+
+func TestPairedDevicesRevealSearchOnlyWhenAdding(t *testing.T) {
+	a := interfaceTestApp(t)
+	if _, err := a.engine.Peers.Allow("paired", "fingerprint", "工作电脑", "windows", "192.168.1.20:47821"); err != nil {
+		t.Fatal(err)
+	}
+	a.devices = a.engine.Peers.List()
+	tt := ui.NewTester(a.view, 960, 640)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	if !tt.HasText("工作电脑") || tt.HasText("附近的设备") || tt.HasText("对端局域网地址") {
+		t.Fatal("paired devices should take priority over search and address input")
+	}
+	clickInterface(t, tt, "通过地址连接")
+	if !tt.HasText("对端局域网地址") {
+		t.Fatal("manual connection should remain available on demand")
+	}
+	clickInterface(t, tt, "添加设备")
+	if !tt.HasText("附近的设备") || !tt.HasText("两台电脑连接同一网络") {
+		t.Fatal("adding should reveal discovery and the pairing instructions")
+	}
+	clickInterface(t, tt, "取消添加")
+	if tt.HasText("附近的设备") {
+		t.Fatal("canceling should return to the paired device list")
+	}
+	a.discoveryMessage = "搜索失败，请检查本地网络权限"
+	tt.Frame()
+	if !tt.HasText(a.discoveryMessage) {
+		t.Fatal("discovery errors should remain visible outside the adding flow")
+	}
+}
+
+func TestNetworkPermissionReminderAppearsWhenAdding(t *testing.T) {
+	previous := currentNetworkGuideKind
+	t.Cleanup(func() { currentNetworkGuideKind = previous })
+	currentNetworkGuideKind = guideMacLocalNetwork
+	a := interfaceTestApp(t)
+	tt := ui.NewTester(a.view, 960, 640)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	if tt.HasText("查看连接指引") {
+		t.Fatal("permission instructions should wait until the user adds a device")
+	}
+	clickInterface(t, tt, "添加设备")
+	if !tt.HasText("查看连接指引") || !tt.HasText("本地网络权限") {
+		t.Fatal("adding should explain the network permission before pairing")
+	}
+	clickInterface(t, tt, "取消添加")
+	if tt.HasText("查看连接指引") || !tt.HasText("连接帮助") {
+		t.Fatal("canceling should hide the reminder and preserve manual help")
 	}
 }

@@ -119,15 +119,6 @@ func displayPickerShortcut(key string) string {
 	return strings.ReplaceAll(key, "Super", mod)
 }
 
-func (a *app) pickerHint() string {
-	var value string
-	if a.cfg != nil {
-		value = a.cfg.Values.PickerShortcut
-	}
-	keys, _ := configuredPickerShortcuts(value)
-	return displayPickerShortcut(strings.Join(keys, " / ")) + " 弹出快速历史，回车或双击粘贴到光标处"
-}
-
 func (a *app) registerPickerShortcut() {
 	keys, err := configuredPickerShortcuts(a.cfg.Values.PickerShortcut)
 	if err != nil {
@@ -172,9 +163,9 @@ func (a *app) savePickerShortcut(value string) {
 
 func (a *app) shortcutSettings(c *ui.Context) {
 	t := c.Theme()
-	ui.Text(c, a.pickerHint()).FontSize(12).TextColor(t.TextMuted)
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		if ui.TextInput(c.Key("picker-shortcut"), &a.shortcutText).Label("快速历史快捷键").Placeholder("例如 Ctrl+Alt+V").Grow(1).Submitted() {
+		if ui.TextInput(c.Key("picker-shortcut"), &a.shortcutText).Label("快速历史快捷键").
+			Tooltip("打开快速历史，回车或双击粘贴到光标处。").Placeholder("例如 Ctrl+Alt+V").Grow(1).Submitted() {
 			a.savePickerShortcut(a.shortcutText)
 		}
 		if ui.Button(c, "应用快捷键").Clicked() {

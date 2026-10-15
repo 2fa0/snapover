@@ -26,10 +26,10 @@ func (a *app) historyStorageSettings(c *ui.Context) {
 	a.pollHistoryStorage()
 	t := c.Theme()
 	busy := a.historyCleanupPending != nil
-	ui.Text(c, "未置顶历史最多保留 1000 条或 30 天；容量超限时从最旧记录开始清理。置顶内容始终保留，并计入容量。").FontSize(12).TextColor(t.TextMuted)
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, "历史内容容量上限").Grow(1).Bold()
-		input := ui.TextInput(c.Key("history-max-mb"), &a.historyMaxText).Label("历史容量上限，MB").Width(84)
+		input := ui.TextInput(c.Key("history-max-mb"), &a.historyMaxText).Label("历史容量上限，MB").
+			Tooltip("未置顶记录最多保留 1000 条或 30 天；置顶记录计入容量，不自动清理。").Width(84)
 		if input.Submitted() && !busy {
 			a.saveHistoryCapacity()
 		}
@@ -38,7 +38,7 @@ func (a *app) historyStorageSettings(c *ui.Context) {
 			a.saveHistoryCapacity()
 		}
 	})
-	ui.Text(c, "包含文本、原图、缩略图和图片预览。应用上限会立即清理超出的未置顶记录。").FontSize(12).TextColor(t.TextMuted)
+	ui.Text(c, "应用后立即清理超出的未置顶记录，从最旧开始。").FontSize(12).TextColor(t.TextMuted)
 	ui.Row(c.Key("history-storage-actions")).Gap(12).Children(func() {
 		if ui.Button(c, "刷新占用").Disabled(busy || a.historyUsagePending != nil).Clicked() {
 			a.historyUsageValid = false
@@ -62,7 +62,7 @@ func (a *app) historyStorageSettings(c *ui.Context) {
 	ui.Column(c.Key("history-storage-usage")).Gap(4).Children(func() {
 		if a.historyUsageValid && a.historyUsageError == "" {
 			ui.Textf(c, "历史内容 %s，其中置顶 %s", storageSize(a.historyUsage.ContentBytes), storageSize(a.historyUsage.PinnedBytes)).FontSize(12).TextColor(t.TextMuted)
-			ui.Textf(c, "历史目录共占用 %s，含索引和临时查看副本", storageSize(a.historyUsage.TotalBytes)).FontSize(12).TextColor(t.TextMuted)
+			ui.Textf(c, "磁盘占用 %s", storageSize(a.historyUsage.TotalBytes)).FontSize(12).TextColor(t.TextMuted)
 			if a.historyUsage.PinnedBytes > int64(a.cfg.Values.HistoryMaxMB)<<20 {
 				ui.Text(c, "置顶内容已超过容量上限，请取消部分置顶或手动删除。").FontSize(12).TextColor(t.Danger)
 			}

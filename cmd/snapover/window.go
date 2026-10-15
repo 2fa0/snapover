@@ -74,6 +74,8 @@ type app struct {
 	showIdentity    bool
 	showDiagnostics bool
 	showNetwork     bool
+	showAddress     bool
+	showSyncLimits  bool
 	historyKind     int
 	shownEntries    []history.Entry
 	shownSource     []history.Entry
@@ -436,14 +438,17 @@ func (a *app) view(c *ui.Context) {
 			}
 			ui.Column(c).Padding(12).Gap(8).Children(func() {
 				label := "未连接设备"
-				if link, up := a.engine.Link(); up {
+				link, up := a.engine.Link()
+				if up {
 					label = "已连接 · " + displayName(link.Name, link.ID)
 				}
 				if a.paused {
 					label = "同步已暂停"
 				}
 				ui.Text(c, label).FontSize(12).Bold().SingleLine().ContentTransition(ui.ContentTransition{})
-				ui.Text(c, a.displayStatus()).FontSize(11).TextColor(t.TextMuted).MaxLines(3).ContentTransition(ui.ContentTransition{})
+				if status := a.displayStatus(); status != "" && status != "未连接" && status != "已连接" && status != "已连接 "+link.Name {
+					ui.Text(c, status).FontSize(11).TextColor(t.TextMuted).MaxLines(3).ContentTransition(ui.ContentTransition{})
+				}
 			})
 			if ui.Button(c, "").Label("发送文件").Children(func() {
 				ui.Icon(c, sendIcon)
@@ -469,62 +474,62 @@ func (a *app) view(c *ui.Context) {
 
 func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
-	pageHeading(c, "设置", "调整剪贴板同步、启动方式和文件接收位置。")
+	pageHeading(c, "设置")
 	settingsGroup(c, "剪贴板同步", func() {
-		if a.syncStatus != "" {
-			ui.Text(c, "最近同步："+a.syncStatus).FontSize(12).TextColor(t.TextMuted)
-		}
-		if settingSwitch(c, &a.paused, "暂停同步", "暂停收发剪贴板，仍会保存本机复制历史。") {
+		if settingSwitch(c, &a.paused, "暂停同步", "仍保留本机复制历史。") {
 			a.saveSettings()
 		}
 		ui.Divider(c)
-		if settingSwitch(c, &a.textOnly, "只同步文本", "开启后，图片只保留在本机。") {
+		if settingSwitch(c, &a.textOnly, "只同步文本", "") {
 			a.saveSettings()
 		}
 		ui.Divider(c)
-		ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Grow(1).Gap(4).Children(func() {
-				ui.Text(c, "文本大小上限").Bold()
-				ui.Text(c, "1–20 MB，默认 1 MB，按 UTF-8 字节数计算。").FontSize(12).TextColor(t.TextMuted)
-				ui.Text(c, "超限文本不收录、不收发；已保存的历史仍可回贴。").FontSize(12).TextColor(t.TextMuted)
+		ui.Collapsible(c, "大小限制", &a.showSyncLimits, func() {
+			ui.Column(c).Gap(14).Padding(12, 0).Children(func() {
+				ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
+					ui.Column(c).Grow(1).Gap(4).Children(func() {
+						ui.Text(c, "文本大小上限").Bold()
+						ui.Text(c, "1–20 MB，超限不保存、不收发。").FontSize(12).TextColor(t.TextMuted)
+					})
+					if ui.TextInput(c.Key("maxtextmb"), &a.maxTextText).Label("文本大小上限，MB").Width(56).Submitted() {
+						a.saveTextLimit()
+					}
+					ui.Text(c, "MB").TextColor(t.TextMuted)
+					if ui.Button(c, "应用文本上限").Clicked() {
+						a.saveTextLimit()
+					}
+				})
+				if a.maxTextError != "" {
+					ui.Text(c, a.maxTextError).FontSize(12).TextColor(t.Danger)
+				}
+				ui.Divider(c)
+				ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
+					ui.Column(c).Grow(1).Gap(4).Children(func() {
+						ui.Text(c, "图片大小上限").Bold()
+						ui.Text(c, "最多 20 MB，超限仅保留本机历史。").FontSize(12).TextColor(t.TextMuted)
+					})
+					if ui.TextInput(c.Key("maxmb"), &a.maxImageText).Label("图片大小上限，MB").Width(56).Submitted() {
+						a.saveSettings()
+					}
+					ui.Text(c, "MB").TextColor(t.TextMuted)
+					if ui.Button(c, "应用").Clicked() {
+						a.saveSettings()
+					}
+				})
 			})
-			if ui.TextInput(c.Key("maxtextmb"), &a.maxTextText).Label("文本大小上限，MB").Width(56).Submitted() {
-				a.saveTextLimit()
-			}
-			ui.Text(c, "MB").TextColor(t.TextMuted)
-			if ui.Button(c, "应用文本上限").Clicked() {
-				a.saveTextLimit()
-			}
-		})
-		if a.maxTextError != "" {
-			ui.Text(c, a.maxTextError).FontSize(12).TextColor(t.Danger)
-		}
-		ui.Divider(c)
-		ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Grow(1).Gap(4).Children(func() {
-				ui.Text(c, "图片大小上限").Bold()
-				ui.Text(c, "最多 20 MB，超过上限只保留在本机历史。").FontSize(12).TextColor(t.TextMuted)
-			})
-			if ui.TextInput(c.Key("maxmb"), &a.maxImageText).Label("图片大小上限，MB").Width(56).Submitted() {
-				a.saveSettings()
-			}
-			ui.Text(c, "MB").TextColor(t.TextMuted)
-			if ui.Button(c, "应用").Clicked() {
-				a.saveSettings()
-			}
 		})
 	})
 	settingsGroup(c, "快速历史快捷键", func() { a.shortcutSettings(c) })
 	settingsGroup(c, "历史存储", func() { a.historyStorageSettings(c) })
 	settingsGroup(c, "启动", func() {
-		if settingSwitch(c, &a.openAtLogin, "开机启动", "登录电脑后在后台启动 Snapover。") {
+		if settingSwitch(c, &a.openAtLogin, "开机启动", "") {
 			a.setOpenAtLogin(a.openAtLogin)
 		}
 	})
 	if keepalive.Supported {
 		settingsGroup(c, "远程桌面", func() {
 			on := a.cfg.Values.KeepRemoteActive
-			if settingSwitch(c, &on, "保持远程会话活跃", "默认关闭。开启后，远程会话空闲约 2 分钟时轻移鼠标并移回；锁屏或断开时暂停。") {
+			if settingSwitch(c, &on, "保持远程会话活跃", "空闲 2 分钟后轻移鼠标；锁屏或断开时暂停。") {
 				a.setKeepRemoteActive(on)
 			}
 		})
@@ -535,7 +540,6 @@ func (a *app) settingsPage(c *ui.Context) {
 			ui.Icon(c, deviceIcon).FontSize(24).TextColor(t.TextMuted)
 			ui.Column(c).Gap(4).Grow(1).Children(func() {
 				ui.Text(c, a.name).Bold()
-				ui.Text(c, "设备身份与局域网连接信息").FontSize(12).TextColor(t.TextMuted)
 			})
 		})
 		ui.Collapsible(c, "设备信息", &a.showIdentity, func() {
@@ -565,7 +569,7 @@ func (a *app) settingsPage(c *ui.Context) {
 func (a *app) historyPage(c *ui.Context) {
 	a.pollHistoryPaste(c)
 	t := c.Theme()
-	pageHeading(c, "复制历史", "双击记录写回剪贴板，置顶保留常用内容。")
+	pageHeading(c, "复制历史")
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 		if ui.TextInput(c.Key("query"), &a.query).Label("搜索复制历史").Placeholder("搜索内容或来源").Grow(1).Changed() {
 			a.histSel = -1
@@ -601,7 +605,7 @@ func (a *app) historyPage(c *ui.Context) {
 	ui.Column(c).Grow(1).Radius(10).Border(1, t.Border).Clip().Children(func() {
 		switch {
 		case len(a.entries) == 0:
-			emptyState(c, historyIcon, "复制的内容会出现在这里", "复制一段文字或图片，也可以接收其他设备同步的内容。")
+			emptyState(c, historyIcon, "还没有复制历史", "复制文字或图片后会自动保存。")
 		case len(shown) == 0:
 			message := "试试其他关键词，或切换到「全部」。"
 			if a.query != "" {
@@ -634,7 +638,7 @@ func (a *app) historyPage(c *ui.Context) {
 		}
 	})
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		if ui.PrimaryButton(c, "写回剪贴板").Disabled(a.histSel < 0 || a.historyPaste != nil).Clicked() {
+		if ui.PrimaryButton(c, "复制").Tooltip("复制到剪贴板，也可双击记录。").Disabled(a.histSel < 0 || a.historyPaste != nil).Clicked() {
 			a.pasteHistory()
 		}
 		ui.Toolbar(c, func() {
@@ -654,7 +658,6 @@ func (a *app) historyPage(c *ui.Context) {
 			ui.Text(c, a.flash).FontSize(12).TextColor(t.TextMuted).SingleLine()
 		}
 	})
-	ui.Text(c, a.pickerHint()).FontSize(11).TextColor(t.TextMuted).MaxLines(2)
 }
 
 func (a *app) connect() {

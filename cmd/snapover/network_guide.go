@@ -67,10 +67,10 @@ func (a *app) networkSetupHint(c *ui.Context) {
 	ui.Column(c).Gap(8).Padding(14).Background(t.Surface).Radius(8).Children(func() {
 		if kind == guideWindows {
 			ui.Text(c, "允许 Snapover 连接另一台电脑").Bold()
-			ui.Text(c, "请在两台电脑上打开 Snapover，并连接同一网络。出现 Windows 防火墙提示时，请允许 Snapover 在你信任的专用网络上通信。").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, "出现防火墙提示时，允许 Snapover 在可信的专用网络上通信。").FontSize(12).TextColor(t.TextMuted)
 		} else {
 			ui.Text(c, "允许 Snapover 查找另一台电脑").Bold()
-			ui.Text(c, "Snapover 需要访问本地网络，才能发现设备、同步剪贴板和发送文件。系统询问时，请选择「允许」。").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, "系统询问本地网络权限时，选择「允许」。").FontSize(12).TextColor(t.TextMuted)
 		}
 		ui.Row(c).Gap(8).Children(func() {
 			if ui.Button(c, "查看连接指引").Clicked() {

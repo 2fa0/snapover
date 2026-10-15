@@ -47,11 +47,8 @@ func appVersionLabel() string {
 	return "开发版"
 }
 
-func pageHeading(c *ui.Context, title, description string) {
-	ui.Column(c).Gap(5).Margin(0, 0, 4, 0).Children(func() {
-		ui.Text(c, title).FontSize(26).Bold()
-		ui.Text(c, description).TextColor(c.Theme().TextMuted).MaxLines(3)
-	})
+func pageHeading(c *ui.Context, title string) {
+	ui.Text(c, title).FontSize(26).Bold().Margin(0, 0, 4, 0)
 }
 
 func settingsGroup(c *ui.Context, title string, contents func()) {
@@ -66,7 +63,9 @@ func settingSwitch(c *ui.Context, value *bool, title, description string) bool {
 	ui.Row(c.Key(title)).Gap(20).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Gap(4).Children(func() {
 			ui.Text(c, title).Bold()
-			ui.Text(c, description).FontSize(12).TextColor(c.Theme().TextMuted)
+			if description != "" {
+				ui.Text(c, description).FontSize(12).TextColor(c.Theme().TextMuted)
+			}
 		})
 		changed = ui.Switch(c, value).Label(title + "开关").Changed()
 	})
