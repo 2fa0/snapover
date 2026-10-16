@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -89,24 +90,26 @@ type app struct {
 	deviceDetails    string
 	confirmRemove    string
 
-	devices       []clipsync.Device
-	entries       []history.Entry
-	histSel       int
-	histList      ui.ListState
-	thumbs        *simplelru.LRU[string, *ui.Bitmap]
-	thumbBytes    int
-	thumbPending  map[string]*thumbRequest
-	thumbQueue    []*thumbRequest
-	thumbActive   int
-	thumbResults  chan thumbResult
-	thumbUsedAt   time.Time
-	thumbTimer    *time.Timer
-	historySearch historySearch
-	pickerSearch  historySearch
-	historyPaste  *pasteRequest
-	pasteWorker   *pasteRequest
-	queuedPaste   *pasteRequest
-	pasteSerial   atomic.Uint64
+	devices           []clipsync.Device
+	entries           []history.Entry
+	histSel           int
+	histList          ui.ListState
+	thumbs            *simplelru.LRU[string, *ui.Bitmap]
+	thumbBytes        int
+	thumbPending      map[string]*thumbRequest
+	thumbQueue        []*thumbRequest
+	thumbActive       int
+	thumbResults      chan thumbResult
+	thumbUsedAt       time.Time
+	thumbTimer        *time.Timer
+	historySearch     historySearch
+	pickerSearch      historySearch
+	historyPaste      *pasteRequest
+	pasteWorker       *pasteRequest
+	queuedPaste       *pasteRequest
+	notificationOnce  sync.Once
+	notificationQueue chan fileNotification
+	pasteSerial       atomic.Uint64
 
 	win                *mygo.Window
 	tray               *mygo.Tray

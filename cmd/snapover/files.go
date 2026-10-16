@@ -194,15 +194,7 @@ func (a *app) sendSelectedFile(background bool) {
 }
 
 func (a *app) sentFileNotification(name, peer string) {
-	if !mygo.NotificationsSupported() {
-		return
-	}
-	go func() {
-		notice := mygo.NewNotification(mygo.NotificationOptions{Title: "文件已发送 · Snapover", Body: name + " 已保存到 " + peer + " 的接收文件夹"})
-		if err := notice.Show(); err != nil && a.engine.Log != nil {
-			a.engine.Log.Debug("文件通知未显示", "err", err)
-		}
-	}()
+	a.queueFileNotification(fileNotification{title: "文件已发送 · Snapover", body: name + " 已保存到 " + peer + " 的接收文件夹"})
 }
 
 func receivedMessage(n clipsync.Notice) string {
@@ -216,16 +208,7 @@ func receivedMessage(n clipsync.Notice) string {
 }
 
 func (a *app) receivedNotification(n clipsync.Notice) {
-	if !mygo.NotificationsSupported() {
-		return
-	}
-	go func() {
-		notice := mygo.NewNotification(mygo.NotificationOptions{Title: "收到文件 · Snapover", Body: n.FileName + " 已保存到接收文件夹"})
-		notice.OnClick(func() { go mygo.Shell.ShowItemInFolder(n.FilePath) })
-		if err := notice.Show(); err != nil && a.engine.Log != nil {
-			a.engine.Log.Debug("文件通知未显示", "err", err)
-		}
-	}()
+	a.queueFileNotification(fileNotification{title: "收到文件 · Snapover", body: n.FileName + " 已保存到接收文件夹", path: n.FilePath})
 }
 
 func (a *app) openReceiveFolder() {
