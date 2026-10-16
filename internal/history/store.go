@@ -50,6 +50,8 @@ type Entry struct {
 // Store keeps the newest clipboard items on disk.
 type Store struct {
 	mu           sync.Mutex
+	listMu       sync.RWMutex
+	listed       []Entry
 	openedMu     sync.Mutex
 	openedClosed bool
 	dir          string
@@ -101,6 +103,7 @@ func Open(dir string) (*Store, error) {
 	}
 	// Staged viewer files belong to the previous process.
 	s.cleanOpened()
+	s.publishLocked()
 	return s, nil
 }
 
@@ -127,6 +130,7 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.publishLocked()
 	if err := s.offloadText(&entry); err != nil {
 		return Entry{}, err
 	}
@@ -179,11 +183,20 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 }
 
 func (s *Store) List() []Entry {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]Entry, len(s.entries))
-	copy(out, s.entries)
+	s.listMu.RLock()
+	defer s.listMu.RUnlock()
+	out := make([]Entry, len(s.listed))
+	copy(out, s.listed)
 	return out
+}
+
+// Publish only metadata under a separate, short-lived lock. Readers never
+// queue behind file writes, fsync, checkpointing or directory cleanup.
+func (s *Store) publishLocked() {
+	entries := append([]Entry(nil), s.entries...)
+	s.listMu.Lock()
+	s.listed = entries
+	s.listMu.Unlock()
 }
 
 func (s *Store) Thumb(id string) ([]byte, error) {
@@ -270,6 +283,7 @@ func (s *Store) findLocked(id string) (Entry, bool) {
 func (s *Store) SetPinned(id string, on bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.publishLocked()
 	for i := range s.entries {
 		if s.entries[i].ID == id {
 			before := s.entries[i].Pinned
@@ -288,6 +302,7 @@ func (s *Store) SetPinned(id string, on bool) error {
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.publishLocked()
 	for i := range s.entries {
 		if s.entries[i].ID != id {
 			continue
@@ -310,6 +325,7 @@ func (s *Store) Delete(id string) error {
 func (s *Store) Clear() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.publishLocked()
 	before := s.entries
 	var kept []Entry
 	var drop []Entry

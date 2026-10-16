@@ -87,6 +87,7 @@ func TestPinDeleteAndAge(t *testing.T) {
 	}
 	s.trimAtLocked(time.Now())
 	_ = s.saveLocked()
+	s.publishLocked()
 	s.mu.Unlock()
 	list := s.List()
 	if len(list) != 1 || list[0].ID != pinned.ID || !list[0].Pinned {

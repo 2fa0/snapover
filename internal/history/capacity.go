@@ -27,6 +27,7 @@ func (s *Store) SetCapacity(maxBytes int64) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.publishLocked()
 	before := s.entries
 	beforeCapacity := s.capacity
 	s.capacity = maxBytes
