@@ -96,6 +96,7 @@ func TestHistoryFilterActionsKeepPinnedRecords(t *testing.T) {
 	}
 	clickInterface(t, tt, entryTitle(a.shown()[0]))
 	clickInterface(t, tt, "删除")
+	waitHistoryCleanup(t, a)
 	if len(a.shown()) != 0 || len(a.hist.List()) != 1 {
 		t.Fatal("deleting a filtered image should leave the pinned text")
 	}
@@ -106,6 +107,7 @@ func TestHistoryFilterActionsKeepPinnedRecords(t *testing.T) {
 	}
 	clickInterface(t, tt, "清空未置顶")
 	clickInterface(t, tt, "确认清空")
+	waitHistoryCleanup(t, a)
 	if entries := a.hist.List(); len(entries) != 1 || entries[0].ID != pinned.ID {
 		t.Fatal("clearing should keep the pinned record")
 	}

@@ -104,6 +104,9 @@ type app struct {
 	historySearch historySearch
 	pickerSearch  historySearch
 	historyPaste  *pasteRequest
+	pasteWorker   *pasteRequest
+	queuedPaste   *pasteRequest
+	pasteSerial   atomic.Uint64
 
 	win                *mygo.Window
 	tray               *mygo.Tray
@@ -296,7 +299,7 @@ func (a *app) openMainWindow() {
 		a.histList = ui.ListState{Key: a.histList.Key, Label: a.histList.Label, Selected: &a.histSel}
 		a.confirm, a.confirmClear, a.confirmStorageClear = false, false, false
 		if r := a.historyPaste; r != nil && r.picker == nil {
-			a.historyPaste = nil
+			a.cancelHistoryPaste()
 		}
 		if a.picker == nil {
 			a.releaseThumbnails()
@@ -631,7 +634,7 @@ func (a *app) historyPage(c *ui.Context) {
 		}
 	})
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		if ui.PrimaryButton(c, "复制").Tooltip("复制到剪贴板，也可双击记录。").Disabled(a.histSel < 0 || a.historyPaste != nil).Clicked() {
+		if ui.PrimaryButton(c, "复制").Tooltip("复制到剪贴板，也可双击记录。").Disabled(a.histSel < 0 || a.historyPaste != nil || a.pasteWorker != nil || a.historyCleanupPending != nil).Clicked() {
 			a.pasteHistory()
 		}
 		ui.Toolbar(c, func() {
@@ -639,10 +642,10 @@ func (a *app) historyPage(c *ui.Context) {
 			if entry, ok := a.selected(); ok && entry.Pinned {
 				label = "取消置顶"
 			}
-			if ui.Button(c, label).Disabled(a.histSel < 0).Clicked() {
+			if ui.Button(c, label).Disabled(a.histSel < 0 || a.historyCleanupPending != nil).Clicked() {
 				a.pinSelected()
 			}
-			if ui.Button(c, "删除").Disabled(a.histSel < 0).Clicked() {
+			if ui.Button(c, "删除").Disabled(a.histSel < 0 || a.historyCleanupPending != nil).Clicked() {
 				a.deleteSelected()
 			}
 		}).Label("记录操作")
@@ -866,12 +869,7 @@ func (a *app) pinSelected() {
 	if !ok {
 		return
 	}
-	if err := a.hist.SetPinned(entry.ID, !entry.Pinned); err != nil {
-		a.flash = "置顶失败"
-		return
-	}
-	a.refreshEntries()
-	a.flash = "已更新置顶"
+	a.startHistoryMutation(func() error { return a.hist.SetPinned(entry.ID, !entry.Pinned) }, "已更新置顶", false)
 }
 
 func (a *app) deleteSelected() {
@@ -879,17 +877,7 @@ func (a *app) deleteSelected() {
 	if !ok {
 		return
 	}
-	if err := a.hist.Delete(entry.ID); err != nil {
-		a.refreshEntries()
-		a.flash = "删除未完全完成，请在设置中重新清理：" + err.Error()
-		return
-	}
-	if a.thumbs != nil {
-		a.thumbs.Remove(entry.ID)
-	}
-	a.refreshEntries()
-	a.histSel = -1
-	a.flash = "已删除"
+	a.startHistoryMutation(func() error { return a.hist.Delete(entry.ID) }, "已删除", false)
 }
 
 func (a *app) clearHistory() {
@@ -898,17 +886,7 @@ func (a *app) clearHistory() {
 		return
 	}
 	a.confirmClear = false
-	if err := a.hist.Clear(); err != nil {
-		a.refreshEntries()
-		a.flash = "清空未完全完成，请在设置中重新清理：" + err.Error()
-		return
-	}
-	if a.thumbs != nil {
-		a.thumbs.Purge()
-	}
-	a.refreshEntries()
-	a.histSel = -1
-	a.flash = "已清空未置顶的记录"
+	a.startHistoryCleanup(true, 0)
 }
 
 func (a *app) pasteHistory() {

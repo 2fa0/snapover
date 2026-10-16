@@ -24,6 +24,7 @@ func (a *app) togglePicker() {
 }
 
 func (a *app) openPicker(atCaret bool) {
+	a.pasteSerial.Add(1)
 	if a.picker != nil {
 		a.picker.Close()
 		return
@@ -75,7 +76,7 @@ func (a *app) openPicker(atCaret bool) {
 	}
 	a.picker.OnClosed(func() {
 		if r := a.historyPaste; r != nil && r.picker == a.picker {
-			a.historyPaste = nil
+			a.cancelHistoryPaste()
 		}
 		a.pickerSearch.reset()
 		a.closePickPreview()
@@ -145,6 +146,7 @@ func (a *app) closePicker() {
 
 func (a *app) pickerView(c *ui.Context) {
 	a.drainThumbnails()
+	a.pollHistoryStorage()
 	if c.Shortcut(0, ui.KeyEscape) {
 		a.finishPick()
 		return
@@ -284,9 +286,37 @@ func (a *app) pastePicked() {
 }
 
 func (a *app) deliverPaste(target paste.Target) {
-	time.Sleep(80 * time.Millisecond)
+	serial := a.pasteSerial.Add(1)
+	ctx := a.root
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	wait := func(delay time.Duration) bool {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return a.pasteSerial.Load() == serial
+		}
+	}
+	if !wait(80 * time.Millisecond) {
+		return
+	}
 	var err error
-	mygo.RunOnMain(func() { err = target.Paste() })
+	mygo.RunOnMain(func() {
+		if ctx.Err() == nil && a.pasteSerial.Load() == serial {
+			err = target.Activate()
+		}
+	})
+	if err == nil && wait(60*time.Millisecond) {
+		mygo.RunOnMain(func() {
+			if ctx.Err() == nil && a.pasteSerial.Load() == serial {
+				err = target.SendPaste()
+			}
+		})
+	}
 	if err == nil {
 		return
 	}
@@ -320,7 +350,7 @@ func (a *app) finishPick() {
 	// Closing is deferred until after the view; cancel a pending read now so
 	// its completion cannot publish to the clipboard before OnClosed runs.
 	if r := a.historyPaste; r != nil && r.picker == p {
-		a.historyPaste = nil
+		a.cancelHistoryPaste()
 	}
 	p.Update(func() {
 		if a.picker == p {

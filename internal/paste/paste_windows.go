@@ -4,7 +4,6 @@ package paste
 
 import (
 	"os"
-	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -40,14 +39,20 @@ func Allowed() bool { return true }
 
 func Prompt() {}
 
-func (t Target) Paste() error {
+func (t Target) Activate() error {
 	if !t.Valid() {
 		return ErrNoTarget
 	}
 	if !focus(t.id) {
 		return ErrActivate
 	}
-	time.Sleep(60 * time.Millisecond)
+	return nil
+}
+
+func (t Target) SendPaste() error {
+	if !t.Valid() || Capture() != t {
+		return ErrActivate
+	}
 	tap(vkControl, 0)
 	tap(vkV, 0)
 	tap(vkV, keyeventfKeyup)

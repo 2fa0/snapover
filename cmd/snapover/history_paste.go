@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -10,8 +11,9 @@ import (
 )
 
 type pasteResult struct {
-	item clip.Item
-	err  error
+	item     clip.Item
+	err      error
+	prepared clip.PreparedWrite
 }
 
 type pasteRequest struct {
@@ -19,9 +21,24 @@ type pasteRequest struct {
 	picker *mygo.Window
 	target paste.Target
 	result chan pasteResult
+	cancel context.CancelFunc
+	ctx    context.Context
+}
+
+func (a *app) cancelHistoryPaste() {
+	if r := a.historyPaste; r != nil && r.cancel != nil {
+		r.cancel()
+	}
+	a.historyPaste = nil
+	a.queuedPaste = nil
+	a.pickBusy = false
 }
 
 func (a *app) startHistoryPaste(id string, picker *mygo.Window) {
+	a.pollHistoryStorage()
+	if a.pasteWorker != nil {
+		a.completeHistoryPaste(a.pasteWorker)
+	}
 	if a.historyCleanupPending != nil {
 		if picker != nil {
 			a.pickFlash = "正在清理历史，请稍后再试"
@@ -33,7 +50,13 @@ func (a *app) startHistoryPaste(id string, picker *mygo.Window) {
 	if a.historyPaste != nil {
 		return
 	}
+	parent := a.root
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
 	r := &pasteRequest{id: id, picker: picker, target: a.pasteTo, result: make(chan pasteResult, 1)}
+	r.cancel, r.ctx = cancel, ctx
 	a.historyPaste = r
 	if picker != nil {
 		a.pickBusy = true
@@ -41,36 +64,74 @@ func (a *app) startHistoryPaste(id string, picker *mygo.Window) {
 	} else {
 		a.flash = "正在读取历史…"
 	}
-	store, host := a.hist, a.win
-	if picker != nil {
-		host = picker
+	if a.pasteWorker != nil {
+		// Keep only the newest intent, without loading another large image
+		// while a canceled worker is still returning from disk/native work.
+		a.queuedPaste = r
+		return
 	}
+	a.prepareHistoryPaste(r)
+}
+
+func (a *app) prepareHistoryPaste(r *pasteRequest) {
+	a.pasteWorker = r
+	store, board, ctx := a.hist, a.board, r.ctx
 	go func() {
-		item, err := store.PasteItem(id)
-		r.result <- pasteResult{item, err}
-		if host != nil {
-			host.Update(func() { a.completeHistoryPaste(r) })
+		item, err := store.PasteItem(r.id)
+		var prepared clip.PreparedWrite
+		if err == nil && ctx.Err() == nil {
+			if b, ok := board.(interface {
+				PrepareWrite(clip.Item) (clip.PreparedWrite, error)
+			}); ok {
+				prepared, err = b.PrepareWrite(item)
+			}
+		}
+		if ctx.Err() != nil {
+			prepared.Close()
+			prepared, item, err = clip.PreparedWrite{}, clip.Item{}, ctx.Err()
+		}
+		r.result <- pasteResult{item: item, err: err, prepared: prepared}
+		if a.root != nil {
+			a.update(func() { a.completeHistoryPaste(r) })
 		}
 	}()
 }
 
 func (a *app) pollHistoryPaste(c *ui.Context) {
+	if r := a.pasteWorker; r != nil {
+		a.completeHistoryPaste(r)
+	}
 	if r := a.historyPaste; r != nil {
 		a.completeHistoryPaste(r)
-		if a.historyPaste != nil && a.win == nil && a.picker == nil {
+		if c != nil && a.historyPaste != nil && a.win == nil && a.picker == nil {
 			c.After(50 * time.Millisecond)
 		}
 	}
 }
 
 func (a *app) completeHistoryPaste(r *pasteRequest) {
-	if a.historyPaste != r {
-		return
-	}
 	var result pasteResult
 	select {
 	case result = <-r.result:
 	default:
+		return
+	}
+	defer func() {
+		result.prepared.Close()
+		if next := a.queuedPaste; next != nil && a.pasteWorker == nil {
+			a.queuedPaste = nil
+			if a.historyPaste == next {
+				a.prepareHistoryPaste(next)
+			}
+		}
+	}()
+	if r.cancel != nil {
+		defer r.cancel()
+	}
+	if a.pasteWorker == r {
+		a.pasteWorker = nil
+	}
+	if a.historyPaste != r {
 		return
 	}
 	defer func() {
@@ -94,7 +155,11 @@ func (a *app) completeHistoryPaste(r *pasteRequest) {
 	if !found {
 		message = "记录已删除，请重新选择"
 	} else if result.err == nil {
-		if err := a.board.Write(result.item); err == nil {
+		publish := result.prepared.Publish
+		if publish == nil {
+			publish = func() error { return a.board.Write(result.item) }
+		}
+		if err := publish(); err == nil {
 			if r.picker == nil {
 				a.flash = "已写回剪贴板"
 				return

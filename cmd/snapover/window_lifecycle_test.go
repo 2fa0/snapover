@@ -216,3 +216,28 @@ func TestMainWindowClosedPickerLoadsAndFileRequestsStillWork(t *testing.T) {
 		t.Error("idle thumbnail cleanup stalled after all windows closed")
 	}
 }
+
+func TestMainWindowClosedHistoryMaintenanceStillCompletes(t *testing.T) {
+	if os.Getenv("SNAPOVER_TEST_UI") != "1" {
+		t.Skip("requires a desktop session; set SNAPOVER_TEST_UI=1")
+	}
+	a := interfaceTestApp(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mygo.RunOnMain(func() {
+		a.root = ctx
+		a.reveal(pageSettings)
+		a.win.Close()
+		a.startHistoryCleanup(false, 64<<20)
+	})
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		completed := false
+		mygo.RunOnMain(func() { completed = a.historyCleanupPending == nil })
+		if completed {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("closed main window retained finished maintenance state")
+}

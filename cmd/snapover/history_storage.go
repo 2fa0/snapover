@@ -20,6 +20,7 @@ type historyUsageResult struct {
 type historyCleanupResult struct {
 	cleared bool
 	err     error
+	message string
 }
 
 func (a *app) historyStorageSettings(c *ui.Context) {
@@ -124,23 +125,35 @@ func (a *app) saveHistoryCapacity() {
 }
 
 func (a *app) startHistoryCleanup(clear bool, limit int64) {
+	store := a.hist
+	message := "历史容量上限已应用，超限的未置顶记录已清理"
+	if clear {
+		message = "已清理全部未置顶历史"
+	}
+	a.startHistoryMutation(func() error {
+		if clear {
+			return store.Clear()
+		}
+		return store.SetCapacity(limit)
+	}, message, clear)
+}
+
+func (a *app) startHistoryMutation(work func() error, message string, clear bool) {
 	if a.historyCleanupPending != nil {
 		return
 	}
 	// Cancel prepared paste callbacks before deleting their source records.
-	a.historyPaste = nil
-	a.pickBusy = false
+	a.cancelHistoryPaste()
 	results := make(chan historyCleanupResult, 1)
 	a.historyCleanupPending, a.historyCapacityError = results, ""
-	store := a.hist
+	a.flash = "正在处理历史…"
 	go func() {
-		var err error
-		if clear {
-			err = store.Clear()
-		} else {
-			err = store.SetCapacity(limit)
+		results <- historyCleanupResult{cleared: clear, err: work(), message: message}
+		// Completion belongs to the app, not to the settings window. Closing
+		// the main window cannot leave the independent picker permanently busy.
+		if a.root != nil {
+			a.update(a.pollHistoryStorage)
 		}
-		results <- historyCleanupResult{clear, err}
 	}()
 }
 
@@ -153,12 +166,17 @@ func (a *app) pollHistoryStorage() {
 			a.refreshEntries()
 			a.histSel = -1
 			if result.err != nil {
-				a.historyCapacityError = "历史清理失败，请检查数据目录权限后重新应用：" + result.err.Error()
+				a.historyCapacityError = "历史操作未完成，请检查数据目录权限后重试：" + result.err.Error()
+				a.flash = a.historyCapacityError
 			} else {
-				a.status = "历史容量上限已应用，超限的未置顶记录已清理"
+				a.status = result.message
+				if a.status == "" {
+					a.status = "历史容量上限已应用，超限的未置顶记录已清理"
+				}
 				if result.cleared {
 					a.status = "已清理全部未置顶历史"
 				}
+				a.flash = a.status
 			}
 		default:
 		}

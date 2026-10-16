@@ -8,9 +8,11 @@ func Allowed() bool { return false }
 
 func Prompt() {}
 
-func (t Target) Paste() error {
+func (t Target) Activate() error {
 	if !t.Valid() {
 		return ErrNoTarget
 	}
 	return ErrNeedAccess
 }
+
+func (t Target) SendPaste() error { return ErrNeedAccess }

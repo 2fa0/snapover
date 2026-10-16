@@ -5,7 +5,6 @@ package paste
 import (
 	"os"
 	"sync"
-	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -93,9 +92,9 @@ func Prompt() {
 	_ = axTrusted(uintptr(dict))
 }
 
-// Paste activates the target and sends Command-V.
+// Activate restores the target; the caller schedules the focus delay off-thread.
 // Call it on the main thread.
-func (t Target) Paste() error {
+func (t Target) Activate() error {
 	if !t.Valid() {
 		return ErrNoTarget
 	}
@@ -108,7 +107,16 @@ func (t Target) Paste() error {
 		return ErrNoTarget
 	}
 	_ = objc.Send[bool](app, selActivate, uintptr(activateIgnoringOthers))
-	time.Sleep(60 * time.Millisecond)
+	return nil
+}
+
+func (t Target) SendPaste() error {
+	if !t.Valid() || Capture() != t {
+		return ErrActivate
+	}
+	if !Allowed() {
+		return ErrNeedAccess
+	}
 	return postCommandV()
 }
 
@@ -131,7 +139,6 @@ func postCommandV() error {
 	cgFlags(down, kCGEventFlagMaskCommand)
 	cgFlags(up, kCGEventFlagMaskCommand)
 	cgPost(kCGHIDEventTap, down)
-	time.Sleep(15 * time.Millisecond)
 	cgPost(kCGHIDEventTap, up)
 	cfRelease(down)
 	cfRelease(up)
