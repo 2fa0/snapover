@@ -5,7 +5,7 @@ go 1.27.2
 require (
 	github.com/charlievieth/strcase v0.0.6
 	github.com/ebitengine/purego v0.11.1
-	github.com/egoist/mygo v0.5.1
+	github.com/egoist/mygo v0.5.5
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/miekg/dns v1.1.73
