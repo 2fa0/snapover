@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/png"
 	"strings"
@@ -23,6 +24,9 @@ const (
 	MaxTextBytes = 20 << 20
 	// MaxImageBytes is the largest PNG that will be synced.
 	MaxImageBytes = 20 << 20
+	// Native TIFF/DIB can be uncompressed; cap bytes before copying from the OS.
+	MaxDecodedImageBytes = 160 << 20
+	MaxNativeImageBytes  = MaxDecodedImageBytes + (1 << 20)
 	// MaxPixels rejects decompression bombs. 40e6 covers a 5K screenshot
 	// and stops a small PNG that expands to gigabytes.
 	MaxPixels = 40_000_000
@@ -90,6 +94,8 @@ func CheckTextSize(s string, limit int) error {
 // FromPNG validates a PNG, checks the pixel budget, and hashes decoded pixels.
 // The original PNG bytes are kept so the other side can paste the same file.
 func FromPNG(data []byte) (Item, error) {
+	release := beginImageWork()
+	defer release()
 	img, err := DecodePNG(data)
 	if err != nil {
 		return Item{}, err
@@ -113,6 +119,8 @@ func FromPNG(data []byte) (Item, error) {
 
 // PNGForPaste validates a saved image without building synchronization metadata.
 func PNGForPaste(data []byte) (Item, error) {
+	release := beginImageWork()
+	defer release()
 	img, err := DecodePNG(data)
 	if err != nil {
 		return Item{}, err
@@ -134,7 +142,7 @@ func DecodePNG(data []byte) (image.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("不是 PNG: %w", err)
 	}
-	if err := checkPixels(cfg.Width, cfg.Height); err != nil {
+	if err := checkImageConfig(cfg); err != nil {
 		return nil, err
 	}
 	img, err := png.Decode(bytes.NewReader(data))
@@ -150,6 +158,20 @@ func checkPixels(w, h int) error {
 	}
 	if uint64(w)*uint64(h) > MaxPixels {
 		return fmt.Errorf("图片 %dx%d 超过 %d 像素", w, h, MaxPixels)
+	}
+	return nil
+}
+
+func checkImageConfig(cfg image.Config) error {
+	if err := checkPixels(cfg.Width, cfg.Height); err != nil {
+		return err
+	}
+	bytesPerPixel := uint64(4)
+	if cfg.ColorModel == color.NRGBA64Model || cfg.ColorModel == color.RGBA64Model {
+		bytesPerPixel = 8
+	}
+	if uint64(cfg.Width)*uint64(cfg.Height)*bytesPerPixel > MaxDecodedImageBytes {
+		return errors.New("图片解码后超过 160 MiB 内存上限")
 	}
 	return nil
 }

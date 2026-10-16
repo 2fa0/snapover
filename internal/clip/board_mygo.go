@@ -1,6 +1,7 @@
 package clip
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
 	"github.com/2fa0/snapover/internal/crashlog"
+	"github.com/oklog/ulid/v2"
 )
 
 // MyGoBoard reads and writes the system clipboard through MyGo.
@@ -16,11 +18,45 @@ type MyGoBoard struct {
 	TextLimit func() int
 }
 
-var writeClipboardData = mygo.Clipboard.Write
+var (
+	writeClipboardData    = mygo.Clipboard.Write
+	flushClipboardData    = mygo.Clipboard.Flush
+	runOnClipboardThread  = mygo.RunOnMain
+	readClipboardData     = mygo.Clipboard.ReadFormat
+	prepareClipboardImage = prepareNativeImage
+	clipboardSequence     = platformSequence
+	remoteMarker          = []byte(ulid.Make().String())
+)
+
+const remoteFormat transfer.Format = "application/x-snapover-remote"
+
+// PreparedWrite owns temporary native buffers until publication or cancellation.
+type PreparedWrite struct {
+	Publish func() error
+	release func()
+}
+
+func (p PreparedWrite) Close() {
+	if p.release != nil {
+		p.release()
+	}
+}
 
 func (MyGoBoard) Sequence() (uint64, error) { return platformSequence() }
 
+// OwnsSequence checks a tiny representation, never the image. The second
+// sequence read prevents a new external copy from inheriting an old marker.
+func (MyGoBoard) OwnsSequence(seq uint64) bool {
+	marker, err := readClipboardData(remoteFormat)
+	if err != nil || strings.TrimRight(string(marker), "\x00") != string(remoteMarker) {
+		return false
+	}
+	after, err := clipboardSequence()
+	return err == nil && after == seq
+}
+
 func (b MyGoBoard) Snapshot() (Item, error) {
+	defer crashlog.TrackOperation("读取剪贴板")()
 	crashlog.Breadcrumb("开始读取剪贴板")
 	raw := mygo.Clipboard.AvailableFormats()
 	portable := make([]string, 0, 4)
@@ -36,12 +72,11 @@ func (b MyGoBoard) Snapshot() (Item, error) {
 		return Item{Sensitive: true, Skip: why}, nil
 	}
 	if HasImage(all) {
-		png := mygo.Clipboard.ReadImage()
-		if len(png) == 0 {
-			return Item{Skip: "剪贴板有图片格式，但没有读出 PNG"}, nil
-		}
-		item, err := FromPNG(png)
+		item, err := readClipboardImage()
 		if err != nil {
+			if errors.Is(err, ErrClipboardBusy) {
+				return Item{}, err
+			}
 			return Item{Skip: err.Error()}, nil
 		}
 		return item, nil
@@ -64,18 +99,63 @@ func (b MyGoBoard) Snapshot() (Item, error) {
 	return Item{}, nil
 }
 
-func (MyGoBoard) Write(item Item) error {
-	crashlog.Breadcrumb(fmt.Sprintf("写入剪贴板 kind=%s bytes=%d", item.Kind, item.Size))
+func (b MyGoBoard) Write(item Item) error {
+	publish, err := b.PrepareWrite(item)
+	if err != nil {
+		return err
+	}
+	defer publish.Close()
+	return publish.Publish()
+}
+
+// PrepareWrite performs image conversion on the calling worker. Only the
+// returned publication callback requires the native clipboard thread.
+func (b MyGoBoard) PrepareWrite(item Item) (PreparedWrite, error) {
+	return b.prepareWrite(item, false)
+}
+
+func (b MyGoBoard) PrepareRemoteWrite(item Item) (PreparedWrite, error) {
+	return b.prepareWrite(item, true)
+}
+
+func (MyGoBoard) prepareWrite(item Item, remote bool) (PreparedWrite, error) {
+	if item.Kind == KindImage {
+		if publish, handled, err := prepareClipboardImage(item, remote); handled {
+			return publish, err
+		}
+	}
+	var reps []transfer.Representation
 	switch item.Kind {
 	case KindText:
-		return writeClipboardData(transfer.TextData(clipboardText(item.Text, runtime.GOOS)))
+		reps = append(reps, transfer.Bytes(transfer.Text, []byte(clipboardText(item.Text, runtime.GOOS))))
 	case KindImage:
-		// Items have already been validated by FromPNG or PNGForPaste. WriteImage
-		// would decode the whole image again before publishing the same PNG bytes.
-		return writeClipboardData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.PNG, item.PNG))))
+		reps = append(reps, transfer.Bytes(transfer.PNG, item.PNG))
 	default:
-		return errEmptyWrite
+		return PreparedWrite{}, errEmptyWrite
 	}
+	if remote {
+		reps = append(reps, transfer.Bytes(remoteFormat, remoteMarker))
+	}
+	data := transfer.New(transfer.NewItem(reps...))
+	return PreparedWrite{Publish: func() error { return publishClipboard(data, item.Kind, item.Size) }}, nil
+}
+
+func publishClipboard(data transfer.Data, kind Kind, size int) error {
+	defer crashlog.TrackOperation("写入并持久化剪贴板")()
+	crashlog.Breadcrumb(fmt.Sprintf("写入剪贴板 kind=%s bytes=%d", kind, size))
+	// Publish and flush in one main-thread callback so another queued write
+	// cannot replace our data between the two operations. Native storage then
+	// serves later pastes without calling back into Snapover's providers.
+	err := errors.New("剪贴板线程已停止")
+	runOnClipboardThread(func() {
+		err = writeClipboardData(data)
+		if err == nil {
+			if err = flushClipboardData(); err != nil {
+				err = fmt.Errorf("持久化剪贴板失败：%w", err)
+			}
+		}
+	})
+	return err
 }
 
 func formatList(all []string) string {

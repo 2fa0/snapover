@@ -2,11 +2,14 @@ package clip
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/2fa0/snapover/internal/crashlog"
 )
+
+var ErrClipboardBusy = errors.New("剪贴板暂时被占用")
 
 // Board is the clipboard as the sync engine sees it. Tests use a fake.
 // The MyGo implementation lives in board_mygo.go.
@@ -85,9 +88,25 @@ func watch(ctx context.Context, b Board, every, quiet time.Duration, fn func(seq
 	emit := func(seq uint64) {
 		dirty = false
 		stopSettle()
+		if own, ok := b.(interface{ OwnsSequence(uint64) bool }); ok && own.OwnsSequence(seq) {
+			return
+		}
 		crashlog.Breadcrumb(fmt.Sprintf("剪贴板稳定 seq=%d", seq))
 		item, err := b.Snapshot()
 		if err != nil {
+			dirty = true
+			arm()
+			return
+		}
+		// A slow provider or image decode may outlive another copy. Never
+		// attribute data from a different clipboard generation to this event.
+		after, err := b.Sequence()
+		if err != nil || after != seq {
+			dirty = true
+			if err == nil {
+				last, pending, dirty = after, after, true
+			}
+			arm()
 			return
 		}
 		fn(seq, item)
@@ -106,7 +125,7 @@ func watch(ctx context.Context, b Board, every, quiet time.Duration, fn func(seq
 				have = true
 				continue
 			}
-			if seq == last {
+			if seq == last && !(quiet == 0 && dirty) {
 				continue
 			}
 			last = seq

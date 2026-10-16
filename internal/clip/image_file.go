@@ -39,17 +39,26 @@ func FromImageFile(path string) (Item, error) {
 	if err != nil {
 		return Item{}, fmt.Errorf("图片格式无效，请使用 PNG、JPEG、BMP 或 WebP：%w", err)
 	}
-	if err := checkPixels(cfg.Width, cfg.Height); err != nil {
+	if err := checkImageConfig(cfg); err != nil {
 		return Item{}, err
 	}
 	if format == "png" {
 		return FromPNG(data)
 	}
+	release := beginImageWork()
+	defer release()
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return Item{}, fmt.Errorf("解码图片失败：%w", err)
 	}
-	defer ReclaimImageMemory(cfg.Width, cfg.Height)
+	return itemFromImage(img)
+}
+
+// The caller holds the image-work budget. Reuse decoded native pixels instead
+// of encoding PNG and immediately decoding it a second time for metadata.
+func itemFromImage(img image.Image) (Item, error) {
+	b := img.Bounds()
+	defer ReclaimImageMemory(b.Dx(), b.Dy())
 	var encoded boundedPNG
 	if err := png.Encode(&encoded, img); err != nil {
 		return Item{}, err
@@ -57,7 +66,7 @@ func FromImageFile(path string) (Item, error) {
 	thumb, _ := ThumbnailPNG(img, 160)
 	preview, _ := PreviewPNG(img)
 	return Item{Kind: KindImage, PNG: encoded.Bytes(), Thumbnail: thumb, Preview: preview,
-		Hash: HashImage(img), Width: cfg.Width, Height: cfg.Height, Size: encoded.Len()}, nil
+		Hash: HashImage(img), Width: b.Dx(), Height: b.Dy(), Size: encoded.Len()}, nil
 }
 
 type boundedPNG struct{ bytes.Buffer }

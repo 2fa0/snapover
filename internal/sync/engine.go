@@ -63,18 +63,10 @@ type Engine struct {
 	lastHash    [32]byte
 	haveLast    bool
 	lastSendID  string
-	suppressSeq uint64
 }
 
 // HandleLocal is called for a clipboard change that happened on this machine.
 func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
-	e.mu.Lock()
-	if seq != 0 && seq == e.suppressSeq {
-		e.mu.Unlock()
-		return
-	}
-	e.mu.Unlock()
-
 	if item.Sensitive {
 		e.Log.Info("跳过敏感内容", "mark", item.Skip)
 		e.notify(Notice{Kind: NoticeStatus, Message: "跳过敏感内容"})
@@ -214,12 +206,25 @@ func (e *Engine) deliver(item clip.Item) {
 
 func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 	e.clipMu.Lock()
+	sequence, sequenceErr := e.Board.Sequence()
+	haveSequence := sequenceErr == nil
+	publish := func() error { return e.Board.Write(item) }
+	if board, ok := e.Board.(interface {
+		PrepareRemoteWrite(clip.Item) (clip.PreparedWrite, error)
+	}); ok {
+		prepared, prepareErr := board.PrepareRemoteWrite(item)
+		defer prepared.Close()
+		publish = func() error {
+			if prepareErr != nil {
+				return prepareErr
+			}
+			return prepared.Publish()
+		}
+	}
 	var paused, active, attempted bool
 	var link Link
 	var err error
 	var textErr error
-	var sequence uint64
-	var haveSequence bool
 	attempt := 0
 	write := func() {
 		e.mu.Lock()
@@ -251,15 +256,13 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 			return
 		}
 		seq, seqErr := e.Board.Sequence()
-		if attempt == 0 {
-			sequence, haveSequence = seq, seqErr == nil
-		} else if haveSequence && (seqErr != nil || seq != sequence) {
+		if haveSequence && (seqErr != nil || seq != sequence) {
 			// A new local copy must win even before the watcher has settled it.
 			active = true
 			return
 		}
 		attempted = true
-		err = e.Board.Write(item)
+		err = publish()
 		if err == nil {
 			e.Guard.Mark(item.Hash)
 		}
@@ -313,18 +316,6 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 		e.clipMu.Unlock()
 		return errors.New("连接已改变，未写入剪贴板")
 	}
-	if err == nil {
-		if back, snapErr := e.Board.Snapshot(); snapErr == nil && back.Kind != "" {
-			e.Guard.Mark(back.Hash)
-		}
-		if seq, seqErr := e.Board.Sequence(); seqErr == nil {
-			e.mu.Lock()
-			if source == nil || e.sess == source {
-				e.suppressSeq = seq
-			}
-			e.mu.Unlock()
-		}
-	}
 	e.clipMu.Unlock()
 	if err != nil {
 		e.Log.Error("写入剪贴板失败", "err", err)
@@ -345,7 +336,7 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 
 func clipboardBusy(err error) bool {
 	// MyGo currently exposes HRESULTs as text rather than a typed error.
-	return err != nil && strings.Contains(err.Error(), "OleSetClipboard failed (HRESULT 0x800401d0)")
+	return errors.Is(err, clip.ErrClipboardBusy) || err != nil && strings.Contains(err.Error(), "OleSetClipboard failed (HRESULT 0x800401d0)")
 }
 
 // Connected reports whether a peer session is up.

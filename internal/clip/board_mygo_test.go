@@ -13,6 +13,7 @@ import (
 )
 
 func TestMyGoBoardPropagatesTextWriteFailure(t *testing.T) {
+	stubClipboardThread(t)
 	original := writeClipboardData
 	t.Cleanup(func() { writeClipboardData = original })
 	nativeErr := errors.New("clipboard is occupied")
@@ -45,6 +46,7 @@ func TestMyGoBoardPropagatesTextWriteFailure(t *testing.T) {
 }
 
 func TestMyGoBoardPublishesOriginalPNGAndPropagatesFailure(t *testing.T) {
+	stubClipboardThread(t)
 	var raw bytes.Buffer
 	if err := png.Encode(&raw, image.NewNRGBA(image.Rect(0, 0, 8, 8))); err != nil {
 		t.Fatal(err)
@@ -65,5 +67,82 @@ func TestMyGoBoardPublishesOriginalPNGAndPropagatesFailure(t *testing.T) {
 	}
 	if err := (MyGoBoard{}).Write(item); !errors.Is(err, nativeErr) {
 		t.Fatalf("native image write failure was swallowed: %v", err)
+	}
+}
+
+func stubClipboardThread(t *testing.T) {
+	t.Helper()
+	originalRun, originalFlush := runOnClipboardThread, flushClipboardData
+	originalPrepare := prepareClipboardImage
+	t.Cleanup(func() {
+		runOnClipboardThread, flushClipboardData = originalRun, originalFlush
+		prepareClipboardImage = originalPrepare
+	})
+	runOnClipboardThread = func(fn func()) { fn() }
+	flushClipboardData = func() error { return nil }
+	prepareClipboardImage = func(Item, bool) (PreparedWrite, bool, error) { return PreparedWrite{}, false, nil }
+}
+
+func TestMyGoBoardPersistsWritesBeforeReturning(t *testing.T) {
+	text, err := FromText("persist this text")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, image.NewNRGBA(image.Rect(0, 0, 8, 8))); err != nil {
+		t.Fatal(err)
+	}
+	img, err := PNGForPaste(raw.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeErr := errors.New("clipboard is occupied")
+	for _, item := range []Item{text, img} {
+		for _, outcome := range []string{"success", "write-error", "flush-error"} {
+			t.Run(string(item.Kind)+"/"+outcome, func(t *testing.T) {
+				stubClipboardThread(t)
+				originalWrite := writeClipboardData
+				t.Cleanup(func() { writeClipboardData = originalWrite })
+				inside := false
+				callbacks, writes, flushes := 0, 0, 0
+				runOnClipboardThread = func(fn func()) {
+					callbacks++
+					inside = true
+					fn()
+					inside = false
+				}
+				writeClipboardData = func(transfer.Data, ...mygo.ClipboardOptions) error {
+					if !inside {
+						t.Fatal("write escaped the owning thread")
+					}
+					writes++
+					if outcome == "write-error" {
+						return nativeErr
+					}
+					return nil
+				}
+				flushClipboardData = func() error {
+					if !inside || writes != 1 {
+						t.Fatal("flush must follow the write in the same owning-thread callback")
+					}
+					flushes++
+					if outcome == "flush-error" {
+						return nativeErr
+					}
+					return nil
+				}
+				err := (MyGoBoard{}).Write(item)
+				if outcome == "success" && err != nil || outcome != "success" && !errors.Is(err, nativeErr) {
+					t.Fatalf("write/flush outcome was lost: %v", err)
+				}
+				wantFlushes := 1
+				if outcome == "write-error" {
+					wantFlushes = 0
+				}
+				if callbacks != 1 || writes != 1 || flushes != wantFlushes {
+					t.Fatalf("callbacks=%d writes=%d flushes=%d, want 1,1,%d", callbacks, writes, flushes, wantFlushes)
+				}
+			})
+		}
 	}
 }
