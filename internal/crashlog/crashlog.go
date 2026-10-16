@@ -23,15 +23,29 @@ const (
 	rotateAt    = 1 << 20
 )
 
+type event struct {
+	text  string
+	clean bool
+	done  chan struct{}
+}
+
+type logWriter struct {
+	file         *os.File
+	path, marker string
+	events       chan event
+	stop, done   chan struct{}
+	size         int64
+}
+
 var (
-	mu          sync.Mutex
-	file        *os.File
-	sessionPath string
+	mu   sync.Mutex
+	sink *logWriter
 )
 
-// Install opens logs/crash.log under dir and arms the runtime crash writer.
-// A previous session that did not call MarkClean is noted in the new file.
+// Install arms the runtime crash writer. Breadcrumbs use a bounded background
+// writer; fatal runtime output still bypasses this queue and goes to the file.
 func Install(dir string) (string, error) {
+	stopWriter()
 	logDir := filepath.Join(dir, "logs")
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return "", err
@@ -47,51 +61,129 @@ func Install(dir string) (string, error) {
 		return "", err
 	}
 	debug.SetTraceback("all")
-
-	mu.Lock()
-	if file != nil && file != f {
-		file.Close()
+	info, _ := f.Stat()
+	w := &logWriter{file: f, path: path, marker: filepath.Join(logDir, sessionName),
+		events: make(chan event, 256), stop: make(chan struct{}), done: make(chan struct{})}
+	if info != nil {
+		w.size = info.Size()
 	}
-	file = f
-	sessionPath = filepath.Join(logDir, sessionName)
+	mu.Lock()
+	sink = w
 	mu.Unlock()
-
+	go w.run()
 	if rotated {
 		writef("上一份崩溃日志已轮转到 %s.1\n", fileName)
 	}
-	noteUnclean(sessionPath)
-	writeSession(sessionPath)
-	writef("===== session start pid=%d go=%s %s/%s =====\n%s\n",
-		os.Getpid(), runtime.Version(), runtime.GOOS, runtime.GOARCH, platformHint())
+	noteUnclean(w.marker)
+	writeSession(w.marker)
+	writef("===== session start pid=%d go=%s %s/%s =====\n%s\n", os.Getpid(), runtime.Version(), runtime.GOOS, runtime.GOARCH, platformHint())
 	return path, nil
 }
 
-// Breadcrumb appends one synced line. It is a no-op before Install.
-// Do not put clipboard contents here; format names and sequence numbers only.
+// Breadcrumb never waits for storage. A full queue drops diagnostic lines
+// rather than blocking clipboard capture or retaining unbounded strings.
 func Breadcrumb(msg string) {
 	msg = oneLine(msg)
 	if msg == "" {
 		return
 	}
-	writef("%s %s\n", time.Now().Format(time.RFC3339), msg)
+	mu.Lock()
+	w := sink
+	if w != nil {
+		select {
+		case w.events <- event{text: time.Now().Format(time.RFC3339) + " " + msg + "\n"}:
+		default:
+		}
+	}
+	mu.Unlock()
 }
 
-// MarkClean records a normal exit so the next start does not treat it as a crash.
-// Safe to call more than once, and safe when Install was never called.
-// Do not call it from a defer that also runs while a panic unwinds: that
-// would hide the crash. Call it only on paths that are actually leaving cleanly.
+// MarkClean flushes pending diagnostics at normal exit. Unlike a hot-path
+// breadcrumb, shutdown and explicit stack dumps wait for durable storage.
 func MarkClean() {
+	sendEvent(event{text: fmt.Sprintf("%s 正常退出 pid=%d\n", time.Now().Format(time.RFC3339), os.Getpid()), clean: true})
+}
+
+func sendEvent(e event) {
 	mu.Lock()
-	defer mu.Unlock()
-	if file == nil {
+	w := sink
+	mu.Unlock()
+	if w == nil {
 		return
 	}
-	fmt.Fprintf(file, "%s 正常退出 pid=%d\n", time.Now().Format(time.RFC3339), os.Getpid())
-	_ = file.Sync()
-	if sessionPath != "" {
-		_ = os.Remove(sessionPath)
-		sessionPath = ""
+	e.done = make(chan struct{})
+	select {
+	case w.events <- e:
+		select {
+		case <-e.done:
+		case <-w.done:
+		}
+	case <-w.done:
 	}
+}
+
+func (w *logWriter) run() {
+	defer close(w.done)
+	defer func() { _ = w.file.Close() }()
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	dirty := false
+	write := func(e event) {
+		if w.size >= rotateAt {
+			w.rotate()
+		}
+		n, _ := w.file.WriteString(e.text)
+		w.size += int64(n)
+		dirty = true
+		if e.done != nil {
+			_ = w.file.Sync()
+			dirty = false
+			if e.clean {
+				_ = os.Remove(w.marker)
+			}
+			close(e.done)
+		}
+	}
+	for {
+		select {
+		case e := <-w.events:
+			write(e)
+		case <-tick.C:
+			if dirty {
+				_ = w.file.Sync()
+				dirty = false
+			}
+		case <-w.stop:
+			for {
+				select {
+				case e := <-w.events:
+					write(e)
+				default:
+					_ = w.file.Sync()
+					return
+				}
+			}
+		}
+	}
+}
+
+func (w *logWriter) rotate() {
+	_ = w.file.Sync()
+	// The runtime duplicates its file descriptor; release it before renaming
+	// on Windows, then point crash output at the replacement file.
+	_ = debug.SetCrashOutput(nil, debug.CrashOptions{})
+	_ = w.file.Close()
+	_ = rotate(w.path)
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	w.file = f
+	info, err := f.Stat()
+	if err == nil {
+		w.size = info.Size()
+	}
+	_ = debug.SetCrashOutput(f, debug.CrashOptions{})
 }
 
 func noteUnclean(marker string) {
@@ -111,15 +203,7 @@ func writeSession(marker string) {
 	_ = os.WriteFile(marker, []byte(body), 0o600)
 }
 
-func writef(format string, args ...any) {
-	mu.Lock()
-	defer mu.Unlock()
-	if file == nil {
-		return
-	}
-	fmt.Fprintf(file, format, args...)
-	_ = file.Sync()
-}
+func writef(format string, args ...any) { sendEvent(event{text: fmt.Sprintf(format, args...)}) }
 
 func rotate(path string) bool {
 	info, err := os.Stat(path)
@@ -149,14 +233,17 @@ func platformHint() string {
 	}
 }
 
-// resetForTest drops the process-wide crash file. Tests only.
-func resetForTest() {
-	_ = debug.SetCrashOutput(nil, debug.CrashOptions{})
+// resetForTest stops the process-wide writer and joins it before closing files.
+func stopWriter() {
 	mu.Lock()
-	if file != nil {
-		file.Close()
-		file = nil
-	}
-	sessionPath = ""
+	w := sink
+	sink = nil
 	mu.Unlock()
+	if w != nil {
+		close(w.stop)
+		<-w.done
+	}
+	_ = debug.SetCrashOutput(nil, debug.CrashOptions{})
 }
+
+func resetForTest() { stopWriter() }

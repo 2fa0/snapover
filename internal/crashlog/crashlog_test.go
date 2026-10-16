@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestInstallNotesUncleanSession(t *testing.T) {
@@ -33,6 +34,7 @@ func TestInstallNotesUncleanSession(t *testing.T) {
 		t.Fatalf("missing unclean note:\n%s", text)
 	}
 	Breadcrumb("开始读取剪贴板\nformats=public.rtf")
+	writef("") // barrier: production breadcrumbs deliberately do not wait for disk
 	buf, err = os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -71,5 +73,50 @@ func TestRotateKeepsPreviousFile(t *testing.T) {
 	}
 	if _, err := os.Stat(old + ".1"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBreadcrumbDoesNotWaitForBlockedWriter(t *testing.T) {
+	resetForTest()
+	blocked := &logWriter{events: make(chan event, 1)}
+	mu.Lock()
+	sink = blocked
+	mu.Unlock()
+	t.Cleanup(func() { mu.Lock(); sink = nil; mu.Unlock() })
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 10000; i++ {
+			Breadcrumb("queue remains bounded")
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("breadcrumb waited for storage")
+	}
+	if len(blocked.events) != 1 {
+		t.Fatal("queue exceeded its capacity")
+	}
+}
+
+func TestCrashLogRotatesWhileRunning(t *testing.T) {
+	resetForTest()
+	t.Cleanup(resetForTest)
+	path, err := Install(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writef("%s", strings.Repeat("x", rotateAt))
+	writef("after runtime rotation\n")
+	if _, err := os.Stat(path + ".1"); err != nil {
+		t.Fatal(err)
+	}
+	current, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(current), "after runtime rotation") || len(current) > rotateAt {
+		t.Fatal("runtime rotation did not bound log size")
 	}
 }
