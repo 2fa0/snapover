@@ -48,8 +48,15 @@ type app struct {
 	maxTextText               string
 	maxTextError              string
 	shortcutText              string
+	shortcutRecording         *shortcutRecording
 	shortcutError             string
 	registeredPickerShortcuts []string
+	registeredCopyShortcuts   []string
+	copyShortcutText          string
+	copyShortcutError         string
+	copyBusy                  bool
+	syncMode                  int
+	syncModeError             string
 	historyMaxText            string
 	historyCapacityError      string
 	historyUsage              history.Usage
@@ -190,6 +197,11 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		entries: hist.List(),
 		devices: devices,
 	}
+	if cfg.Values.ManualSync {
+		a.syncMode = 1
+	}
+	a.copyShortcutText, _ = configuredCopyShortcut(cfg.Values.CopyShortcut)
+	a.copyShortcutText = displayPickerShortcut(a.copyShortcutText)
 	a.shortcutText = cfg.Values.PickerShortcut
 	if a.shortcutText == "" {
 		a.shortcutText = pickerShortcuts()[0]
@@ -257,6 +269,7 @@ func (a *app) open(ctx context.Context) {
 	a.rememberPasteTarget()
 	a.startPasteTargetWatch(ctx)
 	a.registerPickerShortcut()
+	a.registerCopyShortcut()
 	a.discoveryWake = make(chan struct{}, 1)
 	a.discoveryScope.Store(a.selection().Scope())
 	var lastDiscoveryError string
@@ -294,7 +307,9 @@ func (a *app) openMainWindow() {
 		Content:   ui.View(a.view),
 	})
 	a.win = win
+	win.OnBlur(func() { a.cancelShortcutRecording(); win.Invalidate() })
 	win.OnClosed(func() {
+		a.cancelShortcutRecording()
 		a.win = nil
 		a.historySearch.reset()
 		a.shownSource, a.shownEntries = nil, nil
@@ -422,6 +437,9 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 }
 
 func (a *app) view(c *ui.Context) {
+	if a.page != pageSettings {
+		a.cancelShortcutRecording()
+	}
 	a.windowShortcuts(c)
 	a.pollHistoryStorage()
 	if a.historyCleanupPending != nil {
@@ -483,6 +501,8 @@ func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
 	pageHeading(c, "设置")
 	settingsGroup(c, "剪贴板同步", func() {
+		a.syncModeSettings(c)
+		ui.Divider(c)
 		if settingSwitch(c, &a.paused, "暂停同步", "仍保留本机复制历史。") {
 			a.saveSettings()
 		}
@@ -526,6 +546,7 @@ func (a *app) settingsPage(c *ui.Context) {
 			})
 		})
 	})
+	settingsGroup(c, "复制并同步快捷键", func() { a.copyShortcutSettings(c) })
 	settingsGroup(c, "快速历史快捷键", func() { a.shortcutSettings(c) })
 	settingsGroup(c, "历史存储", func() { a.historyStorageSettings(c) })
 	settingsGroup(c, "启动", func() {
