@@ -2,12 +2,49 @@ package history
 
 import (
 	"bytes"
+	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/2fa0/snapover/internal/clip"
 )
+
+func TestDeleteKeepsFilesWhenJournalSyncFails(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := s.Add(DirLocal, "", mustPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := filepath.Join(dir, "blobs", image.ImageFile)
+	old := syncFileData
+	syncFileData = func(*os.File) error { return errors.New("sync failed") }
+	t.Cleanup(func() { syncFileData = old })
+	if err := s.Delete(image.ID); err == nil {
+		t.Fatal("delete succeeded without a durable journal")
+	}
+	if _, err := os.Stat(blob); err != nil {
+		t.Fatal("blob was removed before the journal sync succeeded", err)
+	}
+	if len(s.List()) != 1 {
+		t.Fatal("failed delete dropped the visible entry")
+	}
+	restored, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored.List()) != 1 {
+		t.Fatal("reopen lost the entry whose deletion was not durable")
+	}
+	if _, err := os.Stat(blob); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestJournalRestoresMutationsAndLongBodies(t *testing.T) {
 	s, err := Open(t.TempDir())
