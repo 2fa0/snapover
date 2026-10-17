@@ -91,9 +91,65 @@ func TestEchoDoesNotResend(t *testing.T) {
 	e := testEngine(t, board)
 	item := mustText(t, "echo")
 	e.deliver(item)
-	e.HandleLocal(9, item)
+	seq, err := board.Sequence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.HandleLocal(seq, item)
 	if e.haveLast {
 		t.Fatal("echo was treated as a local copy")
+	}
+}
+
+func TestRemoteWriteAllowsRecopyOfPreviousLocalContent(t *testing.T) {
+	board := &memBoard{}
+	e := testEngine(t, board)
+	e.sess = newSession(nil, "peer", true, discardLog(), nil)
+	local := mustText(t, "A")
+	notices := 0
+	e.OnNotice = func(n Notice) error {
+		if n.Kind == NoticeLocal && n.Item.Text == "A" {
+			notices++
+		}
+		return nil
+	}
+	e.HandleLocal(1, local)
+	if len(e.sess.out) != 1 {
+		t.Fatal("first copy was not queued")
+	}
+	<-e.sess.out
+	e.mu.Lock()
+	e.localActive = time.Time{}
+	e.mu.Unlock()
+	if err := e.deliverFrom(nil, mustText(t, "B")); err != nil {
+		t.Fatal(err)
+	}
+	e.HandleLocal(2, local)
+	if notices != 2 || len(e.sess.out) != 1 {
+		t.Fatalf("recopy after remote write was dropped: notices=%d queued=%d", notices, len(e.sess.out))
+	}
+}
+
+func TestRecopyOfRecentRemoteContentIsNotAnEcho(t *testing.T) {
+	board := &memBoard{}
+	e := testEngine(t, board)
+	e.sess = newSession(nil, "peer", true, discardLog(), nil)
+	remote := mustText(t, "A")
+	if err := e.deliverFrom(nil, remote); err != nil {
+		t.Fatal(err)
+	}
+	owned, err := board.Sequence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.HandleLocal(owned, remote)
+	if e.haveLast {
+		t.Fatal("owned generation became a local copy")
+	}
+	e.HandleLocal(owned+1, mustText(t, "B"))
+	e.HandleLocal(owned+2, remote)
+	if len(e.sess.out) != 2 {
+		t.Fatalf("fresh copies queued=%d, want 2", len(e.sess.out))
 	}
 }
 
