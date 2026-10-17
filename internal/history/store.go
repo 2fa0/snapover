@@ -61,6 +61,7 @@ type Store struct {
 	journalBytes int64
 	capacity     int64
 	contentSizes map[string]int64
+	disabled     error
 }
 
 func Open(dir string) (*Store, error) {
@@ -109,6 +110,9 @@ func Open(dir string) (*Store, error) {
 
 // Add stores a text or image item. dir is DirLocal or DirRemote.
 func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
+	if err := s.errDisabled(); err != nil {
+		return Entry{}, err
+	}
 	if item.Kind != clip.KindText && item.Kind != clip.KindImage {
 		return Entry{}, errors.New("没有可记录的内容")
 	}
@@ -220,6 +224,9 @@ func (s *Store) PasteItem(id string) (clip.Item, error) {
 }
 
 func (s *Store) readItem(id string, forPaste bool) (clip.Item, error) {
+	if err := s.errDisabled(); err != nil {
+		return clip.Item{}, err
+	}
 	s.mu.Lock()
 	entry, ok := s.findLocked(id)
 	s.mu.Unlock()
@@ -281,6 +288,9 @@ func (s *Store) findLocked(id string) (Entry, bool) {
 
 // SetPinned keeps an item out of age and count cleanup.
 func (s *Store) SetPinned(id string, on bool) error {
+	if err := s.errDisabled(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer s.publishLocked()
@@ -300,6 +310,9 @@ func (s *Store) SetPinned(id string, on bool) error {
 
 // Delete removes one item and its image files.
 func (s *Store) Delete(id string) error {
+	if err := s.errDisabled(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer s.publishLocked()
@@ -323,6 +336,9 @@ func (s *Store) Delete(id string) error {
 
 // Clear drops every item that is not pinned.
 func (s *Store) Clear() error {
+	if err := s.errDisabled(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer s.publishLocked()

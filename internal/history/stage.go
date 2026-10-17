@@ -19,6 +19,9 @@ const stagedImageTTL = 15 * time.Minute
 // The copy is not the history blob: saving from Preview must not rewrite the record.
 // The file stays until the next launch or quit, because the viewer may still be reading it.
 func (s *Store) StageImage(id string) (string, error) {
+	if err := s.errDisabled(); err != nil {
+		return "", err
+	}
 	s.openedMu.Lock()
 	defer s.openedMu.Unlock()
 	if s.openedClosed {

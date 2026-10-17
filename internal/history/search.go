@@ -14,6 +14,9 @@ const textSearchChunk = 64 << 10
 // Search scans on-disk bodies in bounded chunks. Callers may cancel it between
 // records and chunks; results contain previews, never full text bodies.
 func (s *Store) Search(ctx context.Context, query string) ([]Entry, error) {
+	if err := s.errDisabled(); err != nil {
+		return nil, err
+	}
 	entries := s.List()
 	if query == "" {
 		return entries, nil
