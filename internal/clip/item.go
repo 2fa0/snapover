@@ -81,12 +81,9 @@ func FromTextWithLimit(s string, limit int) (Item, error) {
 }
 
 func CheckTextSize(s string, limit int) error {
-	if limit <= 0 || limit > MaxTextBytes {
-		limit = MaxTextBytes
-	}
-	n := len(s)
-	if n > limit {
-		return fmt.Errorf("文本 %d 字节，超过 %d MB 上限，可在设置中调整文本大小上限", n, limit>>20)
+	limit = normalizeTextLimit(limit)
+	if len(s) > limit {
+		return TextTooLarge(len(s), limit)
 	}
 	return nil
 }
