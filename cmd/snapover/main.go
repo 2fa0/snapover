@@ -154,6 +154,7 @@ func main() {
 	}
 	engine.Board = clip.MyGoBoard{TextLimit: engine.TextLimit}
 	engine.SetPolicy(cfg.Values.Paused, cfg.Values.TextOnly, cfg.Values.MaxImageMB<<20)
+	engine.SetManualSync(cfg.Values.ManualSync)
 	receiveDir := cfg.Values.ReceiveDir
 	if receiveDir == "" {
 		receiveDir = defaultReceiveDir()

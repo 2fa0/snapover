@@ -13,7 +13,7 @@ import (
 )
 
 func (a *app) windowShortcuts(c *ui.Context) {
-	if runtime.GOOS != "windows" {
+	if a.shortcutRecording != nil || runtime.GOOS != "windows" {
 		return
 	}
 	// Keep the menu's shortcuts available without a Windows menu bar.
@@ -93,6 +93,9 @@ func configuredPickerShortcuts(value string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		if normalized == "Ctrl+C" || normalized == "Super+C" {
+			return nil, errors.New("请保留普通复制快捷键，另选一组组合键")
+		}
 		keys[i] = normalized
 	}
 	return keys, nil
@@ -143,7 +146,11 @@ func (a *app) registerPickerShortcut() {
 		return
 	}
 	for _, key := range keys {
-		if err := mygo.GlobalShortcut.Register(key, func() { a.openPicker(true) }); err != nil {
+		if err := mygo.GlobalShortcut.Register(key, func() {
+			if !a.captureRegisteredShortcut(key) {
+				a.openPicker(true)
+			}
+		}); err != nil {
 			a.shortcutError = "快捷键无法注册：" + displayPickerShortcut(key) + "。请在设置中更换，也可从托盘打开快速历史"
 			a.status = a.shortcutError
 		} else {
@@ -158,9 +165,21 @@ func (a *app) savePickerShortcut(value string) {
 		a.shortcutError = err.Error()
 		return
 	}
+	for _, key := range keys {
+		if slices.Contains(a.registeredCopyShortcuts, key) {
+			a.shortcutError = "此快捷键已用于复制并同步，请另选一组"
+			return
+		}
+	}
 	previous := a.cfg.Values.PickerShortcut
 	err = changePickerShortcuts(a.registeredPickerShortcuts, keys,
-		func(key string) error { return mygo.GlobalShortcut.Register(key, func() { a.openPicker(true) }) },
+		func(key string) error {
+			return mygo.GlobalShortcut.Register(key, func() {
+				if !a.captureRegisteredShortcut(key) {
+					a.openPicker(true)
+				}
+			})
+		},
 		mygo.GlobalShortcut.Unregister, func() error {
 			a.cfg.Values.PickerShortcut = ""
 			if strings.TrimSpace(value) != "" {
@@ -179,20 +198,5 @@ func (a *app) savePickerShortcut(value string) {
 }
 
 func (a *app) shortcutSettings(c *ui.Context) {
-	t := c.Theme()
-	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		if ui.TextInput(c.Key("picker-shortcut"), &a.shortcutText).Label("快速历史快捷键").
-			Tooltip("打开快速历史，回车或双击粘贴到光标处。").Placeholder("例如 Ctrl+Alt+V").Grow(1).Submitted() {
-			a.savePickerShortcut(a.shortcutText)
-		}
-		if ui.Button(c, "应用快捷键").Clicked() {
-			a.savePickerShortcut(a.shortcutText)
-		}
-		if ui.Button(c, "恢复默认快捷键").Clicked() {
-			a.savePickerShortcut("")
-		}
-	})
-	if a.shortcutError != "" {
-		ui.Text(c, a.shortcutError).FontSize(12).TextColor(t.Danger)
-	}
+	a.shortcutRecorder(c, "picker", "快速历史快捷键", a.shortcutText, &a.shortcutError, a.savePickerShortcut)
 }
