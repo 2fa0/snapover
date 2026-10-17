@@ -39,12 +39,13 @@ var (
 	axSetTimeout        func(element uintptr, seconds float32) int32
 	axRelease           func(ref uintptr)
 
-	cgOnce    sync.Once
-	cgCreate  func(source uintptr, key uint16, down uint8) uintptr
-	cgFlags   func(event uintptr, flags uint64)
-	cgPost    func(tap uint32, event uintptr)
-	cfRelease func(ref uintptr)
-	cgErr     error
+	cgOnce      sync.Once
+	cgCreate    func(source uintptr, key uint16, down uint8) uintptr
+	cgFlags     func(event uintptr, flags uint64)
+	cgPost      func(tap uint32, event uintptr)
+	cfRelease   func(ref uintptr)
+	cgErr       error
+	cgModifiers func(state uint32) uint64
 
 	prompted bool
 )
@@ -120,13 +121,15 @@ func (t Target) SendPaste() error {
 	return postCommandV()
 }
 
-func postCommandV() error {
+func postCommandV() error { return postCommandKey(kVK_ANSI_V) }
+
+func postCommandKey(key uint16) error {
 	loadCG()
 	if cgErr != nil {
 		return cgErr
 	}
-	down := cgCreate(0, kVK_ANSI_V, 1)
-	up := cgCreate(0, kVK_ANSI_V, 0)
+	down := cgCreate(0, key, 1)
+	up := cgCreate(0, key, 0)
 	if down == 0 || up == 0 {
 		if down != 0 {
 			cfRelease(down)
@@ -178,6 +181,7 @@ func loadCG() {
 		purego.RegisterLibFunc(&cgCreate, h, "CGEventCreateKeyboardEvent")
 		purego.RegisterLibFunc(&cgFlags, h, "CGEventSetFlags")
 		purego.RegisterLibFunc(&cgPost, h, "CGEventPost")
+		purego.RegisterLibFunc(&cgModifiers, h, "CGEventSourceFlagsState")
 		purego.RegisterLibFunc(&cfRelease, cf, "CFRelease")
 	})
 }
@@ -185,4 +189,21 @@ func loadCG() {
 func nsString(s string) objc.ID {
 	buf := append([]byte(s), 0)
 	return objc.ID(objc.GetClass("NSString")).Send(selUTF8, unsafe.Pointer(&buf[0]))
+}
+
+// ModifiersDown lets the copy shortcut wait for physical keys to be released.
+func ModifiersDown() bool {
+	loadCG()
+	return cgErr == nil && cgModifiers(1)&0x1e0000 != 0
+}
+
+func (t Target) SendCopy() error {
+	if !t.Valid() || Capture() != t {
+		return ErrActivate
+	}
+	if !Allowed() {
+		Prompt()
+		return ErrNeedAccess
+	}
+	return postCommandKey(0x08) // kVK_ANSI_C
 }

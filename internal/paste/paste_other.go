@@ -16,3 +16,6 @@ func (t Target) Activate() error {
 }
 
 func (t Target) SendPaste() error { return ErrNeedAccess }
+
+func ModifiersDown() bool        { return false }
+func (t Target) SendCopy() error { return ErrNeedAccess }
