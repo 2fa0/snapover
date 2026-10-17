@@ -247,3 +247,23 @@ func TestNetworkPermissionReminderAppearsWhenAdding(t *testing.T) {
 		t.Fatal("canceling should hide the reminder and preserve manual help")
 	}
 }
+
+func TestSettingsSaveFailureRollsBack(t *testing.T) {
+	a := interfaceTestApp(t)
+	parent := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(parent, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.cfg.Path = filepath.Join(parent, "settings.json")
+	a.engine = nil
+	a.paused = true
+	a.textOnly = true
+	a.maxImageText = "8"
+	a.saveSettings()
+	if a.paused || a.textOnly || a.maxImageText != "20" || a.cfg.Values.Paused || a.cfg.Values.TextOnly || a.cfg.Values.MaxImageMB != 20 {
+		t.Fatalf("failed save changed visible settings: paused=%v textOnly=%v image=%s cfg=%+v", a.paused, a.textOnly, a.maxImageText, a.cfg.Values)
+	}
+	if a.status == "" || a.status == "已暂停同步" {
+		t.Fatalf("status = %q", a.status)
+	}
+}
