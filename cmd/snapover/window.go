@@ -819,9 +819,12 @@ func (a *app) selected() (history.Entry, bool) {
 }
 
 func (a *app) saveSettings() {
+	previousPaused := a.cfg.Values.Paused
+	previousTextOnly := a.cfg.Values.TextOnly
+	previousMax := a.cfg.Values.MaxImageMB
 	n, err := strconv.Atoi(strings.TrimSpace(a.maxImageText))
 	if err != nil {
-		n = a.cfg.Values.MaxImageMB
+		n = previousMax
 	}
 	if n < 1 {
 		n = 1
@@ -829,14 +832,20 @@ func (a *app) saveSettings() {
 	if n > settings.DefaultMaxImageMB {
 		n = settings.DefaultMaxImageMB
 	}
-	a.maxImageText = strconv.Itoa(n)
 	a.cfg.Values.Paused = a.paused
 	a.cfg.Values.TextOnly = a.textOnly
 	a.cfg.Values.MaxImageMB = n
 	if err := a.cfg.Save(); err != nil {
-		a.status = "保存设置失败"
+		a.cfg.Values.Paused = previousPaused
+		a.cfg.Values.TextOnly = previousTextOnly
+		a.cfg.Values.MaxImageMB = previousMax
+		a.paused = previousPaused
+		a.textOnly = previousTextOnly
+		a.maxImageText = strconv.Itoa(previousMax)
+		a.status = "保存设置失败，设置未生效，请检查数据目录权限后重试"
 		return
 	}
+	a.maxImageText = strconv.Itoa(n)
 	a.engine.SetPolicy(a.paused, a.textOnly, n<<20)
 	if a.paused {
 		a.status = "已暂停同步"
