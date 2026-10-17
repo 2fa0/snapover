@@ -25,6 +25,9 @@ const (
 	clipboardWait = 60 * time.Second
 )
 
+// imageAssembleWait is independent of connection heartbeats.
+var imageAssembleWait = 30 * time.Second
+
 // Session is one live peer connection after Hello has been accepted.
 type Session struct {
 	conn      *tls.Conn
@@ -332,32 +335,49 @@ func (s *Session) readLoop() {
 				s.log.Warn("图片头无效", "err", err)
 				continue
 			}
+			if asm != nil {
+				asm.stop()
+			}
 			asm, err = newAssembler(begin)
 			if err != nil {
 				s.log.Warn("图片头超出限制", "err", err)
+				continue
 			}
+			itemID := begin.ItemID
+			asm.arm(func() {
+				s.log.Warn("图片组装超时", "item", itemID)
+				s.respond(wire.TypeAck, wire.Ack{ItemID: itemID, State: "error", Message: "图片接收超时"})
+			})
 		case wire.TypeImageChunk:
-			if asm == nil {
+			if asm == nil || asm.failedNow() {
+				asm.stop()
+				asm = nil
 				continue
 			}
 			var chunk wire.ImageChunk
 			if err := wire.Unmarshal(payload, &chunk); err != nil {
+				asm.stop()
 				asm = nil
 				continue
 			}
 			if err := asm.add(chunk); err != nil {
 				s.log.Warn("图片分片无效", "err", err)
+				asm.stop()
 				asm = nil
 			}
 		case wire.TypeImageEnd:
-			if asm == nil {
+			if asm == nil || asm.failedNow() {
+				asm.stop()
+				asm = nil
 				continue
 			}
 			var end wire.ImageEnd
 			if err := wire.Unmarshal(payload, &end); err != nil || end.ItemID != asm.begin.ItemID {
+				asm.stop()
 				asm = nil
 				continue
 			}
+			asm.stop()
 			item, err := asm.finish()
 			asm = nil
 			if err != nil {
@@ -495,9 +515,70 @@ func (s *Session) write(typ byte, v any) error {
 }
 
 type assembler struct {
-	begin  wire.ImageBegin
-	data   []byte
-	chunks uint32
+	mu       sync.Mutex
+	begin    wire.ImageBegin
+	data     []byte
+	chunks   uint32
+	deadline time.Time
+	timer    *time.Timer
+	failed   bool
+	onExpire func()
+}
+
+func (a *assembler) arm(onExpire func()) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.onExpire = onExpire
+	a.deadline = time.Now().Add(imageAssembleWait)
+	a.timer = time.AfterFunc(imageAssembleWait, a.expire)
+}
+
+func (a *assembler) expire() {
+	a.mu.Lock()
+	if a.timer == nil {
+		a.mu.Unlock()
+		return
+	}
+	if time.Now().Before(a.deadline) {
+		wait := time.Until(a.deadline)
+		a.timer = time.AfterFunc(wait, a.expire)
+		a.mu.Unlock()
+		return
+	}
+	a.data = nil
+	a.failed = true
+	fn := a.onExpire
+	a.onExpire = nil
+	a.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+func (a *assembler) stop() {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	timer := a.timer
+	a.timer = nil
+	a.onExpire = nil
+	a.mu.Unlock()
+	if timer != nil {
+		timer.Stop()
+	}
+}
+
+func (a *assembler) failedNow() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.failed
+}
+
+func (a *assembler) buffered() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.data)
 }
 
 func newAssembler(begin wire.ImageBegin) (*assembler, error) {
@@ -505,10 +586,15 @@ func newAssembler(begin wire.ImageBegin) (*assembler, error) {
 		begin.Chunks != uint32((begin.TotalSize+wire.ChunkSize-1)/wire.ChunkSize) || len(begin.Hash) != 32 {
 		return nil, errors.New("无效的图片大小、分片数量或哈希")
 	}
-	return &assembler{begin: begin}, nil
+	return &assembler{begin: begin, deadline: time.Now().Add(imageAssembleWait)}, nil
 }
 
 func (a *assembler) add(chunk wire.ImageChunk) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.failed {
+		return errors.New("图片接收超时")
+	}
 	if chunk.ItemID != a.begin.ItemID || chunk.Index != a.chunks || a.chunks >= a.begin.Chunks {
 		return errors.New("图片分片顺序错误")
 	}
@@ -521,10 +607,16 @@ func (a *assembler) add(chunk wire.ImageChunk) error {
 	}
 	a.data = append(a.data, chunk.Data...)
 	a.chunks++
+	a.deadline = time.Now().Add(imageAssembleWait)
 	return nil
 }
 
 func (a *assembler) finish() (clip.Item, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.failed {
+		return clip.Item{}, errors.New("图片接收超时")
+	}
 	if a.chunks != a.begin.Chunks {
 		return clip.Item{}, fmt.Errorf("分片数量 %d，期望 %d", a.chunks, a.begin.Chunks)
 	}
