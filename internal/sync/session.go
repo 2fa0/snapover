@@ -62,6 +62,13 @@ type Session struct {
 	clipboardPending         map[string]time.Time
 	clipboardWake            chan struct{}
 	admit                    func(queuedItem) (bool, string)
+	inbound                  chan inboundJob
+	inboundBytes             int
+}
+
+type inboundJob struct {
+	n   int
+	run func()
 }
 
 type queuedItem struct {
@@ -86,6 +93,7 @@ func newSession(conn *tls.Conn, peerID string, weDialed bool, log *slog.Logger, 
 		log:           log,
 		onItem:        onItem,
 		out:           make(chan queuedItem, queueSize),
+		inbound:       make(chan inboundJob, queueSize),
 		responses:     make(chan response, 16),
 		lastRecv:      time.Now(),
 		done:          make(chan struct{}),
@@ -239,10 +247,14 @@ func (s *Session) Close() {
 
 func (s *Session) run() {
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		s.readLoop()
+	}()
+	go func() {
+		defer wg.Done()
+		s.processLoop()
 	}()
 	go func() {
 		defer wg.Done()
@@ -328,7 +340,10 @@ func (s *Session) readLoop() {
 				s.log.Warn("丢弃文本", "err", err)
 				continue
 			}
-			s.deliverItem(itemIDOf(payload), item)
+			id := itemIDOf(payload)
+			if !s.queueInbound(len(item.Text), func() { s.deliverItem(id, item) }) {
+				s.respond(wire.TypeAck, wire.Ack{ItemID: id, State: "error", Message: "处理队列已满"})
+			}
 		case wire.TypeImageBegin:
 			var begin wire.ImageBegin
 			if err := wire.Unmarshal(payload, &begin); err != nil {
@@ -378,15 +393,81 @@ func (s *Session) readLoop() {
 				continue
 			}
 			asm.stop()
-			item, err := asm.finish()
+			pending := asm
 			asm = nil
-			if err != nil {
-				s.log.Warn("丢弃图片", "err", err)
-				continue
+			id := end.ItemID
+			n := pending.buffered()
+			if !s.queueInbound(n, func() {
+				item, err := pending.finish()
+				if err != nil {
+					s.log.Warn("丢弃图片", "err", err)
+					s.respond(wire.TypeAck, wire.Ack{ItemID: id, State: "error", Message: err.Error()})
+					return
+				}
+				s.deliverItem(id, item)
+			}) {
+				s.respond(wire.TypeAck, wire.Ack{ItemID: id, State: "error", Message: "处理队列已满"})
 			}
-			s.deliverItem(end.ItemID, item)
 		default:
 			s.log.Debug("忽略未知帧", "type", typ)
+		}
+	}
+}
+
+func (s *Session) processLoop() {
+	for {
+		select {
+		case <-s.done:
+			s.drainInbound()
+			return
+		case job := <-s.inbound:
+			if job.run != nil {
+				job.run()
+			}
+			s.releaseInbound(job.n)
+		}
+	}
+}
+
+func (s *Session) queueInbound(n int, fn func()) bool {
+	if s == nil || s.inbound == nil {
+		fn()
+		return true
+	}
+	if n < 0 {
+		n = 0
+	}
+	s.mu.Lock()
+	if s.closed || n > queueBytes-s.inboundBytes {
+		s.mu.Unlock()
+		return false
+	}
+	s.inboundBytes += n
+	s.mu.Unlock()
+	select {
+	case s.inbound <- inboundJob{n: n, run: fn}:
+		return true
+	default:
+		s.releaseInbound(n)
+		return false
+	}
+}
+
+func (s *Session) releaseInbound(n int) {
+	s.mu.Lock()
+	s.inboundBytes -= n
+	if s.inboundBytes < 0 {
+		s.inboundBytes = 0
+	}
+	s.mu.Unlock()
+}
+
+func (s *Session) drainInbound() {
+	for {
+		select {
+		case <-s.inbound:
+		default:
+			return
 		}
 	}
 }

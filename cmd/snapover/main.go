@@ -199,11 +199,12 @@ func main() {
 				uiApp.onNotice(clipsync.Notice{Kind: clipsync.NoticeError, Message: "监听失败：" + err.Error()})
 			}
 		}()
+		engine.StartLocalQueue(ctx)
 		go clip.Watch(ctx, engine.Board, clip.PollEvery, func(seq uint64, item clip.Item) {
 			if item.Kind != "" && !item.Sensitive && item.Skip == "" && item.SourceApp == "" {
 				item.SourceApp = clip.CleanSource(front.Current())
 			}
-			engine.HandleLocal(seq, item)
+			engine.ObserveLocal(seq, item)
 		})
 	})
 

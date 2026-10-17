@@ -69,6 +69,10 @@ type Engine struct {
 	ownSeq      uint64
 	ownHash     [32]byte
 	haveOwnSeq  bool
+	localOnce   sync.Once
+	localQueue  chan localJob
+	localBytes  int
+	localClosed bool
 }
 
 // HandleLocal is called for a clipboard change that happened on this machine.
