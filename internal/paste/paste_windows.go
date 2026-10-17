@@ -24,6 +24,7 @@ var (
 	procAttach        = user32.NewProc("AttachThreadInput")
 	procIsIconic      = user32.NewProc("IsIconic")
 	procShow          = user32.NewProc("ShowWindow")
+	procAsyncKeyState = user32.NewProc("GetAsyncKeyState")
 	procKey           = user32.NewProc("keybd_event")
 )
 
@@ -86,4 +87,25 @@ func windowPID(hwnd uintptr) int {
 
 func tap(vk byte, flags uintptr) {
 	procKey.Call(uintptr(vk), 0, flags, 0)
+}
+
+func ModifiersDown() bool {
+	for _, key := range []uintptr{0x10, 0x11, 0x12, 0x5b, 0x5c} {
+		state, _, _ := procAsyncKeyState.Call(key)
+		if state&0x8000 != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (t Target) SendCopy() error {
+	if !t.Valid() || Capture() != t {
+		return ErrActivate
+	}
+	tap(vkControl, 0)
+	tap(0x43, 0)
+	tap(0x43, keyeventfKeyup)
+	tap(vkControl, keyeventfKeyup)
+	return nil
 }
