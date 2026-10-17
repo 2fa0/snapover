@@ -78,16 +78,17 @@ func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
 	}
 	e.mu.Lock()
 	r := e.copyRequest
-	if r != nil && seq <= r.after {
-		// The shortcut is waiting for a newer generation. The clipboard it
-		// started from is not a new copy, even when the bytes match a recent item.
-		e.mu.Unlock()
-		return
-	}
-	if r != nil && time.Now().Before(r.until) {
-		e.copyRequest = nil
-	} else {
+	if r != nil && (seq <= r.after || r.cancelled || !time.Now().Before(r.until)) {
+		if r != nil && seq <= r.after {
+			// The shortcut is waiting for a newer generation. The clipboard it
+			// started from is not a new copy, even when the bytes match a recent item.
+			e.mu.Unlock()
+			return
+		}
 		r = nil
+	} else if r != nil {
+		close(r.claimed)
+		e.copyRequest = nil
 	}
 	e.mu.Unlock()
 	err := e.handleLocal(item, r, seq)
@@ -148,6 +149,11 @@ func (e *Engine) handleLocal(item clip.Item, request *copyRequest, seq uint64) e
 	e.mu.Unlock()
 
 	send, msg := localSend(policy, item, sess != nil)
+	if request != nil && request.cancelled {
+		e.allowLocalRetry(sess, id)
+		e.notify(Notice{Kind: NoticeLocal, Item: item})
+		return errors.New("复制处理超时，已保留在本机历史，请稍后查看")
+	}
 	if request == nil && manual {
 		e.notify(Notice{Kind: NoticeLocal, Item: item})
 		return nil
