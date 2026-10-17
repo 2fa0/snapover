@@ -126,10 +126,13 @@ func main() {
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	mygo.App.OnWindowAllClosed(func() {})
 
-	hist, err := history.Open(filepath.Join(dataDir, "history"))
+	historyDir := filepath.Join(dataDir, "history")
+	hist, err := history.Open(historyDir)
+	var historyOpenErr error
 	if err != nil {
 		log.Error("加载复制历史失败", "err", err)
-		die(1)
+		historyOpenErr = err
+		hist = history.Unavailable(historyDir, err)
 	}
 	cfg, err := settings.Load(dataDir)
 	if err != nil {
@@ -161,6 +164,9 @@ func main() {
 	}
 	engine.SetReceiveDir(receiveDir)
 	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
+	if historyOpenErr != nil {
+		uiApp.status = "历史不可用，其他功能仍可使用"
+	}
 	if historyCapacityErr != nil {
 		uiApp.historyCapacityError = "历史维护失败，请在设置中重新应用上限：" + historyCapacityErr.Error()
 	}

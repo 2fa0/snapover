@@ -590,6 +590,9 @@ func (a *app) historyPage(c *ui.Context) {
 	a.pollHistoryPaste(c)
 	t := c.Theme()
 	pageHeading(c, "复制历史")
+	if a.historyUnavailable(c) {
+		return
+	}
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 		if ui.TextInput(c.Key("query"), &a.query).Label("搜索复制历史").Placeholder("搜索内容或来源").Grow(1).Changed() {
 			a.histSel = -1

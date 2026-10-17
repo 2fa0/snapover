@@ -30,6 +30,9 @@ func (s *Store) PreviewImage(id string) (image.Image, error) {
 }
 
 func (s *Store) preview(id string) ([]byte, image.Image, error) {
+	if err := s.errDisabled(); err != nil {
+		return nil, nil, err
+	}
 	s.mu.Lock()
 	entry, ok := s.findLocked(id)
 	if !ok || entry.Kind != string(clip.KindImage) || entry.ImageFile == "" {

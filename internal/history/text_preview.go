@@ -12,6 +12,9 @@ const maxTextPreviewBytes = 16 << 10
 
 // TextPreview reads a bounded prefix; full bodies stay on disk until requested.
 func (s *Store) TextPreview(id string) (text string, more bool, err error) {
+	if err := s.errDisabled(); err != nil {
+		return "", false, err
+	}
 	s.mu.Lock()
 	entry, ok := s.findLocked(id)
 	s.mu.Unlock()

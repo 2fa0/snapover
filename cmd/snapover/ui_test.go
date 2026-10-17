@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -245,6 +246,24 @@ func TestNetworkPermissionReminderAppearsWhenAdding(t *testing.T) {
 	clickInterface(t, tt, "取消添加")
 	if tt.HasText("查看连接指引") || !tt.HasText("连接帮助") {
 		t.Fatal("canceling should hide the reminder and preserve manual help")
+	}
+}
+
+func TestRecoverHistoryKeepsDamagedFiles(t *testing.T) {
+	a := interfaceTestApp(t)
+	dir := a.hist.Dir()
+	marker := filepath.Join(dir, "keep-me.txt")
+	if err := os.WriteFile(marker, []byte("damaged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.hist = history.Unavailable(dir, os.ErrInvalid)
+	a.recoverHistory()
+	if a.hist.Disabled() != nil || !strings.Contains(a.status, "damaged") {
+		t.Fatalf("status=%q disabled=%v", a.status, a.hist.Disabled())
+	}
+	matches, err := filepath.Glob(dir + ".damaged-*/keep-me.txt")
+	if err != nil || len(matches) != 1 {
+		t.Fatal(matches, err)
 	}
 }
 

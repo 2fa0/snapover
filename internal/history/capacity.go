@@ -22,6 +22,9 @@ type Usage struct {
 // SetCapacity also prunes oldest unpinned entries using the same durable log
 // as Add. Pins count toward usage but are never automatically deleted.
 func (s *Store) SetCapacity(maxBytes int64) error {
+	if err := s.errDisabled(); err != nil {
+		return err
+	}
 	if maxBytes <= 0 {
 		return errors.New("历史容量上限必须大于零")
 	}
@@ -133,6 +136,9 @@ func (s *Store) cleanOrphansLocked() error {
 // Usage scans only when requested by settings, never on the clipboard path.
 // TotalBytes also includes the index, journal and temporary viewer copies.
 func (s *Store) Usage() (Usage, error) {
+	if err := s.errDisabled(); err != nil {
+		return Usage{}, err
+	}
 	s.mu.Lock()
 	entries := append([]Entry(nil), s.entries...)
 	s.contentSizes = nil
