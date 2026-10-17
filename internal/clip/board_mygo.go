@@ -82,13 +82,19 @@ func (b MyGoBoard) Snapshot() (Item, error) {
 		return item, nil
 	}
 	if HasText(all) {
-		text := mygo.Clipboard.ReadText()
-		if text == "" {
-			return Item{}, nil
-		}
 		limit := DefaultMaxTextBytes
 		if b.TextLimit != nil {
 			limit = b.TextLimit()
+		}
+		text, err := readLimitedClipboardText(limit)
+		if err != nil {
+			if errors.Is(err, ErrClipboardBusy) {
+				return Item{}, err
+			}
+			return Item{Skip: err.Error()}, nil
+		}
+		if text == "" {
+			return Item{}, nil
 		}
 		item, err := FromTextWithLimit(text, limit)
 		if err != nil {
