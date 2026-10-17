@@ -113,9 +113,13 @@ type clipboardHandle struct{ format, memory uintptr }
 func prepareNativeImage(item Item, remote bool) (PreparedWrite, bool, error) {
 	release := beginImageWork()
 	defer release()
-	img, err := DecodePNG(item.PNG)
-	if err != nil {
-		return PreparedWrite{}, true, err
+	img := item.pixels
+	if img == nil {
+		var err error
+		img, err = DecodePNG(item.PNG)
+		if err != nil {
+			return PreparedWrite{}, true, err
+		}
 	}
 	defer ReclaimImageMemory(item.Width, item.Height)
 	handles := []clipboardHandle{{format: nativeFormat("PNG")}, {format: cfDIB}}

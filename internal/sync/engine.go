@@ -277,7 +277,47 @@ func (e *Engine) deliver(item clip.Item) {
 	e.deliverFrom(nil, item)
 }
 
+// rejectRemoteBeforePrepare skips image conversion when the item cannot be
+// published. The clipboard callback still rechecks in case policy changes.
+func (e *Engine) rejectRemoteBeforePrepare(source *Session, item clip.Item) error {
+	e.mu.Lock()
+	paused := e.paused
+	var textErr error
+	if item.Kind == clip.KindText {
+		textErr = clip.CheckTextSize(item.Text, e.textLimitLocked())
+	}
+	disconnected := false
+	if source != nil && e.sess != source {
+		disconnected = true
+	}
+	e.mu.Unlock()
+	if source != nil && !disconnected {
+		select {
+		case <-source.done:
+			disconnected = true
+		default:
+		}
+	}
+	if disconnected {
+		return errors.New("连接已改变，未写入剪贴板")
+	}
+	if paused {
+		e.Log.Info("已暂停，忽略对端内容", "kind", item.Kind, "bytes", item.Size)
+		e.notify(Notice{Kind: NoticeStatus, Message: "已暂停，忽略对端内容"})
+		return errors.New("对端已暂停同步，未写入剪贴板")
+	}
+	if textErr != nil {
+		e.notify(Notice{Kind: NoticeStatus, Message: "未接收：" + textErr.Error()})
+		return fmt.Errorf("对端未接收：%w", textErr)
+	}
+	return nil
+}
+
 func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
+	if err := e.rejectRemoteBeforePrepare(source, item); err != nil {
+		item.ReleaseDecoded()
+		return err
+	}
 	e.clipMu.Lock()
 	sequence, sequenceErr := e.Board.Sequence()
 	haveSequence := sequenceErr == nil
@@ -294,6 +334,7 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 			return prepared.Publish()
 		}
 	}
+	item.ReleaseDecoded()
 	var paused, active, attempted bool
 	var link Link
 	var err error
