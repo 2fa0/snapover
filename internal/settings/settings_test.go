@@ -18,7 +18,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if f.Values.MaxTextMB != DefaultMaxTextMB {
 		t.Fatalf("default text mb = %d", f.Values.MaxTextMB)
 	}
-	if f.Values.HistoryMaxMB != DefaultHistoryMB || f.Values.PickerShortcut != "" {
+	if f.Values.HistoryMaxMB != DefaultHistoryMB || f.Values.PickerShortcut != "" || f.Values.ManualSync || f.Values.CopyShortcut != "" {
 		t.Fatalf("unexpected defaults: %+v", f.Values)
 	}
 	f.Values.Paused = true
@@ -27,6 +27,8 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	f.Values.MaxTextMB = 10
 	f.Values.HistoryMaxMB = 512
 	f.Values.PickerShortcut = "Ctrl+Alt+V"
+	f.Values.CopyShortcut = "Ctrl+Alt+C"
+	f.Values.ManualSync = true
 	f.Values.ReceiveDir = dir
 	f.Values.DisableSendTo = true
 	f.Values.DiscoveryMode = "selected"
@@ -45,7 +47,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if again.Values.MaxTextMB != 10 {
 		t.Fatalf("text mb = %d", again.Values.MaxTextMB)
 	}
-	if again.Values.HistoryMaxMB != 512 || again.Values.PickerShortcut != "Ctrl+Alt+V" {
+	if again.Values.HistoryMaxMB != 512 || again.Values.PickerShortcut != "Ctrl+Alt+V" || again.Values.CopyShortcut != "Ctrl+Alt+C" || !again.Values.ManualSync {
 		t.Fatalf("history or shortcut not restored: %+v", again.Values)
 	}
 	if again.Values.DiscoveryMode != "selected" || len(again.Values.DiscoveryNets) != 1 || again.Values.DiscoveryNets[0] != "en0/192.168.1.0/24" || len(again.Values.DiscoverySeen) != 2 {
