@@ -159,7 +159,7 @@ func (e *Engine) handleLocal(item clip.Item, request *copyRequest, seq uint64) e
 	case !send:
 		e.allowLocalRetry(sess, id)
 		e.Log.Info(msg, "kind", item.Kind, "bytes", item.Size)
-	case !sess.enqueueCopy(item, id, true):
+	case !sess.enqueueClipboard(item, id, true, request != nil):
 		e.allowLocalRetry(sess, id)
 		e.Log.Info("发送队列已满，丢弃", "kind", item.Kind, "bytes", item.Size)
 		msg = "发送队列已满"
@@ -188,7 +188,27 @@ func (e *Engine) SetPolicy(paused, textOnly bool, maxImage int) {
 	e.paused = paused
 	e.textOnly = textOnly
 	e.maxImage = maxImage
+	sess := e.sess
 	e.mu.Unlock()
+	if paused && sess != nil {
+		sess.cancelUnsentClipboard(false, "已暂停，未发送")
+	}
+}
+
+func (e *Engine) admitClipboard(item queuedItem) (bool, string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.paused {
+		return false, "已暂停，未发送"
+	}
+	if e.manualSync && !item.explicit {
+		return false, "已改为手动同步，未发送"
+	}
+	send, msg := localSend(e.policyLocked(), item.Item, true)
+	if !send {
+		return false, msg
+	}
+	return true, ""
 }
 
 func (e *Engine) policyLocked() policy {
@@ -471,6 +491,7 @@ func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) er
 	_ = conn.SetDeadline(time.Time{})
 
 	sess := newSession(conn, peer.id, weDialed, e.Log, nil)
+	sess.admit = e.admitClipboard
 	sess.onItem = func(item clip.Item) error { return e.deliverFrom(sess, item) }
 	sess.onClipboardResult = func(result wire.Ack) {
 		if result.State != "complete" {

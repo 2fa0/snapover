@@ -58,12 +58,14 @@ type Session struct {
 	onClipboardResult        func(wire.Ack)
 	clipboardPending         map[string]time.Time
 	clipboardWake            chan struct{}
+	admit                    func(queuedItem) (bool, string)
 }
 
 type queuedItem struct {
 	clip.Item
 	id        string
 	automatic bool
+	explicit  bool
 }
 
 type response struct {
@@ -98,6 +100,10 @@ func (s *Session) enqueueID(item clip.Item, id string) bool {
 }
 
 func (s *Session) enqueueCopy(item clip.Item, id string, automatic bool) bool {
+	return s.enqueueClipboard(item, id, automatic, false)
+}
+
+func (s *Session) enqueueClipboard(item clip.Item, id string, automatic, explicit bool) bool {
 	// The peer needs the original bytes, not our local thumbnail.
 	item.Thumbnail = nil
 	item.Preview = nil
@@ -117,7 +123,7 @@ func (s *Session) enqueueCopy(item clip.Item, id string, automatic bool) bool {
 		}
 	}
 	select {
-	case s.out <- queuedItem{Item: item, id: id, automatic: automatic}:
+	case s.out <- queuedItem{Item: item, id: id, automatic: automatic, explicit: explicit}:
 		s.queuedBytes += n
 		if automatic {
 			if s.clipboardPending == nil {
@@ -130,6 +136,72 @@ func (s *Session) enqueueCopy(item clip.Item, id string, automatic bool) bool {
 	default:
 		return false
 	}
+}
+
+// cancelUnsentClipboard drops clipboard payloads that have not been written
+// yet. keepExplicit leaves a copy-and-sync item queued. Already transmitted
+// bytes cannot be recalled.
+func (s *Session) cancelUnsentClipboard(keepExplicit bool, reason string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	var dropped, kept []queuedItem
+	for {
+		select {
+		case item := <-s.out:
+			s.queuedBytes -= queuedSize(item.Item)
+			if keepExplicit && item.explicit {
+				kept = append(kept, item)
+				continue
+			}
+			delete(s.clipboardPending, item.id)
+			dropped = append(dropped, item)
+		default:
+			for _, item := range kept {
+				s.queuedBytes += queuedSize(item.Item)
+				select {
+				case s.out <- item:
+				default:
+					s.queuedBytes -= queuedSize(item.Item)
+					delete(s.clipboardPending, item.id)
+					dropped = append(dropped, item)
+				}
+			}
+			s.mu.Unlock()
+			for _, item := range dropped {
+				s.reportClipboardCancel(item, reason)
+			}
+			return
+		}
+	}
+}
+
+func (s *Session) admitClipboard(item queuedItem) (bool, string) {
+	s.mu.Lock()
+	fn := s.admit
+	s.mu.Unlock()
+	if fn == nil {
+		return true, ""
+	}
+	return fn(item)
+}
+
+func (s *Session) reportClipboardCancel(item queuedItem, reason string) {
+	if item.id == "" || s.onClipboardResult == nil {
+		return
+	}
+	s.onClipboardResult(wire.Ack{ItemID: item.id, State: "error", Message: reason})
+}
+
+func (s *Session) forgetClipboardPending(id string) {
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.clipboardPending, id)
+	s.mu.Unlock()
+	s.wakeClipboard()
 }
 
 func (s *Session) releaseQueued(item queuedItem) bool {
@@ -314,6 +386,11 @@ func (s *Session) writeLoop() {
 		case item := <-s.out:
 			if !s.releaseQueued(item) {
 				return
+			}
+			if ok, msg := s.admitClipboard(item); !ok {
+				s.forgetClipboardPending(item.id)
+				s.reportClipboardCancel(item, msg)
+				continue
 			}
 			if !s.clipboardSendable(item, time.Now()) {
 				continue

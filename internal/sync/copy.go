@@ -16,11 +16,16 @@ type copyRequest struct {
 
 func (e *Engine) SetManualSync(manual bool) {
 	e.mu.Lock()
-	if e.manualSync != manual {
+	changed := e.manualSync != manual
+	if changed {
 		e.haveLast = false
 	}
 	e.manualSync = manual
+	sess := e.sess
 	e.mu.Unlock()
+	if changed && manual && sess != nil {
+		sess.cancelUnsentClipboard(true, "已改为手动同步，未发送")
+	}
 }
 
 // CopyNext authorizes only a fresh clipboard generation from the next copy.

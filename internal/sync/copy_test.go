@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/wire"
 )
 
 func copyTestEngine(t *testing.T) *Engine {
@@ -150,5 +151,44 @@ func TestCopyShortcutRequiresConnectionAndRespectsPause(t *testing.T) {
 		t.Fatal(err)
 	} else {
 		cancel()
+	}
+}
+
+func TestPauseDropsQueuedClipboardBeforeSend(t *testing.T) {
+	e := copyTestEngine(t)
+	e.sess.onClipboardResult = func(result wire.Ack) {
+		if result.State != "complete" {
+			e.allowLocalRetry(e.sess, result.ItemID)
+		}
+	}
+	e.HandleLocal(1, mustText(t, "queued-before-pause"))
+	if len(e.sess.out) != 1 || e.sess.queuedBytes == 0 {
+		t.Fatal("clipboard was not queued")
+	}
+	e.SetPolicy(true, false, 0)
+	if len(e.sess.out) != 0 || e.sess.queuedBytes != 0 {
+		t.Fatalf("paused queue still holds clipboard: items=%d bytes=%d", len(e.sess.out), e.sess.queuedBytes)
+	}
+	if e.haveLast {
+		t.Fatal("cancelled copy stayed suppressed")
+	}
+	if ok, msg := e.admitClipboard(queuedItem{Item: mustText(t, "already-dequeued")}); ok || msg == "" {
+		t.Fatal("dequeued clipboard was still sendable while paused")
+	}
+}
+
+func TestManualModeDropsAutomaticQueue(t *testing.T) {
+	e := copyTestEngine(t)
+	e.HandleLocal(1, mustText(t, "automatic"))
+	if !e.sess.enqueueClipboard(mustText(t, "explicit"), "explicit-id", false, true) {
+		t.Fatal("explicit copy was not queued")
+	}
+	e.SetManualSync(true)
+	if len(e.sess.out) != 1 {
+		t.Fatalf("queued=%d, want the explicit copy only", len(e.sess.out))
+	}
+	got := <-e.sess.out
+	if got.Text != "explicit" || !got.explicit {
+		t.Fatalf("kept %q explicit=%v", got.Text, got.explicit)
 	}
 }
