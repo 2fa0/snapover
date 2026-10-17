@@ -57,6 +57,16 @@ type Item struct {
 	// SourceApp is the foreground app that owned this copy. Empty when unknown.
 	// It is not part of the content hash.
 	SourceApp string
+	// pixels is a transient decode for the next native publish. History and
+	// network payloads must not retain it.
+	pixels image.Image
+}
+
+// ReleaseDecoded drops a transient decode so it is not kept with the item.
+func (it *Item) ReleaseDecoded() {
+	if it != nil {
+		it.pixels = nil
+	}
 }
 
 func (it Item) Empty() bool {
@@ -109,6 +119,7 @@ func FromPNG(data []byte) (Item, error) {
 		Width:     b.Dx(),
 		Height:    b.Dy(),
 		Size:      len(data),
+		pixels:    img,
 	}
 	ReclaimImageMemory(item.Width, item.Height)
 	return item, nil
@@ -124,7 +135,7 @@ func PNGForPaste(data []byte) (Item, error) {
 	}
 	b := img.Bounds()
 	ReclaimImageMemory(b.Dx(), b.Dy())
-	return Item{Kind: KindImage, PNG: data, Width: b.Dx(), Height: b.Dy(), Size: len(data)}, nil
+	return Item{Kind: KindImage, PNG: data, Width: b.Dx(), Height: b.Dy(), Size: len(data), pixels: img}, nil
 }
 
 // DecodePNG checks the clipboard image limits without computing a content hash.

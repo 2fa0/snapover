@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,6 +67,18 @@ func (b *preparedRemoteBoard) PrepareRemoteWrite(item clip.Item) (clip.PreparedW
 		}
 		return b.memBoard.Write(item)
 	}}, nil
+}
+
+func TestPausedRemoteImageIsNotPrepared(t *testing.T) {
+	board := &preparedRemoteBoard{memBoard: &memBoard{}}
+	prepared := false
+	board.duringPrepare = func() { prepared = true }
+	e := testEngine(t, board)
+	e.SetPolicy(true, false, 0)
+	err := e.deliverFrom(nil, mustPNG(t))
+	if prepared || err == nil || !strings.Contains(err.Error(), "暂停") {
+		t.Fatalf("prepared=%v err=%v", prepared, err)
+	}
 }
 
 func TestImagePreparationIsOutsideUIAndRechecksNewLocalCopy(t *testing.T) {

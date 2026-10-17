@@ -85,6 +85,7 @@ func (a *app) prepareHistoryPaste(r *pasteRequest) {
 			}); ok {
 				prepared, err = b.PrepareWrite(item)
 			}
+			item.ReleaseDecoded()
 		}
 		if ctx.Err() != nil {
 			prepared.Close()
