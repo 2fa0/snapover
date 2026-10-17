@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 )
 
 const (
@@ -65,24 +67,70 @@ func (s *Store) persistLocked(change historyChange) error {
 	if _, err = f.Write(header); err == nil {
 		_, err = f.Write(body)
 	}
-	// Match the previous index writer's per-operation durability. Sync when
-	// checkpointing instead of making each small UI action wait on the disk.
 	if err != nil {
 		return errors.Join(err, f.Truncate(start))
 	}
 	s.sequence = change.Sequence
 	s.journalOps++
 	s.journalBytes = start + int64(len(header)+len(body))
+	durable := false
 	if s.journalOps >= checkpointOps || s.journalBytes >= checkpointBytes {
-		// The sequence in the snapshot makes replay safe if the process exits
-		// after replacing the snapshot but before truncating the old journal.
-		if s.saveLocked() == nil && f.Truncate(0) == nil {
-			if f.Sync() == nil {
+		// Snapshot first, then make the directory entry durable, and only then
+		// truncate the journal. Replay skips sequences already in the snapshot.
+		if s.saveLocked() == nil && dirDurable(s.dir) {
+			durable = true
+			if f.Truncate(0) == nil && syncFileData(f) == nil {
 				s.journalOps, s.journalBytes = 0, 0
 			}
 		}
 	}
+	// File removal must not start until the drop can survive power loss.
+	if !durable && len(change.Drop) > 0 {
+		if err := syncFileData(f); err != nil || !dirDurable(s.dir) {
+			if err == nil {
+				err = errors.New("历史目录未能持久化")
+			}
+			s.rewindJournalLocked(f, start, change.Sequence)
+			return err
+		}
+	}
 	return nil
+}
+
+func (s *Store) rewindJournalLocked(f *os.File, start int64, sequence uint64) {
+	s.sequence = sequence - 1
+	if s.journalOps > 0 {
+		s.journalOps--
+	}
+	s.journalBytes = start
+	_ = f.Truncate(start)
+	_ = syncFileData(f)
+}
+
+var syncFileData = func(f *os.File) error { return f.Sync() }
+
+func dirDurable(path string) bool {
+	err := syncDir(path)
+	return err == nil || dirSyncUnsupported(err)
+}
+
+func syncDir(path string) error {
+	d, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	err = d.Sync()
+	return errors.Join(err, d.Close())
+}
+
+func dirSyncUnsupported(err error) bool {
+	if err == nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	return errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EINVAL)
 }
 
 func (s *Store) replayJournal() error {
