@@ -53,6 +53,8 @@ type Engine struct {
 	clipMu      sync.Mutex
 	mu          sync.Mutex
 	paused      bool
+	manualSync  bool
+	copyRequest *copyRequest
 	textOnly    bool
 	maxImage    int
 	maxText     int
@@ -67,34 +69,49 @@ type Engine struct {
 
 // HandleLocal is called for a clipboard change that happened on this machine.
 func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
+	e.mu.Lock()
+	r := e.copyRequest
+	if r != nil && seq > r.after && time.Now().Before(r.until) {
+		e.copyRequest = nil
+	} else {
+		r = nil
+	}
+	e.mu.Unlock()
+	err := e.handleLocal(item, r)
+	if r != nil {
+		r.result <- err
+	}
+}
+
+func (e *Engine) handleLocal(item clip.Item, request *copyRequest) error {
 	if item.Sensitive {
 		e.Log.Info("跳过敏感内容", "mark", item.Skip)
 		e.notify(Notice{Kind: NoticeStatus, Message: "跳过敏感内容"})
-		return
+		return errors.New("敏感内容未发送")
 	}
 	if item.Skip != "" {
 		e.Log.Info("跳过剪贴板", "reason", item.Skip)
 		e.notify(Notice{Kind: NoticeStatus, Message: "跳过：" + item.Skip})
-		return
+		return errors.New(item.Skip)
 	}
 	if item.Kind == "" {
-		return
+		return errors.New("没有可同步的文本或图片")
 	}
 	if item.Kind == clip.KindText {
 		if err := clip.CheckTextSize(item.Text, e.TextLimit()); err != nil {
 			e.Log.Info("跳过剪贴板", "reason", err.Error())
 			e.notify(Notice{Kind: NoticeStatus, Message: "跳过：" + err.Error()})
-			return
+			return err
 		}
 	}
-	if e.Guard.IsEcho(item.Hash) {
-		return
+	if request == nil && e.Guard.IsEcho(item.Hash) {
+		return nil
 	}
 
 	e.mu.Lock()
-	if e.haveLast && e.lastHash == item.Hash {
+	if request == nil && e.haveLast && e.lastHash == item.Hash {
 		e.mu.Unlock()
-		return
+		return nil
 	}
 	e.lastHash = item.Hash
 	e.haveLast = true
@@ -103,9 +120,17 @@ func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
 	e.localActive = time.Now()
 	sess := e.sess
 	policy := e.policyLocked()
+	manual := e.manualSync
 	e.mu.Unlock()
 
 	send, msg := localSend(policy, item, sess != nil)
+	if request == nil && manual {
+		e.notify(Notice{Kind: NoticeLocal, Item: item})
+		return nil
+	}
+	if request != nil && sess != request.session {
+		send, msg = false, "连接已改变，请重新复制并同步"
+	}
 	switch {
 	case !send:
 		e.allowLocalRetry(sess, id)
@@ -119,6 +144,10 @@ func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
 		e.Log.Info("剪贴板已入队", "item", id, "kind", item.Kind, "bytes", item.Size)
 	}
 	e.notify(Notice{Kind: NoticeLocal, Item: item, Message: msg})
+	if msg != "" {
+		return errors.New(msg)
+	}
+	return nil
 }
 
 func (e *Engine) allowLocalRetry(source *Session, id string) {
