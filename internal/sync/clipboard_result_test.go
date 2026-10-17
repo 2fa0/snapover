@@ -173,8 +173,17 @@ func TestSimultaneousLocalCopiesKeepBothHistories(t *testing.T) {
 		if n := waitClipboardResult(t, notices[i]); n.ClipboardState != "history" {
 			t.Fatalf("conflict result: %+v", n)
 		}
-		if got := stores[i].List(); len(got) != 2 || got[0].Dir == got[1].Dir {
-			t.Fatalf("lost one copy: %+v", got)
+		var got []history.Entry
+		deadline := time.Now().Add(time.Second)
+		for {
+			got = stores[i].List()
+			if len(got) == 2 && got[0].Dir != got[1].Dir {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("lost one copy: %+v", got)
+			}
+			time.Sleep(5 * time.Millisecond)
 		}
 		writes := engine.Board.(*memBoard).Writes()
 		if len(writes) != 1 || writes[0].Text != items[i] {
