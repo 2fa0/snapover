@@ -63,27 +63,53 @@ type Engine struct {
 	link        Link
 	localActive time.Time
 	lastHash    [32]byte
+	lastSeq     uint64
 	haveLast    bool
 	lastSendID  string
+	ownSeq      uint64
+	ownHash     [32]byte
+	haveOwnSeq  bool
 }
 
 // HandleLocal is called for a clipboard change that happened on this machine.
 func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
+	if e.isOwnEcho(seq, item.Hash) {
+		return
+	}
 	e.mu.Lock()
 	r := e.copyRequest
-	if r != nil && seq > r.after && time.Now().Before(r.until) {
+	if r != nil && seq <= r.after {
+		// The shortcut is waiting for a newer generation. The clipboard it
+		// started from is not a new copy, even when the bytes match a recent item.
+		e.mu.Unlock()
+		return
+	}
+	if r != nil && time.Now().Before(r.until) {
 		e.copyRequest = nil
 	} else {
 		r = nil
 	}
 	e.mu.Unlock()
-	err := e.handleLocal(item, r)
+	err := e.handleLocal(item, r, seq)
 	if r != nil {
 		r.result <- err
 	}
 }
 
-func (e *Engine) handleLocal(item clip.Item, request *copyRequest) error {
+// isOwnEcho is true only for a generation this process just wrote.
+// A later copy of the same bytes is a new event.
+func (e *Engine) isOwnEcho(seq uint64, hash [32]byte) bool {
+	if e.Board != nil {
+		if owner, ok := e.Board.(interface{ OwnsSequence(uint64) bool }); ok && owner.OwnsSequence(seq) {
+			return true
+		}
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.haveOwnSeq && seq == e.ownSeq && e.ownHash == hash
+}
+
+func (e *Engine) handleLocal(item clip.Item, request *copyRequest, seq uint64) error {
 	if item.Sensitive {
 		e.Log.Info("跳过敏感内容", "mark", item.Skip)
 		e.notify(Notice{Kind: NoticeStatus, Message: "跳过敏感内容"})
@@ -104,16 +130,14 @@ func (e *Engine) handleLocal(item clip.Item, request *copyRequest) error {
 			return err
 		}
 	}
-	if request == nil && e.Guard.IsEcho(item.Hash) {
-		return nil
-	}
-
 	e.mu.Lock()
-	if request == nil && e.haveLast && e.lastHash == item.Hash {
+	// Same generation can be delivered twice; same bytes on a new generation cannot.
+	if request == nil && e.haveLast && e.lastSeq == seq {
 		e.mu.Unlock()
 		return nil
 	}
 	e.lastHash = item.Hash
+	e.lastSeq = seq
 	e.haveLast = true
 	id := ulid.Make().String()
 	e.lastSendID = id
@@ -293,7 +317,18 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 		attempted = true
 		err = publish()
 		if err == nil {
-			e.Guard.Mark(item.Hash)
+			if e.Guard != nil {
+				e.Guard.Mark(item.Hash)
+			}
+			if seq, seqErr := e.Board.Sequence(); seqErr == nil {
+				e.ownSeq = seq
+				e.ownHash = item.Hash
+				e.haveOwnSeq = true
+			} else {
+				e.haveOwnSeq = false
+			}
+			// The clipboard is no longer the last local copy.
+			e.haveLast = false
 		}
 	}
 	// Validate and write in the same UI callback: revocation must neither
