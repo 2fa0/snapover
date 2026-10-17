@@ -28,6 +28,8 @@ type Values struct {
 	ReceiveDir     string `json:"receive_dir,omitempty"`
 	DisableSendTo  bool   `json:"disable_send_to,omitempty"`
 	PickerShortcut string `json:"picker_shortcut,omitempty"`
+	CopyShortcut   string `json:"copy_shortcut,omitempty"`
+	ManualSync     bool   `json:"manual_sync,omitempty"`
 	HistoryMaxMB   int    `json:"history_max_mb"`
 
 	WindowsNetworkGuideDismissed bool `json:"windows_network_guide_dismissed,omitempty"`
