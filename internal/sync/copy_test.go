@@ -51,7 +51,7 @@ func TestCopyShortcutSendsOnceInBothModesAndCanRepeat(t *testing.T) {
 		// An explicit copy may intentionally resend previously received contents.
 		e.Guard.Mark(item.Hash)
 		for seq := uint64(10); seq < 12; seq++ {
-			result, cancel, err := e.CopyNext(seq)
+			result, _, cancel, err := e.CopyNext(seq)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -82,7 +82,7 @@ func TestCopyShortcutCancelExpiryAndPolicy(t *testing.T) {
 			e := copyTestEngine(t)
 			e.SetManualSync(true)
 			original := e.sess
-			result, cancel, err := e.CopyNext(10)
+			result, _, cancel, err := e.CopyNext(10)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -130,28 +130,57 @@ func TestCopyShortcutCancelExpiryAndPolicy(t *testing.T) {
 
 func TestCopyShortcutRequiresConnectionAndRespectsPause(t *testing.T) {
 	e := testEngine(t, &memBoard{})
-	if _, _, err := e.CopyNext(1); err == nil {
+	if _, _, _, err := e.CopyNext(1); err == nil {
 		t.Fatal("offline request accepted")
 	}
 	e.sess = newSession(nil, "peer", true, discardLog(), nil)
 	e.SetPolicy(true, false, 0)
-	if _, _, err := e.CopyNext(1); err == nil {
+	if _, _, _, err := e.CopyNext(1); err == nil {
 		t.Fatal("paused request accepted")
 	}
 	e.SetPolicy(false, false, 0)
-	_, cancel, err := e.CopyNext(1)
+	_, _, cancel, err := e.CopyNext(1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := e.CopyNext(1); err == nil {
+	if _, _, _, err := e.CopyNext(1); err == nil {
 		t.Fatal("concurrent request accepted")
 	}
 	cancel()
-	if _, cancel, err := e.CopyNext(1); err != nil {
+	if _, _, cancel, err := e.CopyNext(1); err != nil {
 		t.Fatal(err)
 	} else {
 		cancel()
 	}
+}
+
+func TestCopyRequestClaimsGenerationBeforeProcessing(t *testing.T) {
+	e := copyTestEngine(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	e.OnNotice = func(n Notice) error {
+		if n.Kind == NoticeLocal {
+			close(started)
+			<-release
+		}
+		return nil
+	}
+	result, claimed, cancel, err := e.CopyNext(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	go e.HandleLocal(2, mustText(t, "new"))
+	select {
+	case <-claimed:
+	case <-time.After(time.Second):
+		t.Fatal("generation was not claimed before processing finished")
+	}
+	close(release)
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	<-started
 }
 
 func TestPauseDropsQueuedClipboardBeforeSend(t *testing.T) {

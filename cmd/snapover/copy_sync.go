@@ -53,6 +53,7 @@ func (a *app) copySelection(ctx context.Context, target paste.Target) error {
 		}
 		var ready bool
 		var result <-chan error
+		var claimed <-chan struct{}
 		var cancel func() bool
 		var err error
 		mygo.RunOnMain(func() {
@@ -73,7 +74,7 @@ func (a *app) copySelection(ctx context.Context, target paste.Target) error {
 			if err != nil {
 				return
 			}
-			result, cancel, err = a.engine.CopyNext(seq)
+			result, claimed, cancel, err = a.engine.CopyNext(seq)
 			if err == nil {
 				err = target.SendCopy()
 			}
@@ -89,18 +90,39 @@ func (a *app) copySelection(ctx context.Context, target paste.Target) error {
 		}
 		timeout := time.NewTimer(clipsync.CopyTimeout)
 		defer timeout.Stop()
-
+		observed := false
+		for !observed {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case err := <-result:
+				return err
+			case <-claimed:
+				observed = true
+			case <-timeout.C:
+				if cancel() {
+					return errors.New("未复制到新内容，请选中文本或图片后再试")
+				}
+				observed = true
+			case <-tick.C:
+				var changed bool
+				mygo.RunOnMain(func() { changed = paste.Capture() != target })
+				if changed && cancel() {
+					return errors.New("当前应用已切换，请重新复制并同步")
+				}
+			}
+		}
+		processing := time.NewTimer(clipsync.CopyProcessTimeout)
+		defer processing.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			case err := <-result:
 				return err
-			case <-timeout.C:
-				if cancel() {
-					return errors.New("未复制到新内容，请选中文本或图片后再试")
-				}
-				// Capture already finished; history persistence may take longer.
+			case <-processing.C:
+				cancel()
+				return errors.New("复制处理超时，已保留在本机历史，请稍后查看")
 			case <-tick.C:
 				var changed bool
 				mygo.RunOnMain(func() { changed = paste.Capture() != target })
