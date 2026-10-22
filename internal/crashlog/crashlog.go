@@ -35,6 +35,7 @@ type logWriter struct {
 	events       chan event
 	stop, done   chan struct{}
 	size         int64
+	started      time.Time
 }
 
 var (
@@ -46,6 +47,7 @@ var (
 // writer; fatal runtime output still bypasses this queue and goes to the file.
 func Install(dir string) (string, error) {
 	stopWriter()
+	Maintain(dir)
 	logDir := filepath.Join(dir, "logs")
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return "", err
@@ -66,6 +68,10 @@ func Install(dir string) (string, error) {
 		events: make(chan event, 256), stop: make(chan struct{}), done: make(chan struct{})}
 	if info != nil {
 		w.size = info.Size()
+	}
+	w.started = time.Now()
+	if started, ok := logStarted(path); ok {
+		w.started = started
 	}
 	mu.Lock()
 	sink = w
@@ -124,13 +130,23 @@ func sendEvent(e event) {
 
 func (w *logWriter) run() {
 	defer close(w.done)
-	defer func() { _ = w.file.Close() }()
+	defer func() {
+		if w.file != nil {
+			_ = w.file.Close()
+		}
+	}()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	dirty := false
 	write := func(e event) {
-		if w.size >= rotateAt {
+		if w.file != nil && (w.size >= rotateAt || w.expired()) {
 			w.rotate()
+		}
+		if w.file == nil {
+			if e.done != nil {
+				close(e.done)
+			}
+			return
 		}
 		n, _ := w.file.WriteString(e.text)
 		w.size += int64(n)
@@ -149,7 +165,7 @@ func (w *logWriter) run() {
 		case e := <-w.events:
 			write(e)
 		case <-tick.C:
-			if dirty {
+			if dirty && w.file != nil {
 				_ = w.file.Sync()
 				dirty = false
 			}
@@ -159,7 +175,9 @@ func (w *logWriter) run() {
 				case e := <-w.events:
 					write(e)
 				default:
-					_ = w.file.Sync()
+					if w.file != nil {
+						_ = w.file.Sync()
+					}
 					return
 				}
 			}
@@ -167,13 +185,31 @@ func (w *logWriter) run() {
 	}
 }
 
+func (w *logWriter) expired() bool {
+	return !w.started.IsZero() && time.Since(w.started) >= retainFor
+}
+
 func (w *logWriter) rotate() {
-	_ = w.file.Sync()
+	aged := w.expired()
+	if w.file != nil {
+		_ = w.file.Sync()
+	}
 	// The runtime duplicates its file descriptor; release it before renaming
 	// on Windows, then point crash output at the replacement file.
 	_ = debug.SetCrashOutput(nil, debug.CrashOptions{})
-	_ = w.file.Close()
-	_ = rotate(w.path)
+	if w.file != nil {
+		_ = w.file.Close()
+		w.file = nil
+	}
+	moved := false
+	if aged {
+		moved = renameAside(w.path, 0)
+		if moved {
+			_ = os.Remove(w.path + ".1")
+		}
+	} else {
+		moved = rotate(w.path)
+	}
 	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
@@ -182,6 +218,11 @@ func (w *logWriter) rotate() {
 	info, err := f.Stat()
 	if err == nil {
 		w.size = info.Size()
+	} else {
+		w.size = 0
+	}
+	if moved {
+		w.started = time.Now()
 	}
 	_ = debug.SetCrashOutput(f, debug.CrashOptions{})
 }
@@ -207,11 +248,18 @@ func writef(format string, args ...any) { sendEvent(event{text: fmt.Sprintf(form
 
 func rotate(path string) bool {
 	info, err := os.Stat(path)
-	if err != nil || info.Size() < rotateAt {
+	if err != nil || !info.Mode().IsRegular() || info.Size() < rotateAt {
 		return false
 	}
-	_ = os.Remove(path + ".1")
-	return os.Rename(path, path+".1") == nil
+	if !renameAside(path, info.Size()) {
+		return false
+	}
+	// An oversized file is moved aside and then deleted. Do not report that
+	// a backup was kept.
+	if _, err := os.Stat(path + ".1"); err != nil {
+		return false
+	}
+	return true
 }
 
 func oneLine(msg string) string {

@@ -74,8 +74,12 @@ func main() {
 		die(1)
 	}
 	mygo.App.SetPath(mygo.PathUserData, dataDir)
+	removedLogs := crashlog.Maintain(dataDir)
 	crashPath, crashErr := crashlog.Install(dataDir)
 	log = newLogger(dataDir, level)
+	if removedLogs > 0 {
+		log.Info("已清理过期日志", "removed", removedLogs)
+	}
 	if crashErr != nil {
 		log.Error("崩溃日志不可用", "err", crashErr)
 	} else {
@@ -122,6 +126,20 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n := crashlog.PruneInactive(dataDir); n > 0 {
+					log.Info("已清理过期日志", "removed", n)
+				}
+			}
+		}
+	}()
 
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	mygo.App.OnWindowAllClosed(func() {})
@@ -306,11 +324,11 @@ func newLogger(dataDir string, level slog.Level) *slog.Logger {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fail(err)
 	}
-	rotateLog(path)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := crashlog.OpenOrdinary(path)
 	if err != nil {
 		return fail(err)
 	}
+	crashlog.PruneInactive(dataDir)
 	// Check the actual file write independently of an absent Windows GUI console.
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "普通日志已启用", 0)
 	record.Add("path", path, "exe", exe, "pid", os.Getpid(), "logger", "file-first-v2")
@@ -321,14 +339,6 @@ func newLogger(dataDir string, level slog.Level) *slog.Logger {
 	crashlog.Breadcrumb(fmt.Sprintf("普通日志写入已验证 path=%q exe=%q pid=%d logger=file-first-v2", path, exe, os.Getpid()))
 	// Windows GUI builds may have no stdout; write the file before it.
 	return slog.New(slog.NewTextHandler(io.MultiWriter(f, os.Stdout), options))
-}
-
-func rotateLog(path string) {
-	info, err := os.Stat(path)
-	if err != nil || info.Size() < 1<<20 {
-		return
-	}
-	_ = os.Rename(path, path+".1")
 }
 
 func hostname() string {

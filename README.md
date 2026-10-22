@@ -43,7 +43,7 @@ go run ./cmd/snapover -check
 
 里面有本机证书和 `peers.json`。不要把 `identity/` 拷到另一台机器。
 
-日志在同目录的 `logs/`：
+日志在同目录的 `logs/`。`snapover.log` 和 `crash.log` 大约 1 MB 轮转一次，只保留上一份；最早一条超过 7 天的日志，以及多余的旧备份，会在启动和运行中删除。正在使用的 `session.open` 不会删。
 
 - `snapover.log`：普通运行日志
 - `crash.log`：崩溃记录。Go panic 和运行时致命错误会把栈写进去。复制后闪退时，崩溃前最后一条通常是正在读的剪贴板格式名，不是内容。下次启动如果上次没正常退出，也会写一条。文件里没有栈时，是原生闪退：macOS 再看 `~/Library/Logs/DiagnosticReports` 里 Snapover 开头的报告，Windows 看事件查看器。
