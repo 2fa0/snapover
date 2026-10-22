@@ -355,7 +355,7 @@ func TestPickerTextWindowsLoadAndDismiss(t *testing.T) {
 		a.openPicker(false)
 		a.pickPreview.hover = previewHover{id: entry.ID, since: time.Now().Add(-pickPreviewDelay)}
 		a.pickPreview.anchor = mygo.Rectangle{Width: 380, Height: 40}
-		a.loadPickPreview(entry.ID)
+		a.loadPickPreview(entry.ID, a.picker)
 	}
 	mygo.RunOnMain(func() {
 		a.startTray()

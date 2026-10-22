@@ -33,6 +33,7 @@ func (a *app) openPicker(atCaret bool) {
 		a.reveal(pageHistory)
 		return
 	}
+	a.closePickPreview()
 	if t := paste.Capture(); t.Valid() {
 		a.pasteTo = t
 	}
@@ -79,7 +80,9 @@ func (a *app) openPicker(atCaret bool) {
 			a.cancelHistoryPaste()
 		}
 		a.pickerSearch.reset()
-		a.closePickPreview()
+		if a.pickPreview.parent == a.picker {
+			a.closePickPreview()
+		}
 		// ListState retains its window host; don't carry it into the next picker.
 		a.pickList = ui.ListState{Key: a.pickList.Key, Label: a.pickList.Label, Selected: &a.pickSel}
 		a.picker = nil
@@ -253,7 +256,9 @@ func (a *app) pickerView(c *ui.Context) {
 		}
 		ui.Text(c, hint).FontSize(11).TextColor(t.TextMuted)
 	})
-	a.updatePickPreview(c, hoverID, hoverBounds)
+	width, _ := c.Size()
+	hoverBounds.X, hoverBounds.W = 0, width
+	a.updatePickPreview(c, a.picker, hoverID, hoverBounds)
 }
 
 func (a *app) movePick(delta int) {

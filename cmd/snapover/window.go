@@ -316,6 +316,9 @@ func (a *app) openMainWindow() {
 	win.OnBlur(func() { a.cancelShortcutRecording(); win.Invalidate() })
 	win.OnClosed(func() {
 		a.cancelShortcutRecording()
+		if a.pickPreview.parent == win {
+			a.closePickPreview()
+		}
 		a.win = nil
 		a.historySearch.reset()
 		a.shownSource, a.shownEntries = nil, nil
@@ -501,6 +504,9 @@ func (a *app) view(c *ui.Context) {
 			})
 		})
 	})
+	if a.page != pageHistory && a.pickPreview.parent == a.win {
+		a.closePickPreview()
+	}
 }
 
 func (a *app) settingsPage(c *ui.Context) {
@@ -597,6 +603,8 @@ func (a *app) settingsPage(c *ui.Context) {
 
 func (a *app) historyPage(c *ui.Context) {
 	a.pollHistoryPaste(c)
+	var hoverID string
+	var hoverBounds ui.Rect
 	t := c.Theme()
 	pageHeading(c, "复制历史")
 	if a.historyUnavailable(c) {
@@ -604,6 +612,7 @@ func (a *app) historyPage(c *ui.Context) {
 	}
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 		if ui.TextInput(c.Key("query"), &a.query).Label("搜索复制历史").Placeholder("搜索内容或来源").Grow(1).Changed() {
+			a.closePickPreview()
 			a.histSel = -1
 			a.histList.ScrollTo(0, ui.Start)
 		}
@@ -620,6 +629,7 @@ func (a *app) historyPage(c *ui.Context) {
 	})
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 		if ui.Segmented(c, &a.historyKind, "全部", "文本", "图片", "置顶").Label("历史类型").Changed() {
+			a.closePickPreview()
 			a.histSel = -1
 			a.histList.ScrollTo(0, ui.Start)
 		}
@@ -648,10 +658,13 @@ func (a *app) historyPage(c *ui.Context) {
 			if ui.List(c, &a.histList, len(shown), func(i int) {
 				entry := shown[i]
 				sel := i == a.histSel
-				ui.Row(c).Padding(12, 10).Gap(12).AlignItems(ui.Center).Children(func() {
+				row := ui.Row(c).Padding(12, 10).Gap(12).AlignItems(ui.Center)
+				var title ui.Element
+				titleText := entryTitle(entry)
+				row.Children(func() {
 					a.historyThumb(c, entry, t, sel, 40)
 					ui.Column(c).Grow(1).Gap(5).Children(func() {
-						ui.Text(c, entryTitle(entry)).SingleLine()
+						title = ui.Text(c, titleText).SingleLine()
 						ui.Row(c).Gap(6).Children(func() {
 							if entry.Pinned {
 								ui.Icon(c, pinIcon).FontSize(12).TextColor(rowMetaColor(t, sel))
@@ -664,6 +677,9 @@ func (a *app) historyPage(c *ui.Context) {
 						ui.Text(c, formatSize(entry.Size)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
 					})
 				})
+				if row.Hovered() && rowNeedsPreview(c, entry, titleText, title) {
+					hoverID, hoverBounds = entry.ID, row.Bounds()
+				}
 			}).Grow(1).Submitted() {
 				a.pasteHistory()
 			}
@@ -690,6 +706,7 @@ func (a *app) historyPage(c *ui.Context) {
 			ui.Text(c, a.flash).FontSize(12).TextColor(t.TextMuted).SingleLine()
 		}
 	})
+	a.updatePickPreview(c, a.win, hoverID, hoverBounds)
 }
 
 func (a *app) connect() {
@@ -800,6 +817,18 @@ func (a *app) refreshEntries() {
 	a.historyUsageValid = false
 	a.historyUsageVersion++
 	a.entries = a.hist.List()
+	if a.pickPreview.hover.id != "" {
+		found := false
+		for _, entry := range a.entries {
+			if entry.ID == a.pickPreview.hover.id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			a.closePickPreview()
+		}
+	}
 	a.shownSource, a.shownEntries = nil, nil
 	a.historySearch.reset()
 	a.pickerSearch.reset()

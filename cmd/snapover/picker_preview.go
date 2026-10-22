@@ -45,6 +45,7 @@ func (h *previewHover) update(id string, inside bool, now time.Time) bool {
 }
 
 type pickerPreview struct {
+	parent *mygo.Window
 	hover  previewHover
 	inside bool
 	anchor mygo.Rectangle
@@ -62,9 +63,29 @@ func (a *app) closePickPreview() {
 	}
 }
 
-func (a *app) updatePickPreview(c *ui.Context, id string, row ui.Rect) {
-	if a.picker == nil {
+func (a *app) previewParentActive(parent *mygo.Window) bool {
+	return parent != nil && !a.quitting && (parent == a.picker || (parent == a.win && a.page == pageHistory))
+}
+
+func (a *app) finishPreviewLoad() {
+	a.pickLoading = false
+	for _, win := range []*mygo.Window{a.win, a.picker, a.pickPreview.win} {
+		if win != nil {
+			win.Invalidate()
+		}
+	}
+}
+
+func (a *app) updatePickPreview(c *ui.Context, parent *mygo.Window, id string, row ui.Rect) {
+	if !a.previewParentActive(parent) {
 		return
+	}
+	if a.pickPreview.parent != parent {
+		if id == "" {
+			return
+		}
+		a.closePickPreview()
+		a.pickPreview.parent = parent
 	}
 	s := &a.pickPreview
 	if s.inside {
@@ -76,8 +97,7 @@ func (a *app) updatePickPreview(c *ui.Context, id string, row ui.Rect) {
 		return
 	}
 	if id != "" {
-		width, _ := c.Size()
-		s.anchor = mygo.Rectangle{X: 0, Y: int(row.Y), Width: int(width), Height: int(row.H)}
+		s.anchor = mygo.Rectangle{X: int(row.X), Y: int(row.Y), Width: int(row.W), Height: int(row.H)}
 	}
 	if s.id != s.hover.id {
 		if s.win != nil {
@@ -90,7 +110,7 @@ func (a *app) updatePickPreview(c *ui.Context, id string, row ui.Rect) {
 		s.win.SetAnchor(s.anchor)
 	}
 	if ready && s.win == nil && s.request == nil {
-		a.loadPickPreview(s.id)
+		a.loadPickPreview(s.id, parent)
 	}
 	if delay := s.hover.nextWake(c.Now(), s.win != nil); delay > 0 {
 		c.After(delay)
@@ -118,16 +138,16 @@ func previewImageSize(width, height int) (int, int) {
 	return max(1, int(math.Round(float64(width)*scale))), max(1, int(math.Round(float64(height)*scale)))
 }
 
-func (a *app) loadPickPreview(id string) {
-	// Keep the limit on the app: closing a picker must not start another
+func (a *app) loadPickPreview(id string, parent *mygo.Window) {
+	// Keep the limit on the app: closing a preview must not start another
 	// load while its previous request is still running.
-	if a.pickLoading {
+	if a.pickLoading || !a.previewParentActive(parent) {
 		return
 	}
 	a.pickLoading = true
 	request := &struct{ id string }{id}
 	a.pickPreview.request = request
-	parent := a.picker
+	a.pickPreview.parent = parent
 	var entry history.Entry
 	for _, candidate := range a.entries {
 		if candidate.ID == id {
@@ -147,12 +167,9 @@ func (a *app) loadPickPreview(id string) {
 			bmp, err = previewBitmap(a.hist, id)
 		}
 		mygo.RunOnMain(func() {
-			a.pickLoading = false
-			if a.picker != nil {
-				a.picker.Invalidate()
-			}
+			a.finishPreviewLoad()
 			s := &a.pickPreview
-			if a.picker != parent || s.request != request || s.hover.id != id {
+			if !a.previewParentActive(parent) || s.parent != parent || s.request != request || s.hover.id != id {
 				return
 			}
 			if !s.hover.left.IsZero() {
@@ -209,7 +226,7 @@ func (a *app) loadPickPreview(id string) {
 							}
 							if ui.Button(c, label).Disabled(a.pickLoading).Clicked() {
 								parent.Update(func() {
-									if a.picker == parent {
+									if a.previewParentActive(parent) {
 										if isText {
 											a.loadPickText(id, parent)
 										} else {
@@ -248,19 +265,24 @@ func previewBitmap(store *history.Store, id string) (*ui.Bitmap, error) {
 }
 
 func (a *app) loadPickImage(id string, parent *mygo.Window) {
-	if a.pickLoading || a.picker != parent || a.pickPreview.hover.id != id {
+	if a.pickLoading || !a.previewParentActive(parent) || a.pickPreview.hover.id != id {
 		return
 	}
 	a.pickLoading = true
+	request := a.pickPreview.request
 	if a.pickPreview.win != nil {
 		a.pickPreview.win.Invalidate()
 	}
 	go func() {
 		path, err := a.hist.StageImage(id)
 		mygo.RunOnMain(func() {
-			// Opening is terminal for this image. A dismissed picker must not
+			// Opening is terminal for this image. A dismissed preview must not
 			// launch the viewer afterwards.
-			if err != nil || a.quitting || a.picker != parent {
+			if a.pickPreview.request != request {
+				a.finishPreviewLoad()
+				return
+			}
+			if err != nil || !a.previewParentActive(parent) {
 				a.finishPickImage(parent, err)
 				return
 			}
@@ -272,26 +294,46 @@ func (a *app) loadPickImage(id string, parent *mygo.Window) {
 			go func() {
 				defer cancel()
 				err := openSystemImage(ctx, path)
-				mygo.RunOnMain(func() { a.finishPickImage(parent, err) })
+				mygo.RunOnMain(func() {
+					if a.pickPreview.request != request {
+						a.finishPreviewLoad()
+						return
+					}
+					a.finishPickImage(parent, err)
+				})
 			}()
 		})
 	}()
 }
 
 func (a *app) finishPickImage(parent *mygo.Window, err error) {
-	a.pickLoading = false
-	if a.picker != nil {
-		a.picker.Invalidate()
-	}
-	if a.quitting || a.picker != parent {
+	a.finishPreviewLoad()
+	if !a.previewParentActive(parent) {
 		return
 	}
 	if err != nil {
-		a.pickFlash = "原图打开失败，请重新选择图片后重试"
-		if a.pickPreview.win != nil {
-			a.pickPreview.win.Invalidate()
-		}
+		a.previewError(parent, "原图打开失败，请重新选择图片后重试")
 		return
 	}
-	a.closePicker()
+	a.finishPreview(parent)
+}
+
+func (a *app) finishPreview(parent *mygo.Window) {
+	if parent == a.picker {
+		a.closePicker()
+	} else {
+		a.closePickPreview()
+	}
+}
+
+func (a *app) previewError(parent *mygo.Window, message string) {
+	if parent == a.picker {
+		a.pickFlash = message
+	} else {
+		a.flash = message
+	}
+	parent.Invalidate()
+	if a.pickPreview.win != nil {
+		a.pickPreview.win.Invalidate()
+	}
 }
