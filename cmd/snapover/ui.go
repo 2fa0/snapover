@@ -42,13 +42,9 @@ var (
 
 func appVersionLabel() string {
 	if version := mygo.App.Version(); version != "" {
-		return "版本 " + version
+		return version
 	}
 	return "开发版"
-}
-
-func pageHeading(c *ui.Context, title string) {
-	ui.Text(c, title).FontSize(26).Bold().Margin(0, 0, 4, 0)
 }
 
 func settingsGroup(c *ui.Context, title string, contents func()) {
@@ -76,7 +72,9 @@ func emptyState(c *ui.Context, icon *ui.SVG, title, description string) {
 	ui.Column(c).Padding(24, 16).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Icon(c, icon).FontSize(28).TextColor(c.Theme().TextMuted)
 		ui.Text(c, title).Bold()
-		ui.Text(c, description).TextColor(c.Theme().TextMuted).FontSize(12)
+		if description != "" {
+			ui.Text(c, description).TextColor(c.Theme().TextMuted).FontSize(12)
+		}
 	})
 }
 

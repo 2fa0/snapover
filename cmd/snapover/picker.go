@@ -183,7 +183,6 @@ func (a *app) pickerView(c *ui.Context) {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, historyIcon).FontSize(18).TextColor(t.TextMuted)
 			ui.Text(c, "复制历史").FontSize(15).Bold().Grow(1)
-			ui.Text(c, "↑↓ 选择 · ↵ 粘贴").FontSize(11).TextColor(t.TextMuted)
 		})
 		field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).Label("搜索快速历史").AutoFocus().Placeholder("搜索内容或来源")
 		if field.Shortcut(0, ui.KeyDown) {
@@ -211,7 +210,7 @@ func (a *app) pickerView(c *ui.Context) {
 		}
 		switch {
 		case len(a.entries) == 0:
-			ui.Text(c, "还没有记录。先复制一段文字。").TextColor(t.TextMuted)
+			ui.Text(c, "还没有记录").TextColor(t.TextMuted)
 		case len(shown) == 0:
 			ui.Text(c, a.pickerSearch.emptyMessage()).TextColor(t.TextMuted)
 		default:
@@ -250,7 +249,7 @@ func (a *app) pickerView(c *ui.Context) {
 		if a.pickFlash != "" {
 			ui.Text(c, a.pickFlash).FontSize(12).TextColor(t.TextMuted)
 		}
-		hint := "↑↓ 选择，回车或双击粘贴到光标处，Esc 关闭"
+		hint := "回车或双击粘贴到光标处，Esc 关闭"
 		if a.pickNeedsAccess {
 			hint = "首次粘贴需要在辅助功能里允许 Snapover"
 		}

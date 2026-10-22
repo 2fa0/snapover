@@ -480,7 +480,9 @@ func (a *app) view(c *ui.Context) {
 					label = "同步已暂停"
 				}
 				ui.Text(c, label).FontSize(12).Bold().SingleLine().ContentTransition(ui.ContentTransition{})
-				if status := a.displayStatus(); status != "" && status != "未连接" && status != "已连接" && status != "已连接 "+link.Name {
+				status := a.displayStatus()
+				// Pairing copy is already on the devices page; don't repeat it under the sidebar.
+				if status != "" && status != "未连接" && status != "已连接" && status != "已连接 "+link.Name && !(a.page == pageDevices && repeatsDevicesPage(status)) {
 					ui.Text(c, status).FontSize(11).TextColor(t.TextMuted).MaxLines(3).ContentTransition(ui.ContentTransition{})
 				}
 			})
@@ -511,11 +513,10 @@ func (a *app) view(c *ui.Context) {
 
 func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
-	pageHeading(c, "设置")
 	settingsGroup(c, "剪贴板同步", func() {
 		a.syncModeSettings(c)
 		ui.Divider(c)
-		if settingSwitch(c, &a.paused, "暂停同步", "仍保留本机复制历史。") {
+		if settingSwitch(c, &a.paused, "暂停同步", "") {
 			a.saveSettings()
 		}
 		ui.Divider(c)
@@ -534,7 +535,7 @@ func (a *app) settingsPage(c *ui.Context) {
 						a.saveTextLimit()
 					}
 					ui.Text(c, "MB").TextColor(t.TextMuted)
-					if ui.Button(c, "应用文本上限").Clicked() {
+					if ui.Button(c, "应用").Label("应用文本上限").Clicked() {
 						a.saveTextLimit()
 					}
 				})
@@ -561,22 +562,18 @@ func (a *app) settingsPage(c *ui.Context) {
 	settingsGroup(c, "复制并同步快捷键", func() { a.copyShortcutSettings(c) })
 	settingsGroup(c, "快速历史快捷键", func() { a.shortcutSettings(c) })
 	settingsGroup(c, "历史存储", func() { a.historyStorageSettings(c) })
-	settingsGroup(c, "启动", func() {
+	ui.Column(c.Key("开机启动")).Padding(16).Radius(12).Background(c.Theme().Surface).Children(func() {
 		if settingSwitch(c, &a.openAtLogin, "开机启动", "") {
 			a.setOpenAtLogin(a.openAtLogin)
 		}
 	})
 	if keepawake.Supported {
-		settingsGroup(c, "保持唤醒", func() { a.keepAwakeSettings(c) })
+		ui.Column(c.Key("防止自动锁屏")).Padding(16).Radius(12).Background(c.Theme().Surface).Children(func() {
+			a.keepAwakeSettings(c)
+		})
 	}
 	settingsGroup(c, "接收文件", func() { a.receiveSettings(c) })
 	settingsGroup(c, "本机与诊断", func() {
-		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, deviceIcon).FontSize(24).TextColor(t.TextMuted)
-			ui.Column(c).Gap(4).Grow(1).Children(func() {
-				ui.Text(c, a.name).Bold()
-			})
-		})
 		ui.Collapsible(c, "设备信息", &a.showIdentity, func() {
 			ui.Column(c).Padding(12, 0).Gap(10).Children(func() {
 				kv(c, "设备 ID", a.deviceID)
@@ -591,8 +588,7 @@ func (a *app) settingsPage(c *ui.Context) {
 			})
 		})
 		ui.Collapsible(c, "连接诊断", &a.showDiagnostics, func() {
-			ui.Column(c).Padding(12, 0).Gap(12).Children(func() {
-				ui.Text(c, "确认对端已启动，并允许本地网络访问。Windows 防火墙需放行 TCP 47821 和 UDP 5353；虚拟网卡不用于连接。").FontSize(12).TextColor(t.TextMuted)
+			ui.Column(c).Padding(12, 0).Children(func() {
 				if ui.Button(c, "测试连接").Clicked() {
 					a.probe()
 				}
@@ -606,7 +602,6 @@ func (a *app) historyPage(c *ui.Context) {
 	var hoverID string
 	var hoverBounds ui.Rect
 	t := c.Theme()
-	pageHeading(c, "复制历史")
 	if a.historyUnavailable(c) {
 		return
 	}
@@ -647,11 +642,14 @@ func (a *app) historyPage(c *ui.Context) {
 	ui.Column(c).Grow(1).Radius(10).Border(1, t.Border).Clip().Children(func() {
 		switch {
 		case len(a.entries) == 0:
-			emptyState(c, historyIcon, "还没有复制历史", "复制文字或图片后会自动保存。")
+			emptyState(c, historyIcon, "还没有复制历史", "")
 		case len(shown) == 0:
-			message := "试试其他关键词，或切换到「全部」。"
+			message := ""
 			if a.query != "" {
 				message = a.historySearch.emptyMessage()
+				if message == "没有匹配的记录。" {
+					message = ""
+				}
 			}
 			emptyState(c, searchIcon, "没有匹配的记录", message)
 		default:
@@ -686,7 +684,7 @@ func (a *app) historyPage(c *ui.Context) {
 		}
 	})
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		if ui.PrimaryButton(c, "复制").Tooltip("复制到剪贴板，也可双击记录。").Disabled(a.histSel < 0 || a.historyPaste != nil || a.pasteWorker != nil || a.historyCleanupPending != nil).Clicked() {
+		if ui.PrimaryButton(c, "复制").Disabled(a.histSel < 0 || a.historyPaste != nil || a.pasteWorker != nil || a.historyCleanupPending != nil).Clicked() {
 			a.pasteHistory()
 		}
 		ui.Toolbar(c, func() {
@@ -971,10 +969,6 @@ func (a *app) pasteHistory() {
 	a.startHistoryPaste(entry.ID, nil)
 }
 
-func section(c *ui.Context, title string) {
-	ui.Text(c, title).Bold().Padding(6, 0, 0, 0)
-}
-
 func kv(c *ui.Context, k, v string) {
 	t := c.Theme()
 	ui.Row(c).Gap(12).Children(func() {
@@ -1079,4 +1073,13 @@ func (a *app) displayStatus() string {
 		return a.syncFailure
 	}
 	return a.status
+}
+
+func repeatsDevicesPage(status string) bool {
+	switch status {
+	case "核对两台电脑的校验码后确认配对", "已确认，等待另一台电脑确认":
+		return true
+	default:
+		return false
+	}
 }

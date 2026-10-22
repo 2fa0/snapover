@@ -163,7 +163,7 @@ func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failu
 				label = displayPickerShortcut(r.key)
 			}
 		}
-		button := ui.Button(c.Key("record"), label).Label("设置" + title).Tooltip("点击后直接按下组合键").Grow(1)
+		button := ui.Button(c.Key("record"), label).Label("设置" + title).Grow(1)
 		if button.Clicked() {
 			a.beginShortcutRecording(kind)
 			button.Focus()
@@ -194,8 +194,6 @@ func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failu
 	if r := a.shortcutRecording; r != nil && r.kind == kind {
 		if !hasFocus || row.Shortcut(0, ui.KeyEscape) {
 			a.cancelShortcutRecording()
-		} else {
-			ui.Text(c, "按下组合键后保存，Esc 取消。").FontSize(12).TextColor(c.Theme().TextMuted)
 		}
 	}
 	if *failure != "" {

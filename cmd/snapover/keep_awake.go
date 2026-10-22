@@ -13,7 +13,7 @@ type keepAwakeSession interface {
 }
 
 func (a *app) keepAwakeSettings(c *ui.Context) {
-	if settingSwitch(c, &a.keepAwake, "防止自动锁屏", "保持屏幕亮着，并在空闲时尝试阻止自动锁屏。关闭窗口后继续运行，会增加耗电。") {
+	if settingSwitch(c, &a.keepAwake, "防止自动锁屏", "") {
 		a.setKeepAwake(a.keepAwake)
 	}
 	message := a.keepAwakeError
@@ -21,12 +21,8 @@ func (a *app) keepAwakeSettings(c *ui.Context) {
 		state := a.keepAwakeWorker.Status()
 		if state.Err != nil {
 			message = "防止自动锁屏已停止：" + state.Err.Error() + "。请关闭开关后重新开启。"
-		} else if message == "" {
-			text := "已请求保持唤醒，自动锁屏效果取决于系统策略。手动锁屏和主动睡眠仍可使用。"
-			if state.Paused {
-				text = "已暂停，返回当前用户桌面后恢复。"
-			}
-			ui.Text(c, text).FontSize(12).TextColor(c.Theme().TextMuted)
+		} else if message == "" && state.Paused {
+			ui.Text(c, "已暂停，返回当前用户桌面后恢复。").FontSize(12).TextColor(c.Theme().TextMuted)
 		}
 		if state.Err == nil {
 			c.After(time.Second)

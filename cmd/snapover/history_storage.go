@@ -29,8 +29,7 @@ func (a *app) historyStorageSettings(c *ui.Context) {
 	busy := a.historyCleanupPending != nil
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, "历史内容容量上限").Grow(1).Bold()
-		input := ui.TextInput(c.Key("history-max-mb"), &a.historyMaxText).Label("历史容量上限，MB").
-			Tooltip("未置顶记录最多保留 1000 条或 30 天；置顶记录计入容量，不自动清理。").Width(84)
+		input := ui.TextInput(c.Key("history-max-mb"), &a.historyMaxText).Label("历史容量上限，MB").Width(84)
 		if input.Submitted() && !busy {
 			a.saveHistoryCapacity()
 		}
@@ -39,7 +38,6 @@ func (a *app) historyStorageSettings(c *ui.Context) {
 			a.saveHistoryCapacity()
 		}
 	})
-	ui.Text(c, "应用后立即清理超出的未置顶记录，从最旧开始。").FontSize(12).TextColor(t.TextMuted)
 	ui.Row(c.Key("history-storage-actions")).Gap(12).Children(func() {
 		if ui.Button(c, "刷新占用").Disabled(busy || a.historyUsagePending != nil).Clicked() {
 			a.historyUsageValid = false
