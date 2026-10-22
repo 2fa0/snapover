@@ -131,7 +131,6 @@ func (r *pickTextReader) view(c *ui.Context) {
 					c.WriteClipboard(r.text)
 				}
 			})
-			ui.Text(c, "大文本或超长行分段显示；全选复制当前段，复制全文保留完整内容。").FontSize(11).TextColor(c.Theme().TextMuted)
 		}
 	})
 }
@@ -189,7 +188,6 @@ func (a *app) openPickText(text string) {
 			t := c.Theme()
 			ui.Column(c).Fill().Padding(16).Gap(12).Background(t.Surface).Children(func() {
 				reader.view(c)
-				ui.Text(c, "可选择文字复制 · Esc 关闭").FontSize(11).TextColor(t.TextMuted)
 			})
 		}),
 	})

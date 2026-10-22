@@ -174,29 +174,13 @@ func (g *networkGuide) view(c *ui.Context) {
 	a, t := g.app, c.Theme()
 	ui.Scroll(c).Fill().Padding(24).Gap(16).Background(t.Background).Children(func() {
 		ui.Text(c, "连接另一台电脑").FontSize(22).Bold()
-		ui.Text(c, "在两台电脑上打开 Snapover，并连接同一 Wi-Fi 或有线网络。").TextColor(t.TextMuted)
-		if g.kind == guideWindows {
-			ui.Text(c, "出现 Windows 防火墙提示时，请允许 Snapover 在你信任的专用网络上通信。").TextColor(t.TextMuted)
-		} else if g.kind == guideMacLocalNetwork {
-			ui.Text(c, "Snapover 需要访问本地网络，才能发现设备、同步剪贴板和发送文件。系统询问时，请选择「允许」。").TextColor(t.TextMuted)
-		}
-		ui.Divider(c)
 		if count := len(a.discovered); count > 0 {
 			ui.Textf(c, "已发现 %d 台电脑", count).Bold()
-			ui.Text(c, "返回「连接设备」，双方点击「添加设备」，选择电脑并核对校验码。完成连接后，这个指引会自动关闭。").TextColor(t.TextMuted)
 		} else if remaining := networkGuideSearchDelay - time.Since(g.searchStarted); remaining > 0 && a.discoveryMessage == "" {
 			ui.Text(c, "正在搜索同一网络内的电脑…").Bold()
 			c.After(remaining)
 		} else {
 			ui.Text(c, "暂未发现其他电脑").Bold()
-			switch g.kind {
-			case guideWindows:
-				ui.Text(c, "确认另一台电脑已打开 Snapover。如果之前取消了防火墙提示，可以按下面的方法重新允许。").TextColor(t.TextMuted)
-			case guideMacLocalNetwork:
-				ui.Text(c, "确认另一台电脑已打开 Snapover，并检查本地网络权限。如果之前选择了「不允许」，可以按下面的方法重新开启。").TextColor(t.TextMuted)
-			default:
-				ui.Text(c, "确认另一台电脑已打开 Snapover，并连接同一网络。也可以返回「连接设备」手填地址。").TextColor(t.TextMuted)
-			}
 			if !g.autoExpanded {
 				g.showSettings, g.autoExpanded = true, true
 			}
@@ -231,8 +215,6 @@ func (g *networkGuide) view(c *ui.Context) {
 		if g.message != "" {
 			ui.Text(c, g.message).TextColor(t.TextMuted)
 		}
-		ui.Divider(c)
-		ui.Text(c, "关闭后不再主动提示。以后仍可从「连接设备 → 连接帮助」打开。").FontSize(12).TextColor(t.TextMuted)
 		if ui.PrimaryButton(c, "关闭指引").Clicked() && g.win != nil {
 			g.win.Close()
 		}

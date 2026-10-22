@@ -128,7 +128,7 @@ func TestSettingsControlsPersistPolicy(t *testing.T) {
 	clickInterface(t, tt, "图片大小上限，MB")
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("8")
-	clickInterface(t, tt, "应用")
+	tt.Key(0, ui.KeyEnter)
 	got, err := settings.Load(filepath.Dir(a.cfg.Path))
 	if err != nil {
 		t.Fatal(err)
@@ -215,8 +215,8 @@ func TestPairedDevicesRevealSearchOnlyWhenAdding(t *testing.T) {
 		t.Fatal("manual connection should remain available on demand")
 	}
 	clickInterface(t, tt, "添加设备")
-	if !tt.HasText("附近的设备") || !tt.HasText("两台电脑连接同一网络") {
-		t.Fatal("adding should reveal discovery and the pairing instructions")
+	if !tt.HasText("附近的设备") || !tt.HasText("等待配对") {
+		t.Fatal("adding should reveal discovery and the pairing countdown")
 	}
 	clickInterface(t, tt, "取消添加")
 	if tt.HasText("附近的设备") {

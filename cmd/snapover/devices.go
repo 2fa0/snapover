@@ -11,7 +11,6 @@ import (
 
 func (a *app) devicesPage(c *ui.Context) {
 	t := c.Theme()
-	pageHeading(c, "连接设备")
 	pending, waiting := a.engine.PendingPair()
 	until := a.engine.PairingUntil()
 	adding := time.Now().Before(until)
@@ -21,7 +20,6 @@ func (a *app) devicesPage(c *ui.Context) {
 	ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Gap(4).Children(func() {
 			if adding && !waiting {
-				ui.Text(c, "两台电脑连接同一网络，并打开「添加设备」。").FontSize(12).TextColor(t.TextMuted)
 				ui.Textf(c, "等待配对 · %d 秒", max(0, int(time.Until(until).Seconds())+1)).FontSize(12).TextColor(t.TextMuted)
 			}
 		})
@@ -49,9 +47,8 @@ func (a *app) devicesPage(c *ui.Context) {
 			ui.Text(c, "核对校验码").FontSize(18).Bold()
 			ui.Textf(c, "%s · %s", displayName(pending.Name, pending.PeerID), platformLabel(pending.Platform)).TextColor(t.TextMuted)
 			ui.Text(c, pending.Code).FontSize(40).Bold().FontFeatures("tnum").Selectable().Padding(6, 0)
-			ui.Text(c, "核对两台电脑的校验码，双方确认后开始同步。").TextColor(t.TextMuted)
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				label := "校验码相同，确认配对"
+				label := "确认配对"
 				if pending.Confirmed {
 					label = "等待对方确认"
 				}
@@ -114,7 +111,7 @@ func (a *app) devicesPage(c *ui.Context) {
 							ui.Text(c, "证书指纹").FontSize(12).TextColor(t.TextMuted)
 							ui.Text(c, identity.FormatFingerprint(dev.Peer.Fingerprint)).Selectable().FontSize(12)
 							if a.confirmRemove == dev.ID {
-								ui.Text(c, "解除后立即断开连接，再次添加需要双方确认。").FontSize(12).TextColor(t.TextMuted)
+								ui.Text(c, "再次添加需要双方确认。").FontSize(12).TextColor(t.TextMuted)
 								ui.Row(c).Gap(8).Children(func() {
 									if ui.Button(c, "确认解除配对").TextColor(t.Danger).Clicked() {
 										a.forget(dev.ID)
@@ -182,7 +179,7 @@ func (a *app) devicesPage(c *ui.Context) {
 				label := "解除全部配对"
 				if a.confirm {
 					label = "确认解除全部配对"
-					ui.Text(c, "立即断开连接，再次添加任何设备都需要双方确认。").FontSize(12).TextColor(t.TextMuted)
+					ui.Text(c, "再次添加任何设备都需要双方确认。").FontSize(12).TextColor(t.TextMuted)
 				}
 				ui.Row(c).Gap(8).Children(func() {
 					if ui.Button(c, label).TextColor(t.Danger).Clicked() {
@@ -204,8 +201,6 @@ func (a *app) devicesPage(c *ui.Context) {
 
 func (a *app) broadcastSection(c *ui.Context) {
 	t := c.Theme()
-	section(c, "广播网段")
-	ui.Text(c, "只在勾选的网段里广播和搜索。全选时，之后新出现的物理网段也会加入。").TextColor(t.TextMuted)
 	rows := liveSegmentRows()
 	sel := a.selection()
 	var physical, virtual []segmentRow
@@ -237,9 +232,6 @@ func (a *app) broadcastSection(c *ui.Context) {
 			a.setDiscovery(discovery.Toggle(sel, keys, row.key, row.checked))
 			sel = a.selection()
 		}
-	}
-	if !sel.All() && !sel.Stopped() {
-		ui.Text(c, "只广播已勾选的网段。新出现的默认不加入。").FontSize(12).TextColor(t.TextMuted)
 	}
 	if sel.HasNew(keys) {
 		ui.Text(c, "有新网段未加入广播。").FontSize(12).TextColor(t.TextMuted)
