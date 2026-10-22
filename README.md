@@ -1,6 +1,6 @@
 # Snapover
 
-当前版本 **0.5.1**，更新内容见 [0.5.1 更新说明](docs/release-notes-0.5.1.md)，本次审计见 [代码审计](docs/code-review-2026-10-15.md)。
+当前版本 **0.5.3**，更新内容见 [0.5.3 更新说明](docs/release-notes-0.5.3.md)，本次审计见 [代码审计](docs/code-review-2026-10-15.md)。
 
 上一轮代码审核的修复、内存测量和验证范围见 [代码审核与内存优化](docs/code-review-2026-10-14.md)。
 
@@ -198,9 +198,9 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o bin/snapover-cli.exe ./cmd/s
 
 一键生成 Windows 11 x64 和 Mac M 系列（arm64）的包：
 
-- `dist/Snapover-0.5.1-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
+- `dist/Snapover-0.5.3-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
 - `dist/darwin-arm64/Snapover.app`
-- `dist/darwin-arm64/Snapover 0.5.1 arm64.dmg`：打开后拖入 Applications
+- `dist/darwin-arm64/Snapover 0.5.3 arm64.dmg`：打开后拖入 Applications
 
 文件名中的版本号自动读取 `mygo.json`。脚本的 Windows 步骤会避开 NSIS，生成 ZIP 包，不生成 Setup 安装器；macOS 沿用当前签名配置。
 
@@ -244,6 +244,8 @@ macOS 从 Cindy 等桌面应用运行测试时，本地网络权限归属于启�
 ## 已知限制
 
 MyGo 的 `WriteImage` 写出 PNG。Windows 会再带一份普通 `CF_DIB`，不是 `CF_DIBV5`；macOS 不会同时写 TIFF。系统截图和普通文本是这一批的完成标准。贴进微信、Word、Photoshop 时透明通道可能丢。
+
+通过远程桌面使用 Windows 时，请关闭该连接的剪贴板共享／重定向，跨设备复制交给 Snapover。RDP 的 `rdpclip.exe` 可能在 Snapover 写入成功后覆盖剪贴板，导致 Ctrl+V 无反应而历史回贴正常；已实机确认关闭 RDP 剪贴板同步可以解决。
 
 换 Wi-Fi 后会重新绑定物理网卡，通过发现更新已配对设备的地址；网络禁用组播时，需要在「连接设备」里手填地址。没有 Developer ID 时，macOS 包只能在打包那台 Mac 上直接打开。Windows 没有代码签名，SmartScreen 可能拦截。
 

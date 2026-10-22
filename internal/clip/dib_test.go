@@ -1,11 +1,35 @@
 package clip
 
 import (
+	"bytes"
 	"encoding/binary"
 	"image"
 	"image/color"
 	"testing"
 )
+
+func TestDIBInitializesHeaderInReusedNativeMemory(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	img.SetNRGBA(0, 0, color.NRGBA{R: 255, A: 255})
+	img.SetNRGBA(1, 0, color.NRGBA{G: 255, A: 255})
+	img.SetNRGBA(0, 1, color.NRGBA{B: 255, A: 255})
+	img.SetNRGBA(1, 1, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+	// GlobalAlloc(GMEM_MOVEABLE) does not zero the destination like Go's make.
+	raw := bytes.Repeat([]byte{0xa5}, 40+4*2*2)
+	encodeDIBInto(raw, img)
+	for _, offset := range []int{16, 24, 28, 32, 36} {
+		if value := binary.LittleEndian.Uint32(raw[offset:]); value != 0 {
+			t.Fatalf("DIB header at offset %d retained native memory: %#x", offset, value)
+		}
+	}
+	back, err := decodeDIB(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if HashImage(img) != HashImage(back) {
+		t.Fatal("DIB in reused native memory changed colors or row order")
+	}
+}
 
 func TestDIBColorAndRowOrder(t *testing.T) {
 	img := image.NewNRGBA(image.Rect(2, 3, 5, 5))
