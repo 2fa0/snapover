@@ -13,6 +13,7 @@ import (
 // SendClipboard sends without changing this machine's clipboard. Success means
 // the selected peer confirmed a successful write, rather than merely receipt.
 func (e *Engine) SendClipboard(ctx context.Context, peerID string, item clip.Item) error {
+	item.ReleaseDecoded()
 	if err := ctx.Err(); err != nil {
 		return err
 	}

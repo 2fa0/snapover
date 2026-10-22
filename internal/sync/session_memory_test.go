@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"math/rand"
 	"net"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,41 @@ import (
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/wire"
 )
+
+func TestQueuesReleaseDecodedImages(t *testing.T) {
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, image.NewNRGBA(image.Rect(0, 0, 64, 64))); err != nil {
+		t.Fatal(err)
+	}
+	item, err := clip.FromPNG(raw.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hasPixels := func(item clip.Item) bool {
+		return !reflect.ValueOf(item).FieldByName("pixels").IsNil()
+	}
+	if !hasPixels(item) {
+		t.Fatal("test requires a transient decoded image")
+	}
+	s := newSession(nil, "peer", false, nil, nil)
+	e := &Engine{localQueue: make(chan localJob, localQueueSize)}
+	for i := range queueSize {
+		if !s.enqueue(item) {
+			t.Fatal("image rejected")
+		}
+		e.ObserveLocal(uint64(i+1), item)
+	}
+	for range queueSize {
+		for _, queued := range []clip.Item{(<-s.out).Item, (<-e.localQueue).item} {
+			if hasPixels(queued) || queued.Hash != item.Hash || !bytes.Equal(queued.PNG, item.PNG) {
+				t.Fatal("queue retained pixels or changed encoded content")
+			}
+		}
+	}
+	if !hasPixels(item) {
+		t.Fatal("queue changed the caller's image ownership")
+	}
+}
 
 func TestSendQueueByteBudgetAndFIFO(t *testing.T) {
 	s := newSession(nil, "peer", false, nil, nil)
