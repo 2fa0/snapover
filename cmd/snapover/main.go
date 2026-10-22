@@ -318,7 +318,7 @@ func newLogger(dataDir string, level slog.Level) *slog.Logger {
 	path := filepath.Join(dir, "snapover.log")
 	exe, _ := os.Executable()
 	fail := func(err error) *slog.Logger {
-		crashlog.Breadcrumb(fmt.Sprintf("普通日志初始化失败 path=%q exe=%q pid=%d logger=file-first-v2 err=%v", path, exe, os.Getpid(), err))
+		crashlog.Record(fmt.Sprintf("普通日志初始化失败 path=%q exe=%q pid=%d logger=file-first-v2 err=%v", path, exe, os.Getpid(), err))
 		return fallback
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -336,7 +336,7 @@ func newLogger(dataDir string, level slog.Level) *slog.Logger {
 		_ = f.Close()
 		return fail(err)
 	}
-	crashlog.Breadcrumb(fmt.Sprintf("普通日志写入已验证 path=%q exe=%q pid=%d logger=file-first-v2", path, exe, os.Getpid()))
+	crashlog.Record(fmt.Sprintf("普通日志写入已验证 path=%q exe=%q pid=%d logger=file-first-v2", path, exe, os.Getpid()))
 	// Windows GUI builds may have no stdout; write the file before it.
 	return slog.New(slog.NewTextHandler(io.MultiWriter(f, os.Stdout), options))
 }
