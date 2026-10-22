@@ -68,6 +68,9 @@ func decodeDIB(raw []byte) (*image.NRGBA, error) {
 func encodeDIBInto(raw []byte, img image.Image) {
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
+	// Native GlobalAlloc memory is not zeroed; initialize BI_RGB and the
+	// unused resolution/palette fields before filling the remaining header.
+	clear(raw[:40])
 	le := binary.LittleEndian
 	le.PutUint32(raw, 40)
 	le.PutUint32(raw[4:], uint32(w))
