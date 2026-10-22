@@ -188,7 +188,7 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o bin/snapover-cli.exe ./cmd/s
 
 ## 编译
 
-依赖钉在 MyGo v0.5.5。本机需要 Go 1.27。
+依赖钉在 MyGo v0.6.2。本机需要 Go 1.27。
 
 在 Mac 上双击 `build.command`，或在项目目录运行：
 
