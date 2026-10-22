@@ -65,28 +65,26 @@ func textRowTruncated(c *ui.Context, entry history.Entry, shown string, title ui
 }
 
 func (a *app) loadPickText(id string, parent *mygo.Window) {
-	if a.pickLoading || a.picker != parent || a.pickPreview.hover.id != id {
+	if a.pickLoading || !a.previewParentActive(parent) || a.pickPreview.hover.id != id {
 		return
 	}
 	a.pickLoading = true
+	request := a.pickPreview.request
 	if a.pickPreview.win != nil {
 		a.pickPreview.win.Invalidate()
 	}
 	go func() {
 		item, err := a.hist.PasteItem(id)
 		mygo.RunOnMain(func() {
-			a.pickLoading = false
-			if a.picker != parent {
+			a.finishPreviewLoad()
+			if !a.previewParentActive(parent) || a.pickPreview.request != request {
 				return
 			}
-			parent.Invalidate()
 			if err != nil {
-				a.pickFlash = "全文加载失败，请重新选择文本后重试"
-				if a.pickPreview.win != nil {
-					a.pickPreview.win.Invalidate()
-				}
+				a.previewError(parent, "全文加载失败，请重新选择文本后重试")
 				return
 			}
+			a.finishPreview(parent)
 			a.openPickText(item.Text)
 		})
 	}()
@@ -204,7 +202,6 @@ func (a *app) openPickText(text string) {
 			a.pickOriginal = nil
 		}
 	})
-	a.closePicker()
 	viewer.Show()
 	viewer.Focus()
 }
