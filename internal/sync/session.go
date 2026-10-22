@@ -118,6 +118,7 @@ func (s *Session) enqueueClipboard(item clip.Item, id string, automatic, explici
 	// The peer needs the original bytes, not our local thumbnail.
 	item.Thumbnail = nil
 	item.Preview = nil
+	item.ReleaseDecoded()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := queuedSize(item)
