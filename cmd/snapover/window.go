@@ -17,6 +17,7 @@ import (
 	"github.com/2fa0/snapover/internal/discovery"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/keepawake"
 	"github.com/2fa0/snapover/internal/lan"
 	"github.com/2fa0/snapover/internal/paste"
 	"github.com/2fa0/snapover/internal/settings"
@@ -55,6 +56,9 @@ type app struct {
 	copyShortcutText          string
 	copyShortcutError         string
 	copyBusy                  bool
+	keepAwake                 bool
+	keepAwakeWorker           keepAwakeSession
+	keepAwakeError            string
 	syncMode                  int
 	syncModeError             string
 	historyMaxText            string
@@ -185,6 +189,7 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		addrs:          addrs,
 		paused:         cfg.Values.Paused,
 		textOnly:       cfg.Values.TextOnly,
+		keepAwake:      cfg.Values.KeepAwake,
 		maxImageText:   strconv.Itoa(cfg.Values.MaxImageMB),
 		maxTextText:    strconv.Itoa(cfg.Values.MaxTextMB),
 		historyMaxText: strconv.Itoa(cfg.Values.HistoryMaxMB),
@@ -261,6 +266,7 @@ func (a *app) open(ctx context.Context) {
 		}))
 	}
 	a.restoreLogin()
+	a.restoreKeepAwake()
 	a.initSendTo()
 	a.startTray()
 	if (!mygo.App.WasOpenedAtLogin() && !a.sendToColdLaunch && a.pendingFileRequest == nil) || a.tray == nil {
@@ -554,6 +560,9 @@ func (a *app) settingsPage(c *ui.Context) {
 			a.setOpenAtLogin(a.openAtLogin)
 		}
 	})
+	if keepawake.Supported {
+		settingsGroup(c, "保持唤醒", func() { a.keepAwakeSettings(c) })
+	}
 	settingsGroup(c, "接收文件", func() { a.receiveSettings(c) })
 	settingsGroup(c, "本机与诊断", func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {

@@ -25,6 +25,7 @@ type Values struct {
 	MaxImageMB     int    `json:"max_image_mb"`
 	MaxTextMB      int    `json:"max_text_mb"`
 	OpenAtLogin    bool   `json:"open_at_login"`
+	KeepAwake      bool   `json:"keep_awake,omitempty"`
 	ReceiveDir     string `json:"receive_dir,omitempty"`
 	DisableSendTo  bool   `json:"disable_send_to,omitempty"`
 	PickerShortcut string `json:"picker_shortcut,omitempty"`
