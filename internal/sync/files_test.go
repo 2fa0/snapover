@@ -9,10 +9,109 @@ import (
 	"testing"
 	"time"
 
+	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/filetransfer"
 	"github.com/2fa0/snapover/internal/wire"
 	"github.com/zeebo/blake3"
 )
+
+func TestSlowFileReceiveKeepsClipboardAndPingMoving(t *testing.T) {
+	a, b := newPair(t)
+	dir := t.TempDir()
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	defer once.Do(func() { close(release) })
+	b.mu.Lock()
+	receiver := b.sess
+	b.mu.Unlock()
+	cancelled := make(chan struct{}, 1)
+	receiver.mu.Lock()
+	receiver.receiveDir = func() string {
+		close(started)
+		<-release
+		return dir
+	}
+	receiver.onFile = func(n Notice) {
+		if n.FileState == "error" {
+			cancelled <- struct{}{}
+		}
+	}
+	receiver.mu.Unlock()
+	a.mu.Lock()
+	sender := a.sess
+	a.mu.Unlock()
+	if err := sender.write(wire.TypeFileBegin, wire.FileBegin{ItemID: "slow", Name: "slow.bin", TotalSize: 1}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("file worker did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := a.SendClipboard(ctx, b.LocalID, mustText(t, "while disk is stalled")); err != nil {
+		t.Fatalf("file work blocked clipboard delivery or its acknowledgment: %v", err)
+	}
+	// A round-trip ping exercises readLoop and the response writer while the
+	// file worker is still blocked, independently of clipboard processing.
+	sender.mu.Lock()
+	before := sender.lastRecv
+	sender.mu.Unlock()
+	if err := sender.write(wire.TypePing, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		sender.mu.Lock()
+		defer sender.mu.Unlock()
+		return sender.lastRecv.After(before)
+	})
+	once.Do(func() { close(release) })
+	if err := sender.write(wire.TypeFileCancel, wire.ImageEnd{ItemID: "slow"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(3 * time.Second):
+		t.Fatal("file cancellation did not finish")
+	}
+	waitFor(t, func() bool { entries, _ := os.ReadDir(dir); return len(entries) == 0 })
+}
+
+func TestFileQueueBoundsAndCloseReleasesFrames(t *testing.T) {
+	left, right := newIdentities(t)
+	client, server := handshakePair(t, left, right)
+	defer client.NetConn().Close()
+	defer server.NetConn().Close()
+	s := newSession(client, "peer", true, discardLog(), nil)
+	// One full-sized transfer fits even when the receiving disk is stalled.
+	frame := make([]byte, wire.ChunkSize+128)
+	for range int(filetransfer.MaxBytes) / wire.ChunkSize {
+		if !s.queueFileFrame(wire.TypeFileChunk, frame) {
+			t.Fatal("legal transfer does not fit the bounded queue")
+		}
+	}
+	if s.queueFileFrame(wire.TypeFileChunk, make([]byte, wire.ChunkSize+1025)) {
+		t.Fatal("oversized file frame accepted")
+	}
+	for s.queueFileFrame(wire.TypeFileChunk, frame) {
+	}
+	if s.fileFrameBytes > fileQueueBytes || len(s.fileFrames) > fileQueueSize {
+		t.Fatal("file queue exceeded its budget")
+	}
+	s.Close()
+	if len(s.fileFrames) != 0 || s.fileFrameBytes != 0 || s.queueFileFrame(wire.TypeFileChunk, frame) {
+		t.Fatal("closed session retained or accepted file frames")
+	}
+	// The clipboard has a separate queue and byte budget.
+	other := newSession(nil, "peer", true, discardLog(), nil)
+	for range fileQueueSize {
+		other.queueFileFrame(wire.TypeFileBegin, []byte("pending"))
+	}
+	if !other.enqueue(clip.Item{Kind: clip.KindText, Text: "clipboard"}) {
+		t.Fatal("file backlog consumed the clipboard queue")
+	}
+}
 
 func TestFileExchangeAndClipboardInterleave(t *testing.T) {
 	a, b := newPair(t)

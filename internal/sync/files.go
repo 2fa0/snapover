@@ -17,6 +17,77 @@ import (
 
 const fileWait = 60 * time.Second
 
+// Existing peers have no chunk acknowledgments. Allow one complete legal file
+// to wait for disk without stalling control/clipboard frames or changing the
+// protocol. Both bytes and frame count remain bounded, including envelopes.
+const (
+	fileQueueSize  = int(filetransfer.MaxBytes)/wire.ChunkSize + 4
+	fileQueueBytes = int(filetransfer.MaxBytes) + fileQueueSize*1024
+)
+
+type fileFrame struct {
+	typ     byte
+	payload []byte
+}
+
+func (s *Session) queueFileFrame(typ byte, payload []byte) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := len(payload)
+	if s.closed || n > wire.ChunkSize+1024 || n > fileQueueBytes-s.fileFrameBytes {
+		return false
+	}
+	select {
+	case s.fileFrames <- fileFrame{typ, payload}:
+		s.fileFrameBytes += n
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Session) fileLoop() {
+	var incoming *fileReceive
+	defer func() {
+		if incoming != nil {
+			incoming.file.Abort()
+			s.fileNotice(incoming, "error", "", "连接已断开，未完成的文件已清理，请重新发送")
+		}
+	}()
+	timer := time.NewTimer(fileWait)
+	timer.Stop()
+	defer timer.Stop()
+	var timeout <-chan time.Time
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-timeout:
+			s.rejectFile(incoming.id, "接收超时，请重新发送")
+			incoming.file.Abort()
+			s.fileNotice(incoming, "error", "", "接收超时，请重新发送")
+			incoming, timeout = nil, nil
+		case frame := <-s.fileFrames:
+			// Close discards queued work, even if another disk call just returned.
+			select {
+			case <-s.done:
+				return
+			default:
+			}
+			incoming = s.receiveFile(frame.typ, frame.payload, incoming)
+			s.mu.Lock()
+			s.fileFrameBytes = max(0, s.fileFrameBytes-len(frame.payload))
+			s.mu.Unlock()
+			timer.Stop()
+			timeout = nil
+			if incoming != nil {
+				timer.Reset(time.Until(incoming.updated.Add(fileWait)))
+				timeout = timer.C
+			}
+		}
+	}
+}
+
 func (e *Engine) SetReceiveDir(dir string) {
 	e.mu.Lock()
 	e.receiveDir = dir

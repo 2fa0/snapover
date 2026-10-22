@@ -64,6 +64,8 @@ type Session struct {
 	admit                    func(queuedItem) (bool, string)
 	inbound                  chan inboundJob
 	inboundBytes             int
+	fileFrames               chan fileFrame
+	fileFrameBytes           int
 }
 
 type inboundJob struct {
@@ -94,6 +96,7 @@ func newSession(conn *tls.Conn, peerID string, weDialed bool, log *slog.Logger, 
 		onItem:        onItem,
 		out:           make(chan queuedItem, queueSize),
 		inbound:       make(chan inboundJob, queueSize),
+		fileFrames:    make(chan fileFrame, fileQueueSize),
 		responses:     make(chan response, 16),
 		lastRecv:      time.Now(),
 		done:          make(chan struct{}),
@@ -238,6 +241,13 @@ func (s *Session) Close() {
 			}
 		}
 		s.queuedBytes = 0
+		for len(s.fileFrames) > 0 {
+			select {
+			case <-s.fileFrames:
+			default:
+			}
+		}
+		s.fileFrameBytes = 0
 		s.mu.Unlock()
 		close(s.done)
 		// Session shutdown also runs while the engine lock is held. Close the
@@ -248,7 +258,7 @@ func (s *Session) Close() {
 
 func (s *Session) run() {
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(5)
 	go func() {
 		defer wg.Done()
 		s.readLoop()
@@ -256,6 +266,10 @@ func (s *Session) run() {
 	go func() {
 		defer wg.Done()
 		s.processLoop()
+	}()
+	go func() {
+		defer wg.Done()
+		s.fileLoop()
 	}()
 	go func() {
 		defer wg.Done()
@@ -271,13 +285,6 @@ func (s *Session) run() {
 func (s *Session) readLoop() {
 	defer s.Close()
 	var asm *assembler
-	var incoming *fileReceive
-	defer func() {
-		if incoming != nil {
-			incoming.file.Abort()
-			s.fileNotice(incoming, "error", "", "连接已断开，未完成的文件已清理，请重新发送")
-		}
-	}()
 	for {
 		typ, payload, err := wire.ReadFrame(s.conn)
 		if err != nil {
@@ -293,15 +300,12 @@ func (s *Session) readLoop() {
 		}
 		s.lastRecv = time.Now()
 		s.mu.Unlock()
-		if incoming != nil && time.Since(incoming.updated) > fileWait {
-			s.rejectFile(incoming.id, "接收超时，请重新发送")
-			s.fileNotice(incoming, "error", "", "接收超时，请重新发送")
-			incoming.file.Abort()
-			incoming = nil
-		}
 		switch typ {
 		case wire.TypeFileBegin, wire.TypeFileChunk, wire.TypeFileEnd, wire.TypeFileCancel:
-			incoming = s.receiveFile(typ, payload, incoming)
+			if !s.queueFileFrame(typ, payload) {
+				s.log.Warn("文件接收队列超出限制，关闭连接", "peer", s.peerID)
+				return
+			}
 		case wire.TypeFileResult:
 			var result wire.FileResult
 			if wire.Unmarshal(payload, &result) == nil {
