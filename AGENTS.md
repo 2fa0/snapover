@@ -94,4 +94,4 @@ git diff --check
 - 先区分：发送、接收写入、写入后被覆盖、目标程序粘贴这几个阶段，结合运行日志和系统剪贴板状态定位，不凭最终粘贴失败推断传输失败。
 - 已确认的案例：Windows 直接 `Ctrl+V` 失败、从 Snapover 历史回贴成功，原因是 RDP 剪贴板重定向在接收成功后覆盖内容，所有者变成 `rdpclip.exe`。关闭远程桌面连接的剪贴板共享并重新连接后解决。遇到同类现象优先检查竞争来源，不直接修改 PNG/DIB 编码或添加重复写入。
 - 保持唤醒的实机步骤见 `docs/keep-awake-validation.md`。
-- 默认数据目录：macOS 为 `~/Library/Application Support/Snapover`，Windows 为 `%AppData%\Snapover`；便携模式和 `-data` 会覆盖路径。运行日志和崩溃日志在数据目录的 `logs/` 下。
+- 默认数据目录：macOS 为 `~/Library/Application Support/Snapover`，Windows 为 `%AppData%\Snapover`；便携模式和 `-data` 会覆盖路径。运行日志和崩溃日志在数据目录的 `logs/` 下。单文件约 1 MiB 轮转并只保留上一份；最早记录超过 7 天的日志和多余备份会清理。不要删除正在使用的 `session.open`。
