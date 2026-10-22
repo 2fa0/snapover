@@ -104,6 +104,17 @@ func Breadcrumb(msg string) {
 	mu.Unlock()
 }
 
+// Record writes one diagnostic line and waits until it reaches disk.
+// Startup uses it when the process may exit before an async breadcrumb is
+// flushed. Hot-path capture must keep using Breadcrumb.
+func Record(msg string) {
+	msg = oneLine(msg)
+	if msg == "" {
+		return
+	}
+	sendEvent(event{text: time.Now().Format(time.RFC3339) + " " + msg + "\n"})
+}
+
 // MarkClean flushes pending diagnostics at normal exit. Unlike a hot-path
 // breadcrumb, shutdown and explicit stack dumps wait for durable storage.
 func MarkClean() {
