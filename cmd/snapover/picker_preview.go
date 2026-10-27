@@ -158,10 +158,14 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 	go func() {
 		var bmp *ui.Bitmap
 		var text string
+		var files history.FilePreview
 		var more bool
 		var err error
 		isText := entry.Kind == string(clip.KindText)
-		if isText {
+		isFiles := entry.Kind == string(clip.KindFiles)
+		if isFiles {
+			files, err = a.hist.FilePreview(id)
+		} else if isText {
 			text, more, err = a.hist.TextPreview(id)
 		} else {
 			bmp, err = previewBitmap(a.hist, id)
@@ -179,6 +183,9 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 			w, h := previewImageSize(entry.Width, entry.Height)
 			if isText {
 				w, h = 396, 300
+			}
+			if isFiles {
+				w, h = 396, max(44, 24+len(files.Items)*18)
 			}
 			if err != nil {
 				w, h = 240, 60
@@ -202,7 +209,9 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 						parent.Invalidate()
 					}
 					box.Children(func() {
-						if isText {
+						if isFiles {
+							pickFilePreview(c, files, err)
+						} else if isText {
 							pickTextPreview(c, textPreview, err)
 						} else if bmp == nil {
 							ui.Text(c, "图片预览加载失败，请重新悬停重试").TextColor(t.TextMuted)
@@ -210,6 +219,10 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 							// Fit the whole picture. A long screenshot becomes a strip;
 							// reading it is the system viewer's job, not this card's.
 							ui.Image(c, bmp).Grow(1).Shrink(1).FillWidth().MaxHeight(float32(h)).Fit(ui.Contain)
+						}
+						if isFiles {
+							ui.Text(c, formatSize(entry.Size)).FontSize(11).TextColor(t.TextMuted).Shrink(0)
+							return
 						}
 						ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
 							meta := fmt.Sprintf("%d × %d", entry.Width, entry.Height)
@@ -245,6 +258,7 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 				bmp = nil
 				text = ""
 				textPreview = nil
+				files = history.FilePreview{}
 				if a.pickPreview.win == p {
 					a.pickPreview.win = nil
 					a.pickPreview.inside = false

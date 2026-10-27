@@ -35,12 +35,7 @@ func (a *app) startTray() {
 		a.refreshTray()
 		return
 	}
-	a.tray.OnClick(func() {
-		a.closePicker()
-		a.tray.SetMenu(a.trayMenu())
-		defer a.tray.SetMenu(nil)
-		a.tray.PopUpMenu()
-	})
+	a.tray.OnClick(a.handleTrayClick)
 	a.tray.OnRightClick(func() { a.togglePicker() })
 	if !template {
 		mygo.Theme.OnUpdated(func() {
@@ -56,6 +51,40 @@ func (a *app) startTray() {
 
 func (a *app) menuIcon(template bool) ([]byte, error) {
 	return trayIconPNG(loadMenuIcon(), !template && mygo.Theme.IsDark())
+}
+
+func (a *app) handleTrayClick() {
+	if runtime.GOOS == "darwin" {
+		if a.trayMenuOpen {
+			return
+		}
+		if a.picker != nil {
+			a.closePicker()
+			return
+		}
+		// performClick from inside the status item's left-up action does
+		// not start menu tracking, so the menu stays until another click
+		// on the icon. Run it on the next turn of the main loop.
+		a.trayMenuOpen = true
+		go func() {
+			mygo.RunOnMain(func() {
+				defer func() { a.trayMenuOpen = false }()
+				a.popupTrayMenu()
+			})
+		}()
+		return
+	}
+	a.closePicker()
+	a.popupTrayMenu()
+}
+
+func (a *app) popupTrayMenu() {
+	if a.tray == nil {
+		return
+	}
+	a.tray.SetMenu(a.trayMenu())
+	defer a.tray.SetMenu(nil)
+	a.tray.PopUpMenu()
 }
 
 func (a *app) refreshTray() {
@@ -87,7 +116,6 @@ func (a *app) trayMenu() *mygo.Menu {
 		{Label: "Snapover · " + appVersionLabel(), Disabled: true},
 		{Label: status, Disabled: true},
 		{Label: "快速历史", Click: func(*mygo.MenuItem, *mygo.Window) { a.togglePicker() }},
-		{Label: "发送文件…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openFiles() }},
 		{Label: "打开窗口", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(a.page) }},
 		{Label: "连接设备", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageDevices) }},
 		{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageSettings) }},

@@ -29,7 +29,7 @@ var (
 	historyIcon  = interfaceIcon("clipboard-document-list")
 	textIcon     = interfaceIcon("document-text")
 	imageIcon    = interfaceIcon("photo")
-	sendIcon     = interfaceIcon("arrow-up-tray")
+	folderIcon   = interfaceIcon("folder")
 	pinIcon      = interfaceIcon("bookmark")
 	searchIcon   = interfaceIcon("magnifying-glass")
 )
@@ -69,7 +69,7 @@ func settingSwitch(c *ui.Context, value *bool, title, description string) bool {
 }
 
 func emptyState(c *ui.Context, icon *ui.SVG, title, description string) {
-	ui.Column(c).Padding(24, 16).Gap(8).AlignItems(ui.Center).Children(func() {
+	arrive(ui.Column(c).Padding(24, 16).Gap(8).AlignItems(ui.Center)).Children(func() {
 		ui.Icon(c, icon).FontSize(28).TextColor(c.Theme().TextMuted)
 		ui.Text(c, title).Bold()
 		if description != "" {
@@ -88,6 +88,8 @@ func (a *app) historyThumb(c *ui.Context, entry history.Entry, t *ui.Theme, sele
 	icon := textIcon
 	if entry.Kind == string(clip.KindImage) {
 		icon = imageIcon
+	} else if entry.Kind == string(clip.KindFiles) && entry.Folder {
+		icon = folderIcon
 	}
 	ui.Column(c).Size(size, size).Radius(6).Background(rowThumbPlaceholder(t, selected)).
 		AlignItems(ui.Center).Justify(ui.Center).Children(func() {

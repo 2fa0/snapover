@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"strconv"
@@ -48,6 +49,8 @@ type app struct {
 	maxImageText              string
 	maxTextText               string
 	maxTextError              string
+	maxFileText               string
+	maxFileError              string
 	shortcutText              string
 	shortcutRecording         *shortcutRecording
 	shortcutError             string
@@ -69,27 +72,28 @@ type app struct {
 	historyUsageVersion       uint64
 	historyUsagePending       chan historyUsageResult
 	historyCleanupPending     chan historyCleanupResult
-	confirmStorageClear       bool
 
-	page            string
-	peer            string
-	query           string
-	status          string
-	syncStatus      string
-	syncFailure     string
-	syncSessionID   string
-	flash           string
-	confirm         bool
-	confirmClear    bool
-	showIdentity    bool
-	showDiagnostics bool
-	showNetwork     bool
-	showAddress     bool
-	showSyncLimits  bool
-	historyKind     int
-	shownEntries    []history.Entry
-	shownSource     []history.Entry
-	shownKind       int
+	page              string
+	peer              string
+	query             string
+	status            string
+	syncStatus        string
+	syncFailure       string
+	syncSessionID     string
+	flash             string
+	pendingToast      string
+	confirm           bool
+	confirmClear      bool
+	showIdentity      bool
+	showDiagnostics   bool
+	showNetwork       bool
+	showAddress       bool
+	showSyncLimits    bool
+	showReceiveFolder bool
+	historyKind       int
+	shownEntries      []history.Entry
+	shownSource       []history.Entry
+	shownKind         int
 
 	discovered       []discovery.Device
 	discoveryMessage string
@@ -117,6 +121,7 @@ type app struct {
 	pickerSearch      historySearch
 	historyPaste      *pasteRequest
 	pasteWorker       *pasteRequest
+	pasteFileCleanup  <-chan struct{}
 	queuedPaste       *pasteRequest
 	notificationOnce  sync.Once
 	notificationQueue chan fileNotification
@@ -124,6 +129,7 @@ type app struct {
 
 	win                *mygo.Window
 	tray               *mygo.Tray
+	trayMenuOpen       bool
 	picker             *mygo.Window
 	pickPreview        pickerPreview
 	pickLoading        bool
@@ -164,10 +170,14 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 	if cfg.Values.MaxTextMB == 0 {
 		cfg.Values.MaxTextMB = settings.DefaultMaxTextMB
 	}
+	if cfg.Values.MaxFileMB <= 0 {
+		cfg.Values.MaxFileMB = settings.DefaultMaxFileMB
+	}
 	if cfg.Values.HistoryMaxMB <= 0 {
 		cfg.Values.HistoryMaxMB = settings.DefaultHistoryMB
 	}
 	engine.SetTextLimit(cfg.Values.MaxTextMB << 20)
+	engine.SetFileLimit(cfg.Values.MaxFileMB << 20)
 	devices := engine.Peers.List()
 	if peer == "" {
 		for _, dev := range devices {
@@ -192,6 +202,7 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		keepAwake:      cfg.Values.KeepAwake,
 		maxImageText:   strconv.Itoa(cfg.Values.MaxImageMB),
 		maxTextText:    strconv.Itoa(cfg.Values.MaxTextMB),
+		maxFileText:    strconv.FormatInt(cfg.Values.MaxFileMB, 10),
 		historyMaxText: strconv.Itoa(cfg.Values.HistoryMaxMB),
 		page:           pageDevices,
 		peer:           peer,
@@ -261,7 +272,6 @@ func (a *app) open(ctx context.Context) {
 			{Label: "设置", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageSettings) }},
 			{Label: "连接设备", Accelerator: "CmdOrCtrl+2", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageDevices) }},
 			{Label: "复制历史", Accelerator: "CmdOrCtrl+3", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageHistory) }},
-			{Label: "发送文件…", Accelerator: "CmdOrCtrl+4", Click: func(*mygo.MenuItem, *mygo.Window) { a.openFiles() }},
 			{Role: mygo.RoleEditMenu},
 		}))
 	}
@@ -324,7 +334,8 @@ func (a *app) openMainWindow() {
 		a.shownSource, a.shownEntries = nil, nil
 		// ListState holds its window host, including the closed UI's resources.
 		a.histList = ui.ListState{Key: a.histList.Key, Label: a.histList.Label, Selected: &a.histSel}
-		a.confirm, a.confirmClear, a.confirmStorageClear = false, false, false
+		a.confirm, a.confirmClear = false, false
+		a.pendingToast = ""
 		if r := a.historyPaste; r != nil && r.picker == nil {
 			a.cancelHistoryPaste()
 		}
@@ -366,7 +377,20 @@ func (a *app) onNotice(n clipsync.Notice) error {
 			dir = history.DirRemote
 			peer = n.PeerName
 		}
-		entry, err := a.hist.Add(dir, peer, n.Item)
+		var entry history.Entry
+		var err error
+		if n.Item.Kind == clip.KindFiles {
+			ctx := a.root
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			entry, err = a.hist.AddFiles(ctx, dir, peer, n.Item, a.engine.FileLimit())
+		} else {
+			entry, err = a.hist.Add(dir, peer, n.Item)
+		}
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
 		if entry.ID != "" {
 			added = &entry
 		}
@@ -426,7 +450,7 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 		if n.ClipboardState == "complete" {
 			a.syncStatus = "已确认写入对端剪贴板"
 		}
-		if n.ClipboardState != "complete" {
+		if n.ClipboardState != "complete" && n.ClipboardState != "sending" {
 			a.flash = n.Message
 			a.syncFailure = n.Message
 		}
@@ -449,6 +473,10 @@ func (a *app) view(c *ui.Context) {
 	if a.page != pageSettings {
 		a.cancelShortcutRecording()
 	}
+	if a.pendingToast != "" {
+		c.Toast(a.pendingToast)
+		a.pendingToast = ""
+	}
 	a.windowShortcuts(c)
 	a.pollHistoryStorage()
 	if a.historyCleanupPending != nil {
@@ -458,10 +486,8 @@ func (a *app) view(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(t.Background).Children(func() {
 		ui.Column(c).Width(184).FillHeight().Padding(12, 8).Gap(12).Background(t.Surface).Children(func() {
-			ui.Column(c).Padding(10, 12, 16, 12).Gap(4).Children(func() {
+			ui.Column(c).Padding(10, 12, 16, 12).Children(func() {
 				ui.Text(c, "Snapover").FontSize(18).Bold()
-				ui.Text(c, appVersionLabel()).FontSize(11).TextColor(t.TextMuted).SingleLine()
-				ui.Text(c, a.name).FontSize(11).TextColor(t.TextMuted).SingleLine()
 			})
 			if ui.Sidebar(c, &a.page, func() {
 				ui.SidebarItem(c, pageSettings, settingsIcon, "设置").Transition(navMotion)
@@ -486,12 +512,6 @@ func (a *app) view(c *ui.Context) {
 					ui.Text(c, status).FontSize(11).TextColor(t.TextMuted).MaxLines(3).ContentTransition(ui.ContentTransition{})
 				}
 			})
-			if ui.Button(c, "").Label("发送文件").Children(func() {
-				ui.Icon(c, sendIcon)
-				ui.Text(c, "发送文件…")
-			}).Margin(0, 6, 4, 6).Clicked() {
-				a.openFiles()
-			}
 		})
 		ui.Column(c.Key("page-host")).Grow(1).FillHeight().Children(func() {
 			ui.Column(c.Key(a.page)).Fill().Padding(28).Gap(20).Transition(pageMotion).Children(func() {
@@ -556,6 +576,23 @@ func (a *app) settingsPage(c *ui.Context) {
 						a.saveSettings()
 					}
 				})
+				ui.Divider(c)
+				ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
+					ui.Column(c).Grow(1).Gap(4).Children(func() {
+						ui.Text(c, "文件大小上限").Bold()
+						ui.Text(c, "默认 200 MB，整批内容合计，双方分别校验。").FontSize(12).TextColor(t.TextMuted)
+					})
+					if ui.TextInput(c.Key("maxfilemb"), &a.maxFileText).Label("文件大小上限，MB").Width(88).Submitted() {
+						a.saveFileLimit()
+					}
+					ui.Text(c, "MB").TextColor(t.TextMuted)
+					if ui.Button(c, "应用").Label("应用文件上限").Clicked() {
+						a.saveFileLimit()
+					}
+				})
+				if a.maxFileError != "" {
+					ui.Text(c, a.maxFileError).FontSize(12).TextColor(t.Danger)
+				}
 			})
 		})
 	})
@@ -572,10 +609,15 @@ func (a *app) settingsPage(c *ui.Context) {
 			a.keepAwakeSettings(c)
 		})
 	}
-	settingsGroup(c, "接收文件", func() { a.receiveSettings(c) })
+	settingsGroup(c, "文件同步", func() {
+		ui.Collapsible(c, "接收文件夹", &a.showReceiveFolder, func() {
+			ui.Column(c).Padding(12, 0).Gap(10).Children(func() { a.receiveSettings(c) })
+		})
+	})
 	settingsGroup(c, "本机与诊断", func() {
 		ui.Collapsible(c, "设备信息", &a.showIdentity, func() {
 			ui.Column(c).Padding(12, 0).Gap(10).Children(func() {
+				kv(c, "名称", a.name)
 				kv(c, "设备 ID", a.deviceID)
 				ui.Text(c, "证书指纹").FontSize(12).TextColor(t.TextMuted)
 				ui.Text(c, a.fingerprint).Selectable().FontSize(12).FontFeatures("tnum")
@@ -615,7 +657,7 @@ func (a *app) historyPage(c *ui.Context) {
 		if a.confirmClear {
 			label = "确认清空"
 		}
-		if ui.Button(c, label).Disabled(len(a.entries) == 0).Clicked() {
+		if press(ui.Button(c, label).Disabled(len(a.entries) == 0)).Clicked() {
 			a.clearHistory()
 		}
 		if a.confirmClear && ui.Button(c, "取消").Clicked() {
@@ -623,7 +665,7 @@ func (a *app) historyPage(c *ui.Context) {
 		}
 	})
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		if ui.Segmented(c, &a.historyKind, "全部", "文本", "图片", "置顶").Label("历史类型").Changed() {
+		if ui.Segmented(c, &a.historyKind, "全部", "文本", "图片", "置顶", "文件").Label("历史类型").Changed() {
 			a.closePickPreview()
 			a.histSel = -1
 			a.histList.ScrollTo(0, ui.Start)
@@ -642,7 +684,7 @@ func (a *app) historyPage(c *ui.Context) {
 	ui.Column(c).Grow(1).Radius(10).Border(1, t.Border).Clip().Children(func() {
 		switch {
 		case len(a.entries) == 0:
-			emptyState(c, historyIcon, "还没有复制历史", "")
+			emptyState(c, historyIcon, "还没有复制历史", "复制文字、图片、文件或文件夹后会出现在这里")
 		case len(shown) == 0:
 			message := ""
 			if a.query != "" {
@@ -684,7 +726,7 @@ func (a *app) historyPage(c *ui.Context) {
 		}
 	})
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		if ui.PrimaryButton(c, "复制").Disabled(a.histSel < 0 || a.historyPaste != nil || a.pasteWorker != nil || a.historyCleanupPending != nil).Clicked() {
+		if press(ui.PrimaryButton(c, "复制").Disabled(a.histSel < 0 || a.historyPaste != nil || a.pasteWorker != nil || a.historyCleanupPending != nil)).Clicked() {
 			a.pasteHistory()
 		}
 		ui.Toolbar(c, func() {
@@ -692,10 +734,10 @@ func (a *app) historyPage(c *ui.Context) {
 			if entry, ok := a.selected(); ok && entry.Pinned {
 				label = "取消置顶"
 			}
-			if ui.Button(c, label).Disabled(a.histSel < 0 || a.historyCleanupPending != nil).Clicked() {
+			if press(ui.Button(c, label).Label(label + "当前记录").Disabled(a.histSel < 0 || a.historyCleanupPending != nil)).Clicked() {
 				a.pinSelected()
 			}
-			if ui.Button(c, "删除").Disabled(a.histSel < 0 || a.historyCleanupPending != nil).Clicked() {
+			if press(ui.Button(c, "删除").Disabled(a.histSel < 0 || a.historyCleanupPending != nil)).Clicked() {
 				a.deleteSelected()
 			}
 		}).Label("记录操作")
@@ -797,7 +839,8 @@ func (a *app) shown() []history.Entry {
 	for _, entry := range entries {
 		if (a.historyKind == 1 && entry.Kind == string(clip.KindText)) ||
 			(a.historyKind == 2 && entry.Kind == string(clip.KindImage)) ||
-			(a.historyKind == 3 && entry.Pinned) {
+			(a.historyKind == 3 && entry.Pinned) ||
+			(a.historyKind == 4 && entry.Kind == string(clip.KindFiles)) {
 			shown = append(shown, entry)
 		}
 	}
@@ -967,6 +1010,10 @@ func (a *app) pasteHistory() {
 		return
 	}
 	a.startHistoryPaste(entry.ID, nil)
+}
+
+func (a *app) toast(msg string) {
+	a.pendingToast = msg
 }
 
 func kv(c *ui.Context, k, v string) {

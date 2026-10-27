@@ -24,7 +24,7 @@ func (a *app) devicesPage(c *ui.Context) {
 			}
 		})
 		if !adding && !waiting {
-			if ui.PrimaryButton(c, "添加设备").Clicked() {
+			if press(ui.PrimaryButton(c, "添加设备")).Clicked() {
 				a.engine.SetPairing(true)
 				a.status = "正在添加设备"
 			}
@@ -52,10 +52,10 @@ func (a *app) devicesPage(c *ui.Context) {
 				if pending.Confirmed {
 					label = "等待对方确认"
 				}
-				if ui.PrimaryButton(c, label).Disabled(pending.Confirmed).Clicked() {
+				if press(ui.PrimaryButton(c, label).Disabled(pending.Confirmed)).Clicked() {
 					a.engine.ConfirmPair(pending.Token, true)
 				}
-				if ui.Button(c, "拒绝配对").Disabled(pending.Confirmed).Clicked() {
+				if press(ui.Button(c, "拒绝配对").Disabled(pending.Confirmed)).Clicked() {
 					a.engine.ConfirmPair(pending.Token, false)
 				}
 			})

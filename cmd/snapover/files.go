@@ -6,10 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/filetransfer"
+	"github.com/2fa0/snapover/internal/settings"
 	clipsync "github.com/2fa0/snapover/internal/sync"
 )
 
@@ -38,21 +41,32 @@ func (a *app) filesView(c *ui.Context) {
 			title = "发送到 " + displayName(link.Name, link.ID)
 		}
 		ui.Text(c, title).FontSize(20).Bold().MaxLines(2)
-		zone := ui.Column(c.Key("file-drop")).FillWidth().Padding(18).Gap(10).Background(t.Surface).Radius(8).Disabled(a.fileBusy || a.fileChoosing)
-		if a.filePath == "" {
-			zone.Border(1, t.Border)
-		}
+		zone := ui.Column(c.Key("file-drop")).FillWidth().Padding(18).Gap(10).Radius(8).Disabled(a.fileBusy || a.fileChoosing)
+		over := float32(0)
 		if zone.FileDragOver() {
-			zone.Border(2, t.Accent)
+			over = 1
 		}
+		over = zone.AnimateTo("over", over, ui.Snappy)
+		zone.Background(t.Surface.Mix(t.Accent.Alpha(0.08), over))
+		line := t.Border.Mix(t.Accent, over)
+		width := 1 + over
+		empty := a.filePath == ""
+		zone.Draw(func(p *ui.Painter, r ui.Rect) {
+			box := ui.Rect{X: r.X + width/2, Y: r.Y + width/2, W: r.W - width, H: r.H - width}
+			if empty {
+				p.StrokeDashed(box, line, 8, width)
+				return
+			}
+			p.Stroke(box, line, 8, width)
+		})
 		if paths := zone.DroppedFiles(); len(paths) > 0 && !a.fileBusy && !a.fileChoosing {
 			a.selectFile(paths)
 		}
 		zone.Children(func() {
 			if a.filePath == "" {
 				ui.Text(c, "把文件拖到这里").Bold()
-				ui.Text(c, "单个文件，最大 50 MB").FontSize(12).TextColor(t.TextMuted)
-				if ui.Button(c, "选择文件…").Disabled(a.fileBusy || a.fileChoosing).Clicked() {
+				ui.Text(c, fmt.Sprintf("单个文件，最大 %d MB", a.engine.FileLimit()>>20)).FontSize(12).TextColor(t.TextMuted)
+				if press(ui.Button(c, "选择文件…").Disabled(a.fileBusy || a.fileChoosing)).Clicked() {
 					a.chooseFile()
 				}
 			} else {
@@ -96,7 +110,7 @@ func (a *app) filesView(c *ui.Context) {
 			ui.Spacer(c)
 			switch {
 			case a.fileSent:
-				if ui.PrimaryButton(c, "完成").Clicked() && a.fileWin != nil {
+				if press(ui.PrimaryButton(c, "完成")).Clicked() && a.fileWin != nil {
 					a.fileWin.Close()
 				}
 			case !online:
@@ -104,7 +118,7 @@ func (a *app) filesView(c *ui.Context) {
 					a.show(pageDevices)
 				}
 			case a.filePath != "":
-				if ui.PrimaryButton(c, "发送").Disabled(!link.FileTransfer || a.fileChoosing).Clicked() {
+				if press(ui.PrimaryButton(c, "发送").Disabled(!link.FileTransfer || a.fileChoosing)).Clicked() {
 					a.sendSelectedFile(false)
 				}
 			}
@@ -265,4 +279,23 @@ func (a *app) receiveSettings(c *ui.Context) {
 		}
 	})
 	a.sendToSettings(c)
+}
+
+func (a *app) saveFileLimit() {
+	n, err := strconv.ParseInt(strings.TrimSpace(a.maxFileText), 10, 64)
+	if err != nil || n < 1 || n > settings.MaxFileMB {
+		a.maxFileError = "文件大小上限须为有效的正整数，单位 MB"
+		return
+	}
+	previous := a.cfg.Values.MaxFileMB
+	a.cfg.Values.MaxFileMB = n
+	if err := a.cfg.Save(); err != nil {
+		a.cfg.Values.MaxFileMB = previous
+		a.maxFileError = "文件上限保存失败，请检查数据目录权限后重试"
+		return
+	}
+	a.engine.SetFileLimit(n << 20)
+	a.maxFileText = strconv.FormatInt(n, 10)
+	a.maxFileError = ""
+	a.status = fmt.Sprintf("文件大小上限已设为 %d MB，下一次传输生效", n)
 }
