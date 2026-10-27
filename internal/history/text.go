@@ -134,6 +134,9 @@ func (s *Store) loadIndex(dec *json.Decoder) (bool, error) {
 
 // Title describes a record using at most maxTitleRunes text runes.
 func Title(entry Entry) string {
+	if entry.Kind == string(clip.KindFiles) {
+		return fileTitle(entry)
+	}
 	if entry.Kind == string(clip.KindImage) {
 		if entry.Width > 0 {
 			return fmt.Sprintf("图片  %d×%d", entry.Width, entry.Height)
@@ -166,7 +169,7 @@ const maxTitleRunes = 80
 // TitleTruncated reports that the list title dropped part of the text.
 // Offloaded bodies keep only that title in memory.
 func TitleTruncated(entry Entry) bool {
-	if entry.Kind == string(clip.KindImage) {
+	if entry.Kind == string(clip.KindImage) || entry.Kind == string(clip.KindFiles) {
 		return false
 	}
 	return entry.TextFile != "" || utf8.RuneCountInString(strings.TrimSpace(entry.Text)) > maxTitleRunes
@@ -174,6 +177,9 @@ func TitleTruncated(entry Entry) bool {
 
 // Matches checks inline text and display fields without copying long bodies.
 func Matches(entry Entry, query string) bool {
+	if entry.Kind == string(clip.KindFiles) {
+		return strcase.Contains(entry.FileName+" "+entry.Peer+" "+entry.SourceApp, query)
+	}
 	if entry.TextFile != "" {
 		return strcase.Contains(entry.Peer+" "+entry.SourceApp+" "+Title(entry), query)
 	}

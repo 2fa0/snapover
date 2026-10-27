@@ -36,7 +36,7 @@ func (e *Engine) ObserveLocal(seq uint64, item clip.Item) {
 		e.HandleLocal(seq, item)
 		return
 	}
-	n := len(item.Text) + len(item.PNG)
+	n := queuedSize(item)
 	e.mu.Lock()
 	full := e.localClosed || n > localQueueBytes-e.localBytes || len(e.localQueue) == cap(e.localQueue)
 	if !full {

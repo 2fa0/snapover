@@ -37,14 +37,17 @@ type Kind string
 const (
 	KindText  Kind = "text"
 	KindImage Kind = "image"
+	KindFiles Kind = "files"
 )
 
 // Item is one clipboard snapshot. Sensitive and Skip items are not synced.
-// Hash is blake3 of LF-normalized text, or of width||height||NRGBA pixels.
+// Hash identifies normalized text, image pixels, or local file references.
 type Item struct {
-	Kind Kind
-	Text string
-	PNG  []byte
+	Kind         Kind
+	Text         string
+	PNG          []byte
+	Files        []string // Absolute local paths; never sent as paths to the peer.
+	CopySequence uint64   // Transient generation used to cancel stale file work.
 	// Thumbnail holds only a small PNG, never the decoded original pixels.
 	Thumbnail []byte
 	Preview   []byte // Bounded PNG for hover previews, not sent to peers.

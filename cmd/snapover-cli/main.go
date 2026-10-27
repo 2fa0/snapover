@@ -27,7 +27,8 @@ const usage = `用法：
 进入对端剪贴板，不改动本机剪贴板。路径包含空格时请加引号。
 文字使用 UTF-8，上限沿用 Snapover 设置（默认 1 MB，最多 20 MB）；
 图片支持 PNG/JPEG/BMP/WebP，最大 20 MB；
-单文件最大 50 MB。可设置 snapover 别名以缩短命令。
+单文件上限沿用 Snapover 设置（默认 200 MB），双方分别校验。
+可设置 snapover 别名以缩短命令。
 退出码：0 成功，1 发送失败，2 参数或输入无效。
 `
 
@@ -99,12 +100,12 @@ func parse(ctx context.Context, args []string, stdin io.Reader) (command, error)
 		if err != nil {
 			return command{}, fmt.Errorf("无法读取文件：%w", err)
 		}
-		limit := int64(50 << 20)
-		if kind == "image" {
-			limit = 20 << 20
+		if !info.Mode().IsRegular() {
+			return command{}, errors.New("请选择一个普通文件，不支持文件夹")
 		}
-		if !info.Mode().IsRegular() || info.Size() > limit {
-			return command{}, fmt.Errorf("请选择 %d MB 以内的普通文件", limit>>20)
+		// File size is checked against the running app's current setting.
+		if kind == "image" && info.Size() > 20<<20 {
+			return command{}, errors.New("请选择 20 MB 以内的普通文件")
 		}
 	}
 	if *dataDir == "" {

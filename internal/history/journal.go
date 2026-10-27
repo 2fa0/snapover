@@ -206,7 +206,7 @@ func (s *Store) applyChange(change historyChange) error {
 		if change.Entry == nil || change.Entry.ID == "" {
 			return errors.New("历史日志中的新增记录无效")
 		}
-		s.entries = append([]Entry{*change.Entry}, s.entries...)
+		s.insertEntryLocked(*change.Entry)
 	case "pin":
 		found := false
 		for i := range s.entries {

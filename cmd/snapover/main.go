@@ -19,6 +19,7 @@ import (
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/control"
 	"github.com/2fa0/snapover/internal/crashlog"
+	"github.com/2fa0/snapover/internal/filetransfer"
 	"github.com/2fa0/snapover/internal/front"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/identity"
@@ -38,7 +39,7 @@ func main() {
 	debug := flag.Bool("debug", false, "输出调试日志")
 	sendFile := flag.String("send-file", "", "直接发送一个文件到已连接的设备")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Snapover 第一批：局域网同步文字和图片。\n\n")
+		fmt.Fprintf(os.Stderr, "Snapover：局域网同步文字、图片、文件和文件夹。\n\n")
 		fmt.Fprintf(os.Stderr, "两边都运行，在「连接设备」中点击「添加设备」，核对校验码并确认。也可用 -peer 填写对端地址。\n\n")
 		flag.PrintDefaults()
 	}
@@ -173,6 +174,7 @@ func main() {
 		Guard:       clip.NewEchoGuard(5 * time.Second),
 		Log:         log,
 	}
+	engine.FileCache = filetransfer.NewClipboardCache(filepath.Join(dataDir, "clipboard-files"))
 	engine.Board = clip.MyGoBoard{TextLimit: engine.TextLimit}
 	engine.SetPolicy(cfg.Values.Paused, cfg.Values.TextOnly, cfg.Values.MaxImageMB<<20)
 	engine.SetManualSync(cfg.Values.ManualSync)
@@ -208,6 +210,7 @@ func main() {
 	})
 
 	mygo.App.WhenReady(func() {
+		go engine.MaintainClipboardCache(ctx)
 		if *check {
 			runCheck(log, engine.Board)
 			mygo.App.Quit()

@@ -13,9 +13,7 @@ import (
 	"github.com/zeebo/blake3"
 )
 
-const MaxBytes int64 = 50 << 20
-
-func Validate(path string) (os.FileInfo, error) {
+func Validate(path string, maxBytes int64) (os.FileInfo, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("无法读取文件：%w", err)
@@ -23,8 +21,8 @@ func Validate(path string) (os.FileInfo, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("请选择一个普通文件，不支持文件夹")
 	}
-	if info.Size() > MaxBytes {
-		return nil, errors.New("文件超过 50 MB，请选择更小的文件")
+	if info.Size() > maxBytes {
+		return nil, fmt.Errorf("文件超过 %d MB，请在设置中调大单文件大小上限或选择更小的文件", maxBytes>>20)
 	}
 	return info, nil
 }
@@ -59,9 +57,9 @@ type Incoming struct {
 	Size, Written int64
 }
 
-func Begin(dir, name string, size int64) (*Incoming, error) {
-	if size < 0 || size > MaxBytes {
-		return nil, errors.New("文件超过 50 MB 或大小无效")
+func Begin(dir, name string, size, maxBytes int64) (*Incoming, error) {
+	if size < 0 || size > maxBytes {
+		return nil, fmt.Errorf("文件超过接收上限 %d MB 或大小无效，请在接收端设置中调整单文件大小上限", maxBytes>>20)
 	}
 	name, err := SafeName(name)
 	if err != nil {

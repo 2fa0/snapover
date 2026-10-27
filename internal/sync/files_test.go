@@ -5,12 +5,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/2fa0/snapover/internal/clip"
-	"github.com/2fa0/snapover/internal/filetransfer"
+	"github.com/2fa0/snapover/internal/settings"
 	"github.com/2fa0/snapover/internal/wire"
 	"github.com/zeebo/blake3"
 )
@@ -84,9 +85,9 @@ func TestFileQueueBoundsAndCloseReleasesFrames(t *testing.T) {
 	defer client.NetConn().Close()
 	defer server.NetConn().Close()
 	s := newSession(client, "peer", true, discardLog(), nil)
-	// One full-sized transfer fits even when the receiving disk is stalled.
+	// One default-sized transfer fits even when the receiving disk is stalled.
 	frame := make([]byte, wire.ChunkSize+128)
-	for range int(filetransfer.MaxBytes) / wire.ChunkSize {
+	for range (settings.DefaultMaxFileMB << 20) / wire.ChunkSize {
 		if !s.queueFileFrame(wire.TypeFileChunk, frame) {
 			t.Fatal("legal transfer does not fit the bounded queue")
 		}
@@ -119,21 +120,21 @@ func TestFileExchangeAndClipboardInterleave(t *testing.T) {
 	a.SetReceiveDir(receiveA)
 	b.SetReceiveDir(receiveB)
 	a.SetPolicy(true, true, 1) // Explicit sending is independent of clipboard policy.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	path := filepath.Join(t.TempDir(), "边界.bin")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Truncate(filetransfer.MaxBytes); err != nil {
+	if err := f.Truncate(settings.DefaultMaxFileMB << 20); err != nil {
 		t.Fatal(err)
 	}
 	f.Close()
 	text := mustText(t, "文件传输期间的剪贴板")
 	var once sync.Once
 	name, err := a.SendFile(ctx, b.LocalID, path, func(done, total int64) {
-		if total != filetransfer.MaxBytes || done > total {
+		if total != (settings.DefaultMaxFileMB<<20) || done > total {
 			t.Errorf("invalid progress %d/%d", done, total)
 		}
 		if done > 0 {
@@ -154,11 +155,18 @@ func TestFileExchangeAndClipboardInterleave(t *testing.T) {
 	if hashFile(t, received) != hashFile(t, path) {
 		t.Fatal("file content changed")
 	}
+	// Raising the limit on an existing connection allows files above 200 MB.
+	const largerSize = (settings.DefaultMaxFileMB + 1) << 20
+	if err := os.Truncate(path, largerSize); err != nil {
+		t.Fatal(err)
+	}
+	a.SetFileLimit(largerSize)
+	b.SetFileLimit(largerSize)
 	if _, err := a.SendFile(ctx, b.LocalID, path, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(receiveB, "边界 (1).bin")); err != nil {
-		t.Fatal(err)
+	if info, err := os.Stat(filepath.Join(receiveB, "边界 (1).bin")); err != nil || info.Size() != largerSize {
+		t.Fatalf("larger file: %v, %v", info, err)
 	}
 	empty := filepath.Join(t.TempDir(), "empty")
 	if err := os.WriteFile(empty, nil, 0o600); err != nil {
@@ -172,6 +180,57 @@ func TestFileExchangeAndClipboardInterleave(t *testing.T) {
 	}
 	if writes := len(a.Board.(*memBoard).Writes()); writes != 0 {
 		t.Fatalf("file changed clipboard: %d", writes)
+	}
+}
+
+func TestFileLimitChecksBothPeersAndSnapshotsActiveTransfer(t *testing.T) {
+	a, b := newPair(t)
+	dir := t.TempDir()
+	b.SetReceiveDir(dir)
+	if a.FileLimit() != 200<<20 || b.FileLimit() != 200<<20 {
+		t.Fatal("unexpected default file limit")
+	}
+	path := filepath.Join(t.TempDir(), "limited.bin")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(2 << 20); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	a.SetFileLimit(1 << 20)
+	if _, err := a.SendFile(ctx, b.LocalID, path, nil); err == nil || !strings.Contains(err.Error(), "1 MB") {
+		t.Fatalf("sender did not enforce its limit: %v", err)
+	}
+	a.SetFileLimit(2 << 20)
+	b.SetFileLimit(1 << 20)
+	if _, err := a.SendFile(ctx, b.LocalID, path, nil); err == nil || !strings.Contains(err.Error(), "接收上限 1 MB") {
+		t.Fatalf("receiver did not enforce its limit: %v", err)
+	}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Fatalf("rejected transfer left files: %v, %v", entries, err)
+	}
+	b.SetFileLimit(2 << 20)
+	if _, err := a.SendFile(ctx, b.LocalID, path, func(done, total int64) {
+		if done == 0 {
+			a.SetFileLimit(1 << 20)
+			b.SetFileLimit(1 << 20)
+		}
+	}); err != nil {
+		t.Fatalf("limit change interrupted an accepted transfer: %v", err)
+	}
+	if hashFile(t, filepath.Join(dir, "limited.bin")) != hashFile(t, path) {
+		t.Fatal("file content changed")
+	}
+	if _, err := a.SendFile(ctx, b.LocalID, path, nil); err == nil {
+		t.Fatal("new transfer ignored the lowered limit")
+	}
+	item := mustText(t, "clipboard after limit change")
+	if err := a.SendClipboard(ctx, b.LocalID, item); err != nil {
+		t.Fatalf("file rejection broke clipboard delivery: %v", err)
 	}
 }
 

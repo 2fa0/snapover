@@ -18,6 +18,9 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if f.Values.MaxTextMB != DefaultMaxTextMB {
 		t.Fatalf("default text mb = %d", f.Values.MaxTextMB)
 	}
+	if f.Values.MaxFileMB != 200 {
+		t.Fatalf("default file mb = %d", f.Values.MaxFileMB)
+	}
 	if f.Values.HistoryMaxMB != DefaultHistoryMB || f.Values.PickerShortcut != "" || f.Values.ManualSync || f.Values.CopyShortcut != "" || f.Values.KeepAwake {
 		t.Fatalf("unexpected defaults: %+v", f.Values)
 	}
@@ -25,6 +28,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	f.Values.TextOnly = true
 	f.Values.MaxImageMB = 8
 	f.Values.MaxTextMB = 10
+	f.Values.MaxFileMB = 1024
 	f.Values.HistoryMaxMB = 512
 	f.Values.PickerShortcut = "Ctrl+Alt+V"
 	f.Values.CopyShortcut = "Ctrl+Alt+C"
@@ -47,6 +51,9 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	}
 	if again.Values.MaxTextMB != 10 {
 		t.Fatalf("text mb = %d", again.Values.MaxTextMB)
+	}
+	if again.Values.MaxFileMB != 1024 {
+		t.Fatalf("file mb = %d", again.Values.MaxFileMB)
 	}
 	if again.Values.HistoryMaxMB != 512 || again.Values.PickerShortcut != "Ctrl+Alt+V" || again.Values.CopyShortcut != "Ctrl+Alt+C" || !again.Values.ManualSync || !again.Values.KeepAwake {
 		t.Fatalf("history or shortcut not restored: %+v", again.Values)
@@ -81,5 +88,41 @@ func TestTextLimitDefaultsAndBounds(t *testing.T) {
 func TestClampImageLimit(t *testing.T) {
 	if clampMB(0) != DefaultMaxImageMB || clampMB(100) != DefaultMaxImageMB || clampMB(3) != 3 {
 		t.Fatal("clamp")
+	}
+}
+
+func TestFileLimitDefaultsAndBounds(t *testing.T) {
+	for _, test := range []struct {
+		json string
+		want int64
+	}{
+		{`{"max_image_mb":8}`, 200},
+		{`{"max_file_mb":0}`, 200},
+		{`{"max_file_mb":-1}`, 200},
+		{`{"max_file_mb":1}`, 1},
+		{`{"max_file_mb":4096}`, 4096},
+		{`{"max_file_mb":8796093022207}`, MaxFileMB},
+		{`{"max_file_mb":9223372036854775807}`, MaxFileMB},
+	} {
+		t.Run(test.json, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(test.json), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Values.MaxFileMB != test.want {
+				t.Fatalf("file limit = %d, want %d", cfg.Values.MaxFileMB, test.want)
+			}
+			if err := cfg.Save(); err != nil {
+				t.Fatal(err)
+			}
+			again, err := Load(dir)
+			if err != nil || again.Values.MaxFileMB != test.want {
+				t.Fatalf("file limit not restored: %+v, %v", again, err)
+			}
+		})
 	}
 }
