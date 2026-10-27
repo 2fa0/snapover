@@ -22,8 +22,10 @@ trap 'echo "打包失败，请查看上方错误，处理后重新运行 build.c
 
 ln -s "$go_bin" "$build_tools/go"
 
-echo "正在从 app.jpg 生成程序图标…"
-/usr/bin/sips -s format png resources/app.jpg --out resources/app.png >/dev/null
+if [[ ! -f resources/app.png ]]; then
+    echo "缺少 resources/app.png" >&2
+    exit 1
+fi
 
 echo "正在编译命令行入口…"
 mkdir -p resources/windows-amd64 resources/darwin-arm64
