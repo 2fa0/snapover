@@ -42,27 +42,14 @@ func (a *app) historyStorageSettings(c *ui.Context) {
 		if ui.Button(c, "刷新占用").Disabled(busy || a.historyUsagePending != nil).Clicked() {
 			a.historyUsageValid = false
 		}
-		label := "清理全部未置顶历史"
-		if a.confirmStorageClear {
-			label = "确认清理未置顶历史"
-		}
-		if ui.Button(c, label).Disabled(busy || len(a.entries) == 0).Clicked() {
-			if a.confirmStorageClear {
-				a.confirmStorageClear = false
-				a.startHistoryCleanup(true, 0)
-			} else {
-				a.confirmStorageClear = true
-			}
-		}
-		if a.confirmStorageClear && ui.Button(c, "取消清理").Clicked() {
-			a.confirmStorageClear = false
-		}
 	})
-	ui.Column(c.Key("history-storage-usage")).Gap(4).Children(func() {
+	ui.Column(c.Key("history-storage-usage")).Gap(8).Children(func() {
 		if a.historyUsageValid && a.historyUsageError == "" {
+			limit := int64(a.cfg.Values.HistoryMaxMB) << 20
+			a.historyQuotaBar(c, a.historyUsage.ContentBytes, limit)
 			ui.Textf(c, "历史内容 %s，其中置顶 %s", storageSize(a.historyUsage.ContentBytes), storageSize(a.historyUsage.PinnedBytes)).FontSize(12).TextColor(t.TextMuted)
 			ui.Textf(c, "磁盘占用 %s", storageSize(a.historyUsage.TotalBytes)).FontSize(12).TextColor(t.TextMuted)
-			if a.historyUsage.PinnedBytes > int64(a.cfg.Values.HistoryMaxMB)<<20 {
+			if a.historyUsage.PinnedBytes > limit {
 				ui.Text(c, "置顶内容已超过容量上限，请取消部分置顶或手动删除。").FontSize(12).TextColor(t.Danger)
 			}
 		} else if a.historyUsagePending != nil {
@@ -87,6 +74,33 @@ func (a *app) historyStorageSettings(c *ui.Context) {
 	if a.historyUsagePending != nil || a.historyCleanupPending != nil {
 		c.After(50 * time.Millisecond)
 	}
+}
+
+func (a *app) historyQuotaBar(c *ui.Context, used, limit int64) {
+	if limit <= 0 {
+		return
+	}
+	t := c.Theme()
+	k := float64(used) / float64(limit)
+	tint := t.Accent
+	switch {
+	case used >= limit:
+		tint = t.Danger
+		k = 1
+	case k > 0.8:
+		tint = t.Warning
+	}
+	ui.Column(c.Key("history-quota")).Gap(6).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "历史内容占用").Grow(1).FontSize(12)
+			ui.Textf(c, "%s / %s", storageSize(used), storageSize(limit)).FontSize(12).TextColor(t.TextMuted).ContentTransition(ui.ContentTransition{Numeric: true})
+		})
+		bar := ui.Box(c).FillWidth().Height(6).Radius(3).Background(t.Border).Clip().Role(ui.RoleMeter).Label("历史内容占用").Range(0, float64(limit), float64(used))
+		bar.Children(func() {
+			fill := ui.Box(c).Absolute().Start(0).Top(0).Bottom(0).Radius(3)
+			fill.Background(fill.AnimateColor("tint", tint, ui.Snappy)).WidthPercent(fill.AnimateTo("w", float32(k)*100, ui.Smooth))
+		})
+	})
 }
 
 func storageSize(bytes int64) string {

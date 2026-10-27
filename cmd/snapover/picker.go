@@ -63,7 +63,7 @@ func (a *app) openPicker(atCaret bool) {
 		}
 		setPickerBounds(a.picker, bounds, scale)
 	} else {
-		a.picker = mygo.NewFlyout(mygo.FlyoutOptions{
+		opts := mygo.FlyoutOptions{
 			Tray:      a.tray,
 			Placement: mygo.PlacementBottom,
 			Gap:       4,
@@ -71,9 +71,15 @@ func (a *app) openPicker(atCaret bool) {
 			Height:    440,
 			Focusable: true,
 			Shadow:    true,
-			Popover:   runtime.GOOS == "darwin",
 			Content:   ui.View(a.pickerView),
-		})
+		}
+		if runtime.GOOS == "darwin" {
+			// A status-item NSPopover does not close on outside clicks in
+			// an accessory app; a focusable flyout panel does.
+			opts.Vibrancy = mygo.VibrancyPopover
+			opts.CornerRadius = 10
+		}
+		a.picker = mygo.NewFlyout(opts)
 	}
 	a.picker.OnClosed(func() {
 		if r := a.historyPaste; r != nil && r.picker == a.picker {

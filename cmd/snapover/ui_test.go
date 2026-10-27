@@ -44,6 +44,38 @@ func clickInterface(t *testing.T, tt *ui.Tester, text string) {
 	}
 }
 
+func TestHistoryCopyPressPathDoesNotPanic(t *testing.T) {
+	for _, reduceMotion := range []bool{false, true} {
+		a := interfaceTestApp(t)
+		a.board = &pasteTestBoard{}
+		item, _ := clip.FromText("待复制")
+		if _, err := a.hist.Add(history.DirLocal, "", item); err != nil {
+			t.Fatal(err)
+		}
+		a.refreshEntries()
+		a.page = pageHistory
+		a.histSel = 0
+		tt := ui.NewTester(a.view, 960, 640)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: reduceMotion})
+		r, ok := tt.Find("复制")
+		if !ok {
+			t.Fatal("copy button missing")
+		}
+		x, y := r.X+r.W/2, r.Y+r.H/2
+		tt.Press(x, y)
+		tt.Frame()
+		if a.historyPaste != nil {
+			t.Fatal("press started a paste before release")
+		}
+		tt.Release(x, y)
+		tt.Frame()
+		clickInterface(t, tt, "设置")
+		if a.page != pageSettings {
+			t.Fatal("page stayed unresponsive after press")
+		}
+	}
+}
+
 func TestMainNavigationRemainsImmediateDuringMotion(t *testing.T) {
 	for _, reduceMotion := range []bool{false, true} {
 		a := interfaceTestApp(t)
@@ -59,6 +91,12 @@ func TestMainNavigationRemainsImmediateDuringMotion(t *testing.T) {
 			if a.page != target.page {
 				t.Fatalf("navigation during animation chose %s, want %s", a.page, target.page)
 			}
+		}
+		if tt.HasText("发送文件…") {
+			t.Fatal("main window still exposes the send-file entry")
+		}
+		if tt.HasText("测试电脑") || tt.HasText(appVersionLabel()) {
+			t.Fatal("sidebar still shows the local device name or version")
 		}
 		tt.Key(0, ui.KeyDown)
 		if a.page != pageDevices {
@@ -121,8 +159,11 @@ func TestSettingsControlsPersistPolicy(t *testing.T) {
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
 	clickInterface(t, tt, "暂停同步开关")
 	clickInterface(t, tt, "只同步文本开关")
-	if tt.HasText("图片大小上限，MB") || tt.HasText("文本大小上限，MB") {
+	if tt.HasText("图片大小上限，MB") || tt.HasText("文本大小上限，MB") || tt.HasText("文件大小上限，MB") {
 		t.Fatal("size limits should stay collapsed until requested")
+	}
+	if tt.HasText("更改接收文件夹…") {
+		t.Fatal("receive folder should stay collapsed until requested")
 	}
 	clickInterface(t, tt, "大小限制")
 	clickInterface(t, tt, "图片大小上限，MB")

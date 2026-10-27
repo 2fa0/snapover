@@ -79,30 +79,21 @@ func TestHistoryCapacitySaveFailureDoesNotDeleteData(t *testing.T) {
 	}
 }
 
-func TestStorageClearRequiresConfirmationAndKeepsPins(t *testing.T) {
+func TestStorageSettingsDoNotClearHistory(t *testing.T) {
 	a := interfaceTestApp(t)
-	item, _ := clip.FromText("pinned")
-	entry, err := a.hist.Add(history.DirLocal, "", item)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := a.hist.SetPinned(entry.ID, true); err != nil {
-		t.Fatal(err)
-	}
-	item, _ = clip.FromText("remove")
+	item, _ := clip.FromText("keep")
 	if _, err := a.hist.Add(history.DirLocal, "", item); err != nil {
 		t.Fatal(err)
 	}
 	a.refreshEntries()
 	tt := ui.NewTester(func(c *ui.Context) { ui.Column(c).Fill().Gap(12).Children(func() { a.historyStorageSettings(c) }) }, 850, 600)
-	clickInterface(t, tt, "清理全部未置顶历史")
-	if len(a.hist.List()) != 2 || a.historyCleanupPending != nil || !a.confirmStorageClear {
-		t.Fatalf("first click: entries=%d pending=%v confirmation=%v", len(a.hist.List()), a.historyCleanupPending != nil, a.confirmStorageClear)
+	if !tt.HasText("刷新占用") || !tt.HasText("历史容量上限，MB") {
+		t.Fatal("storage settings lost capacity controls")
 	}
-	clickInterface(t, tt, "确认清理未置顶历史")
-	waitHistoryCleanup(t, a)
-	if len(a.entries) != 1 || a.entries[0].ID != entry.ID || !a.entries[0].Pinned {
-		t.Fatal("cleanup removed pin")
+	for _, label := range []string{"清理全部未置顶历史", "确认清理未置顶历史", "取消清理"} {
+		if tt.HasText(label) {
+			t.Fatalf("settings still expose history clearing: %s", label)
+		}
 	}
 }
 
@@ -153,5 +144,25 @@ func TestHistoryStorageIgnoresStaleErrorsAndRefreshesPartialCleanup(t *testing.T
 	a.pollHistoryStorage()
 	if len(a.entries) != 0 || a.historyCapacityError == "" || a.historyUsageValid {
 		t.Fatal("partial cleanup did not refresh live entries")
+	}
+}
+
+func TestHistoryQuotaBarShowsUsedOfLimit(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.cfg.Values.HistoryMaxMB = 2
+	a.historyUsageValid = true
+	a.historyUsage = history.Usage{ContentBytes: 1 << 20, PinnedBytes: 256 << 10, TotalBytes: (1 << 20) + 8}
+	tt := ui.NewTester(func(c *ui.Context) { ui.Column(c).Fill().Gap(12).Children(func() { a.historyStorageSettings(c) }) }, 850, 600)
+	if !tt.HasText("历史内容占用") || !tt.HasText("1.0 MB / 2.0 MB") {
+		t.Fatal("quota bar did not show used and limit")
+	}
+	if !tt.HasText("历史内容 1.0 MB，其中置顶 256.0 KB") {
+		t.Fatal("quota bar replaced the existing usage copy")
+	}
+	a.historyUsage.PinnedBytes = 3 << 20
+	a.historyUsage.ContentBytes = 3 << 20
+	tt.Frame()
+	if !tt.HasText("3.0 MB / 2.0 MB") || !tt.HasText("置顶内容已超过容量上限，请取消部分置顶或手动删除。") {
+		t.Fatal("over-limit usage lost the quota text or pinned warning")
 	}
 }

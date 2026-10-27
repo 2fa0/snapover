@@ -113,3 +113,76 @@ func TestPickerEscapeCancelsReadyPasteBeforeClipboardWrite(t *testing.T) {
 		t.Fatal("Escape did not cancel the ready paste before publishing it")
 	}
 }
+
+func TestHistoryPasteSuccessQueuesToastOnce(t *testing.T) {
+	a := interfaceTestApp(t)
+	board := &pasteTestBoard{}
+	a.board = board
+	item, _ := clip.FromText("toast me")
+	entry, err := a.hist.Add("local", "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.refreshEntries()
+	a.flash = "正在读取历史…"
+	r := &pasteRequest{id: entry.ID, result: make(chan pasteResult, 1)}
+	a.historyPaste = r
+	r.result <- pasteResult{item: item}
+	a.completeHistoryPaste(r)
+	if a.pendingToast != "已写回剪贴板" || a.flash != "" || a.historyPaste != nil {
+		t.Fatalf("success did not queue a one-shot toast: toast=%q flash=%q paste=%v", a.pendingToast, a.flash, a.historyPaste)
+	}
+	tt := ui.NewTester(a.view, 960, 640)
+	if a.pendingToast != "" {
+		t.Fatal("main window view did not consume the toast")
+	}
+	if !tt.HasText("已写回剪贴板") {
+		t.Fatal("toast text was not shown")
+	}
+	tt.Frame()
+	if a.pendingToast != "" {
+		t.Fatal("later frames requeued the toast")
+	}
+}
+
+func TestHistoryPasteSuccessKeepsUnrelatedFlash(t *testing.T) {
+	a := interfaceTestApp(t)
+	board := &pasteTestBoard{}
+	a.board = board
+	item, _ := clip.FromText("keep flash")
+	entry, err := a.hist.Add("local", "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.refreshEntries()
+	a.flash = "写入失败"
+	r := &pasteRequest{id: entry.ID, result: make(chan pasteResult, 1)}
+	a.historyPaste = r
+	r.result <- pasteResult{item: item}
+	a.completeHistoryPaste(r)
+	if a.flash != "写入失败" || a.pendingToast != "已写回剪贴板" {
+		t.Fatal("success cleared an unrelated flash")
+	}
+}
+
+func TestClosedMainWindowDropsQueuedPasteToast(t *testing.T) {
+	a := interfaceTestApp(t)
+	board := &pasteTestBoard{}
+	a.board = board
+	item, _ := clip.FromText("late toast")
+	entry, err := a.hist.Add("local", "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.refreshEntries()
+	r := &pasteRequest{id: entry.ID, result: make(chan pasteResult, 1)}
+	a.historyPaste = r
+	a.pendingToast = ""
+	// Closing the main window cancels an in-flight history paste.
+	a.cancelHistoryPaste()
+	r.result <- pasteResult{item: item}
+	a.completeHistoryPaste(r)
+	if a.pendingToast != "" || len(board.writes) != 0 {
+		t.Fatal("closed window still toasted or wrote a late paste")
+	}
+}

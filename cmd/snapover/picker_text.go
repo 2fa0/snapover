@@ -45,6 +45,8 @@ func rowNeedsPreview(c *ui.Context, entry history.Entry, shown string, title ui.
 	switch entry.Kind {
 	case string(clip.KindImage):
 		return true
+	case string(clip.KindFiles):
+		return entry.Folder || entry.FileCount > 1 || textRowTruncated(c, entry, shown, title)
 	case string(clip.KindText):
 		return textRowTruncated(c, entry, shown, title)
 	default:

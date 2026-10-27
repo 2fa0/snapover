@@ -61,7 +61,7 @@ func (s *historySearch) filter(root context.Context, store *history.Store, entri
 	s.query = q
 	needsDisk := false
 	for _, entry := range entries {
-		if entry.TextFile != "" {
+		if entry.TextFile != "" || entry.FileBundle != "" {
 			needsDisk = true
 			break
 		}

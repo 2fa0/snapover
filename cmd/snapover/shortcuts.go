@@ -24,8 +24,6 @@ func (a *app) windowShortcuts(c *ui.Context) {
 		a.show(pageDevices)
 	case c.Shortcut(ui.Ctrl, ui.Key3):
 		a.show(pageHistory)
-	case c.Shortcut(ui.Ctrl, ui.Key4):
-		a.openFiles()
 	}
 }
 

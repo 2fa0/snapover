@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/settings"
 )
 
 func TestFilesViewFollowsTransferState(t *testing.T) {
@@ -58,5 +60,74 @@ func TestFilesViewFollowsTransferState(t *testing.T) {
 	}
 	if !tt.HasText("next.txt") || !tt.HasText("更换…") {
 		t.Fatal("selected file is missing its summary or replacement action")
+	}
+}
+
+func TestFileLimitSettingAppliesAndPersists(t *testing.T) {
+	a := interfaceTestApp(t)
+	tt := ui.NewTester(a.settingsPage, 960, 1200)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	clickInterface(t, tt, "大小限制")
+	clickInterface(t, tt, "文件大小上限，MB")
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("1024")
+	clickInterface(t, tt, "应用文件上限")
+	got, err := settings.Load(filepath.Dir(a.cfg.Path))
+	if err != nil || got.Values.MaxFileMB != 1024 || a.engine.FileLimit() != 1024<<20 {
+		t.Fatalf("file limit was not applied: %+v, %v", got, err)
+	}
+	for _, value := range []string{"", "abc", "0", "-1", "1.5", "8796093022208", "9223372036854775808"} {
+		a.maxFileText = value
+		a.saveFileLimit()
+		if a.maxFileError == "" || a.cfg.Values.MaxFileMB != 1024 || a.engine.FileLimit() != 1024<<20 {
+			t.Fatalf("invalid file limit %q changed the setting", value)
+		}
+	}
+	a.maxFileText = " 4096 "
+	a.saveFileLimit()
+	if a.maxFileError != "" || a.maxFileText != "4096" {
+		t.Fatal("valid limit did not clear validation error")
+	}
+	reopened, err := settings.Load(filepath.Dir(a.cfg.Path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := newApp(a.engine, a.hist, reopened, &identity.Identity{}, ":47821", nil, "")
+	if b.maxFileText != "4096" || b.engine.FileLimit() != 4096<<20 {
+		t.Fatal("file limit was not restored on startup")
+	}
+	view := ui.NewTester(b.filesView, 460, 340)
+	if !view.HasText("单个文件，最大 4096 MB") {
+		t.Fatal("send window does not show configured limit")
+	}
+}
+
+func TestFileLimitSettingAccessibleFromMainSettingsPage(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.page = pageSettings
+	tt := ui.NewTester(a.view, 960, 640)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	if tt.HasText("文件大小上限，MB") || tt.HasText("更改接收文件夹…") {
+		t.Fatal("file settings should stay collapsed until requested")
+	}
+	clickInterface(t, tt, "大小限制")
+	clickInterface(t, tt, "文件大小上限，MB")
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("512")
+	clickInterface(t, tt, "应用文件上限")
+	if a.cfg.Values.MaxFileMB != 512 || a.engine.FileLimit() != 512<<20 {
+		t.Fatal("file limit could not be changed from the main settings page")
+	}
+}
+
+func TestFileLimitSaveFailureKeepsActiveLimit(t *testing.T) {
+	a := interfaceTestApp(t)
+	if err := os.Mkdir(a.cfg.Path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	a.maxFileText = "1024"
+	a.saveFileLimit()
+	if a.maxFileError == "" || a.cfg.Values.MaxFileMB != 200 || a.engine.FileLimit() != 200<<20 {
+		t.Fatal("failed save changed the active file limit")
 	}
 }
