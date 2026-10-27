@@ -11,13 +11,15 @@ import (
 	"github.com/zeebo/blake3"
 )
 
+const testMaxBytes int64 = 200 << 20
+
 func TestReceivePublishesCompleteFileWithoutOverwrite(t *testing.T) {
 	dir := receiveTestDir(t)
 	original := filepath.Join(dir, "报告.txt")
 	if err := os.WriteFile(original, []byte("original"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	f, err := Begin(dir, "报告.txt", 3)
+	f, err := Begin(dir, "报告.txt", 3, testMaxBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,18 +48,18 @@ func TestReceivePublishesCompleteFileWithoutOverwrite(t *testing.T) {
 func TestRejectInvalidFilesAndChunks(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"../escape", "C:\\escape", "", "..", "/absolute"} {
-		if f, err := Begin(dir, name, 0); err == nil {
+		if f, err := Begin(dir, name, 0, testMaxBytes); err == nil {
 			f.Abort()
 			t.Fatalf("accepted %q", name)
 		}
 	}
-	for _, size := range []int64{-1, MaxBytes + 1} {
-		if f, err := Begin(dir, "file", size); err == nil {
+	for _, size := range []int64{-1, testMaxBytes + 1} {
+		if f, err := Begin(dir, "file", size, testMaxBytes); err == nil {
 			f.Abort()
 			t.Fatalf("accepted size %d", size)
 		}
 	}
-	f, err := Begin(dir, "file", 2)
+	f, err := Begin(dir, "file", 2, testMaxBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +81,7 @@ func TestRejectInvalidFilesAndChunks(t *testing.T) {
 
 func TestEmptyFileAndSizeBoundary(t *testing.T) {
 	dir := t.TempDir()
-	f, err := Begin(dir, "empty", 0)
+	f, err := Begin(dir, "empty", 0, testMaxBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,23 +90,23 @@ func TestEmptyFileAndSizeBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := Validate(path)
+	info, err := Validate(path, testMaxBytes)
 	if err != nil || info.Size() != 0 {
 		t.Fatalf("%v %v", info, err)
 	}
-	if err := os.Truncate(path, MaxBytes); err != nil {
+	if err := os.Truncate(path, testMaxBytes); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Validate(path); err != nil {
+	if _, err := Validate(path, testMaxBytes); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Truncate(path, MaxBytes+1); err != nil {
+	if err := os.Truncate(path, testMaxBytes+1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Validate(path); err == nil {
+	if _, err := Validate(path, testMaxBytes); err == nil {
 		t.Fatal("accepted oversized file")
 	}
-	if _, err := Validate(dir); err == nil {
+	if _, err := Validate(dir, testMaxBytes); err == nil {
 		t.Fatal("accepted directory")
 	}
 }
@@ -128,7 +130,7 @@ func TestConcurrentReceivesDoNotOverwrite(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			data := []byte(fmt.Sprintf("content %d", i))
-			f, err := Begin(dir, "same.txt", int64(len(data)))
+			f, err := Begin(dir, "same.txt", int64(len(data)), testMaxBytes)
 			if err != nil {
 				errors <- err
 				return

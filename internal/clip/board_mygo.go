@@ -71,6 +71,20 @@ func (b MyGoBoard) Snapshot() (Item, error) {
 	if sens, why := Sensitive(all, readFormat); sens {
 		return Item{Sensitive: true, Skip: why}, nil
 	}
+	if HasFiles(all) {
+		paths, err := readClipboardFiles()
+		if err != nil {
+			if errors.Is(err, ErrClipboardBusy) {
+				return Item{}, err
+			}
+			return Item{Skip: "无法读取文件剪贴板"}, nil
+		}
+		item, err := FromFiles(paths)
+		if err != nil {
+			return Item{Skip: err.Error()}, nil
+		}
+		return item, nil
+	}
 	if HasImage(all) {
 		item, err := readClipboardImage()
 		if err != nil {
@@ -129,6 +143,32 @@ func (MyGoBoard) prepareWrite(item Item, remote bool) (PreparedWrite, error) {
 		if publish, handled, err := prepareClipboardImage(item, remote); handled {
 			return publish, err
 		}
+	}
+	if item.Kind == KindFiles {
+		data, err := transfer.FileData(item.Files...)
+		if err != nil {
+			return PreparedWrite{}, err
+		}
+		if len(item.Files) == 0 {
+			return PreparedWrite{}, errEmptyWrite
+		}
+		if remote {
+			var items []transfer.Item
+			for _, file := range data.Items() {
+				var reps []transfer.Representation
+				for _, format := range file.Formats() {
+					raw, err := file.Read(format)
+					if err != nil {
+						return PreparedWrite{}, err
+					}
+					reps = append(reps, transfer.Bytes(format, raw))
+				}
+				reps = append(reps, transfer.Bytes(remoteFormat, remoteMarker))
+				items = append(items, transfer.NewItem(reps...))
+			}
+			data = transfer.New(items...)
+		}
+		return PreparedWrite{Publish: func() error { return publishClipboard(data, item.Kind, item.Size) }}, nil
 	}
 	var reps []transfer.Representation
 	switch item.Kind {

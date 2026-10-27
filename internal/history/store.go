@@ -2,6 +2,7 @@ package history
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,20 +33,24 @@ const (
 
 // Entry is one clipboard snapshot kept for the history page.
 type Entry struct {
-	ID        string    `json:"id"`
-	At        time.Time `json:"at"`
-	Dir       string    `json:"dir"`
-	Kind      string    `json:"kind"`
-	Text      string    `json:"text,omitempty"`
-	TextFile  string    `json:"text_file,omitempty"`
-	Width     int       `json:"width,omitempty"`
-	Height    int       `json:"height,omitempty"`
-	Size      int       `json:"size,omitempty"`
-	Peer      string    `json:"peer,omitempty"`
-	ImageFile string    `json:"image,omitempty"`
-	ThumbFile string    `json:"thumb,omitempty"`
-	Pinned    bool      `json:"pinned,omitempty"`
-	SourceApp string    `json:"source_app,omitempty"`
+	ID         string    `json:"id"`
+	At         time.Time `json:"at"`
+	Dir        string    `json:"dir"`
+	Kind       string    `json:"kind"`
+	Text       string    `json:"text,omitempty"`
+	TextFile   string    `json:"text_file,omitempty"`
+	Width      int       `json:"width,omitempty"`
+	Height     int       `json:"height,omitempty"`
+	Size       int       `json:"size,omitempty"`
+	Peer       string    `json:"peer,omitempty"`
+	ImageFile  string    `json:"image,omitempty"`
+	ThumbFile  string    `json:"thumb,omitempty"`
+	Pinned     bool      `json:"pinned,omitempty"`
+	SourceApp  string    `json:"source_app,omitempty"`
+	FileBundle string    `json:"file_bundle,omitempty"`
+	FileName   string    `json:"file_name,omitempty"`
+	FileCount  int       `json:"file_count,omitempty"`
+	Folder     bool      `json:"folder,omitempty"`
 }
 
 // Store keeps the newest clipboard items on disk.
@@ -61,6 +67,7 @@ type Store struct {
 	journalBytes int64
 	capacity     int64
 	contentSizes map[string]int64
+	fileEpoch    uint64
 	disabled     error
 }
 
@@ -79,6 +86,18 @@ func Open(dir string) (*Store, error) {
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "opened"), 0o700); err != nil {
 		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "files"), 0700); err != nil {
+		return nil, err
+	}
+	staging, err := os.ReadDir(filepath.Join(dir, "files"))
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range staging {
+		if strings.HasPrefix(file.Name(), ".snapover-clipboard-") && !file.IsDir() {
+			_ = os.Remove(filepath.Join(dir, "files", file.Name()))
+		}
 	}
 	s := &Store{dir: dir, capacity: DefaultMaxBytes, contentSizes: make(map[string]int64)}
 	f, err := os.Open(s.indexPath())
@@ -108,10 +127,16 @@ func Open(dir string) (*Store, error) {
 	return s, nil
 }
 
-// Add stores a text or image item. dir is DirLocal or DirRemote.
+// Add stores a clipboard snapshot. dir is DirLocal or DirRemote.
 func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 	if err := s.errDisabled(); err != nil {
 		return Entry{}, err
+	}
+	if item.Kind == clip.KindFiles {
+		s.mu.Lock()
+		limit := s.capacity
+		s.mu.Unlock()
+		return s.AddFiles(context.Background(), dir, peer, item, limit)
 	}
 	if item.Kind != clip.KindText && item.Kind != clip.KindImage {
 		return Entry{}, errors.New("没有可记录的内容")
@@ -154,6 +179,11 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 			_ = os.WriteFile(filepath.Join(s.dir, "previews", id+".png"), item.Preview, 0o600)
 		}
 	}
+	return s.addLocked(entry)
+}
+
+// addLocked commits an entry only after its external content is ready.
+func (s *Store) addLocked(entry Entry) (Entry, error) {
 	if s.capacity > 0 {
 		required, err := s.entryBytesLocked(entry)
 		if err != nil {
@@ -173,17 +203,33 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 		}
 	}
 	before := s.entries
-	s.entries = append([]Entry{entry}, s.entries...)
+	s.insertEntryLocked(entry)
 	drop, err := s.trimLocked()
 	if err != nil {
 		s.entries = before
 		return Entry{}, errors.Join(err, s.removeFiles([]Entry{entry}))
+	}
+	if _, kept := s.findLocked(entry.ID); !kept {
+		s.entries = before
+		return Entry{}, errors.Join(errors.New("历史容量不足，未保存本条内容"), s.removeFiles([]Entry{entry}))
 	}
 	if err := s.persistLocked(historyChange{Op: "add", Entry: &entry, Drop: entryIDs(drop)}); err != nil {
 		s.entries = before
 		return Entry{}, errors.Join(err, s.removeFiles([]Entry{entry}))
 	}
 	return entry, s.removeFiles(drop)
+}
+
+func (s *Store) insertEntryLocked(entry Entry) {
+	before := s.entries
+	index := 0
+	for index < len(s.entries) && s.entries[index].At.After(entry.At) {
+		index++
+	}
+	s.entries = make([]Entry, 0, len(before)+1)
+	s.entries = append(s.entries, before[:index]...)
+	s.entries = append(s.entries, entry)
+	s.entries = append(s.entries, before[index:]...)
 }
 
 func (s *Store) List() []Entry {
@@ -232,6 +278,9 @@ func (s *Store) readItem(id string, forPaste bool) (clip.Item, error) {
 	s.mu.Unlock()
 	if !ok {
 		return clip.Item{}, os.ErrNotExist
+	}
+	if entry.Kind == string(clip.KindFiles) {
+		return clip.Item{}, errors.New("文件历史需要先准备粘贴副本")
 	}
 	if entry.Kind == string(clip.KindText) {
 		if entry.TextFile != "" {
@@ -357,6 +406,7 @@ func (s *Store) Clear() error {
 		s.entries = before
 		return err
 	}
+	s.fileEpoch++
 	return errors.Join(s.removeFiles(drop), s.cleanOrphansLocked())
 }
 
@@ -422,6 +472,14 @@ func (s *Store) removeFiles(entries []Entry) error {
 	}
 	for _, entry := range entries {
 		delete(s.contentSizes, entry.ID)
+		if entry.FileBundle != "" {
+			path, err := s.bundlePath(entry.FileBundle)
+			if err != nil {
+				failures = append(failures, err)
+			} else {
+				remove(path)
+			}
+		}
 		if entry.TextFile != "" {
 			path, err := s.textPath(entry.TextFile)
 			if err != nil {

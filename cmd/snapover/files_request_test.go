@@ -45,7 +45,7 @@ func TestFileRequestValidationAndBusyState(t *testing.T) {
 	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	a := &app{}
+	a := &app{engine: &clipsync.Engine{}}
 	if !a.prepareFileRequest([]string{path}) || a.filePath != path || a.fileSize != 5 {
 		t.Fatalf("file not selected: %+v", a)
 	}

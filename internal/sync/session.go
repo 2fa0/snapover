@@ -2,15 +2,18 @@ package sync
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/filetransfer"
 	"github.com/2fa0/snapover/internal/identity"
 	"github.com/2fa0/snapover/internal/wire"
 	"github.com/oklog/ulid/v2"
@@ -30,13 +33,17 @@ var imageAssembleWait = 30 * time.Second
 
 // Session is one live peer connection after Hello has been accepted.
 type Session struct {
-	conn      *tls.Conn
-	peerID    string
-	sessionID string
-	weDialed  bool
-	log       *slog.Logger
-	onItem    func(clip.Item) error
-	out       chan queuedItem
+	conn              *tls.Conn
+	ctx               context.Context
+	cancel            context.CancelFunc
+	clipboardVersion  atomic.Uint64
+	clipboardSequence func() (uint64, error)
+	peerID            string
+	sessionID         string
+	weDialed          bool
+	log               *slog.Logger
+	onItem            func(clip.Item) error
+	out               chan queuedItem
 
 	mu                       sync.Mutex
 	writeMu                  sync.Mutex
@@ -46,7 +53,13 @@ type Session struct {
 	done                     chan struct{}
 	once                     sync.Once
 	fileSupported            bool
+	fileClipboardSupported   bool
+	fileCache                *filetransfer.ClipboardCache
+	captureFileClipboard     func(uint64, uint64) (func(clip.Item) error, []string, error)
+	fileClipboardCheck       func(queuedItem) error
+	fileClipboardJobs        chan queuedItem
 	receiveDir               func() string
+	fileLimit                func() int64
 	onFile                   func(Notice)
 	fileSendMu               sync.Mutex
 	fileResultMu             sync.Mutex
@@ -86,24 +99,29 @@ type response struct {
 }
 
 func newSession(conn *tls.Conn, peerID string, weDialed bool, log *slog.Logger, onItem func(clip.Item) error) *Session {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Session{
-		conn:          conn,
-		peerID:        peerID,
-		sessionID:     ulid.Make().String(),
-		clipboardWake: make(chan struct{}, 1),
-		weDialed:      weDialed,
-		log:           log,
-		onItem:        onItem,
-		out:           make(chan queuedItem, queueSize),
-		inbound:       make(chan inboundJob, queueSize),
-		fileFrames:    make(chan fileFrame, fileQueueSize),
-		responses:     make(chan response, 16),
-		lastRecv:      time.Now(),
-		done:          make(chan struct{}),
+		ctx: ctx, cancel: cancel,
+		conn:              conn,
+		peerID:            peerID,
+		sessionID:         ulid.Make().String(),
+		clipboardWake:     make(chan struct{}, 1),
+		weDialed:          weDialed,
+		log:               log,
+		onItem:            onItem,
+		out:               make(chan queuedItem, queueSize),
+		fileClipboardJobs: make(chan queuedItem, 1),
+		inbound:           make(chan inboundJob, queueSize),
+		fileFrames:        make(chan fileFrame, fileQueueSize),
+		responses:         make(chan response, 16),
+		lastRecv:          time.Now(),
+		done:              make(chan struct{}),
 	}
 }
 
-func queuedSize(item clip.Item) int { return len(item.PNG) + len(item.Text) }
+func queuedSize(item clip.Item) int {
+	return len(item.PNG) + len(item.Text) + filePathsSize(item.Files)
+}
 
 func (s *Session) enqueue(item clip.Item) bool {
 	return s.enqueueCopy(item, "", true)
@@ -128,7 +146,7 @@ func (s *Session) enqueueClipboard(item clip.Item, id string, automatic, explici
 	if s.closed || n > queueBytes-s.queuedBytes {
 		return false
 	}
-	automatic = automatic && s.clipboardResultSupported
+	automatic = automatic && s.clipboardResultSupported && item.Kind != clip.KindFiles
 	if automatic {
 		if len(s.clipboardPending) >= queueSize+1 {
 			return false
@@ -233,6 +251,15 @@ func (s *Session) Close() {
 	s.once.Do(func() {
 		s.mu.Lock()
 		s.closed = true
+		if s.cancel != nil {
+			s.cancel()
+		}
+		for len(s.fileClipboardJobs) > 0 {
+			select {
+			case <-s.fileClipboardJobs:
+			default:
+			}
+		}
 		// Drop queued payloads immediately, even if an active write is blocked.
 		for len(s.out) > 0 {
 			select {
@@ -258,7 +285,7 @@ func (s *Session) Close() {
 
 func (s *Session) run() {
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(6)
 	go func() {
 		defer wg.Done()
 		s.readLoop()
@@ -279,6 +306,7 @@ func (s *Session) run() {
 		defer wg.Done()
 		s.watchClipboard()
 	}()
+	go func() { defer wg.Done(); s.fileClipboardLoop() }()
 	wg.Wait()
 }
 
@@ -300,6 +328,9 @@ func (s *Session) readLoop() {
 		}
 		s.lastRecv = time.Now()
 		s.mu.Unlock()
+		if typ == wire.TypeText || typ == wire.TypeImageBegin {
+			s.clipboardVersion.Add(1)
+		}
 		switch typ {
 		case wire.TypeFileBegin, wire.TypeFileChunk, wire.TypeFileEnd, wire.TypeFileCancel:
 			if !s.queueFileFrame(typ, payload) {
@@ -499,6 +530,10 @@ func (s *Session) writeLoop() {
 				continue
 			}
 			if !s.clipboardSendable(item, time.Now()) {
+				continue
+			}
+			if item.Kind == clip.KindFiles {
+				s.queueFileClipboard(item)
 				continue
 			}
 			if err := s.sendItem(item.Item, item.id); err != nil {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/filetransfer"
 	"github.com/2fa0/snapover/internal/wire"
 	"github.com/oklog/ulid/v2"
 )
@@ -39,6 +40,7 @@ type Engine struct {
 	// RunOnBoard runs a write synchronously on the clipboard's owning thread.
 	// It may be nil for boards that can write directly from a goroutine.
 	RunOnBoard func(func())
+	FileCache  *filetransfer.ClipboardCache
 
 	authMu        sync.Mutex
 	authEpoch     uint64
@@ -58,6 +60,7 @@ type Engine struct {
 	textOnly    bool
 	maxImage    int
 	maxText     int
+	maxFile     int64
 	receiveDir  string
 	sess        *Session
 	link        Link
@@ -126,7 +129,7 @@ func (e *Engine) handleLocal(item clip.Item, request *copyRequest, seq uint64) e
 		return errors.New(item.Skip)
 	}
 	if item.Kind == "" {
-		return errors.New("没有可同步的文本或图片")
+		return errors.New("没有可同步的文本、图片或文件")
 	}
 	if item.Kind == clip.KindText {
 		if err := clip.CheckTextSize(item.Text, e.TextLimit()); err != nil {
@@ -145,6 +148,9 @@ func (e *Engine) handleLocal(item clip.Item, request *copyRequest, seq uint64) e
 	e.lastSeq = seq
 	e.haveLast = true
 	id := ulid.Make().String()
+	if item.Kind == clip.KindFiles {
+		item.CopySequence = seq
+	}
 	e.lastSendID = id
 	e.localActive = time.Now()
 	sess := e.sess
@@ -153,6 +159,9 @@ func (e *Engine) handleLocal(item clip.Item, request *copyRequest, seq uint64) e
 	e.mu.Unlock()
 
 	send, msg := localSend(policy, item, sess != nil)
+	if send && item.Kind == clip.KindFiles && !sess.fileClipboardSupported {
+		send, msg = false, "对方版本不支持文件剪贴板，请更新对方的 Snapover"
+	}
 	if request != nil && request.cancelled {
 		e.allowLocalRetry(sess, id)
 		e.notify(Notice{Kind: NoticeLocal, Item: item})
@@ -272,8 +281,8 @@ func localSend(p policy, item clip.Item, connected bool) (bool, string) {
 	switch {
 	case p.Paused:
 		return false, "已暂停，未发送"
-	case p.TextOnly && item.Kind == clip.KindImage:
-		return false, "只同步文本，图片未发送"
+	case p.TextOnly && item.Kind != clip.KindText:
+		return false, "只同步文本，图片和文件未发送"
 	case item.Kind == clip.KindImage && p.MaxImage > 0 && item.Size > p.MaxImage:
 		return false, "图片超过上限，已记入历史，未同步"
 	case !connected:
@@ -292,6 +301,7 @@ func (e *Engine) deliver(item clip.Item) {
 func (e *Engine) rejectRemoteBeforePrepare(source *Session, item clip.Item) error {
 	e.mu.Lock()
 	paused := e.paused
+	textOnly := e.textOnly
 	var textErr error
 	if item.Kind == clip.KindText {
 		textErr = clip.CheckTextSize(item.Text, e.textLimitLocked())
@@ -316,6 +326,9 @@ func (e *Engine) rejectRemoteBeforePrepare(source *Session, item clip.Item) erro
 		e.notify(Notice{Kind: NoticeStatus, Message: "已暂停，忽略对端内容"})
 		return errors.New("对端已暂停同步，未写入剪贴板")
 	}
+	if textOnly && item.Kind == clip.KindFiles {
+		return errors.New("对端只同步文本，未接收文件")
+	}
 	if textErr != nil {
 		e.notify(Notice{Kind: NoticeStatus, Message: "未接收：" + textErr.Error()})
 		return fmt.Errorf("对端未接收：%w", textErr)
@@ -324,6 +337,10 @@ func (e *Engine) rejectRemoteBeforePrepare(source *Session, item clip.Item) erro
 }
 
 func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
+	return e.deliverFromSequence(source, item, 0, false, 0)
+}
+
+func (e *Engine) deliverFromSequence(source *Session, item clip.Item, expected uint64, enforce bool, version uint64) error {
 	if err := e.rejectRemoteBeforePrepare(source, item); err != nil {
 		item.ReleaseDecoded()
 		return err
@@ -331,6 +348,9 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 	e.clipMu.Lock()
 	sequence, sequenceErr := e.Board.Sequence()
 	haveSequence := sequenceErr == nil
+	if enforce {
+		sequence, haveSequence = expected, true
+	}
 	publish := func() error { return e.Board.Write(item) }
 	if board, ok := e.Board.(interface {
 		PrepareRemoteWrite(clip.Item) (clip.PreparedWrite, error)
@@ -345,7 +365,7 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 		}
 	}
 	item.ReleaseDecoded()
-	var paused, active, attempted bool
+	var paused, active, attempted, fileTextOnly bool
 	var link Link
 	var err error
 	var textErr error
@@ -365,8 +385,9 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 			}
 		}
 		paused = e.paused
+		fileTextOnly = item.Kind == clip.KindFiles && e.textOnly
 		active = time.Since(e.localActive) < localPriority
-		if paused {
+		if paused || fileTextOnly {
 			return
 		}
 		if item.Kind == clip.KindText {
@@ -376,11 +397,18 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 			}
 		}
 		link = e.link
+		if enforce && source != nil && source.clipboardVersion.Load() != version {
+			active = true
+		}
 		if active {
 			return
 		}
 		seq, seqErr := e.Board.Sequence()
-		if haveSequence && (seqErr != nil || seq != sequence) {
+		own := enforce && e.haveOwnSeq && seq == e.ownSeq
+		if owner, ok := e.Board.(interface{ OwnsSequence(uint64) bool }); ok && own {
+			own = owner.OwnsSequence(seq)
+		}
+		if haveSequence && (seqErr != nil || seq != sequence) && !(enforce && own) {
 			// A new local copy must win even before the watcher has settled it.
 			active = true
 			return
@@ -427,6 +455,10 @@ func (e *Engine) deliverFrom(source *Session, item clip.Item) error {
 			e.clipMu.Unlock()
 			return errors.New("连接已改变，未写入剪贴板")
 		}
+	}
+	if fileTextOnly {
+		e.clipMu.Unlock()
+		return errors.New("对端只同步文本，未接收文件")
 	}
 	if paused {
 		e.clipMu.Unlock()
@@ -543,23 +575,35 @@ func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) er
 
 	sess := newSession(conn, peer.id, weDialed, e.Log, nil)
 	sess.admit = e.admitClipboard
+	sess.fileCache = e.FileCache
+	sess.clipboardSequence = e.Board.Sequence
+	sess.captureFileClipboard = func(seq, version uint64) (func(clip.Item) error, []string, error) {
+		return e.captureFileClipboard(sess, seq, version)
+	}
+	sess.fileClipboardCheck = func(item queuedItem) error { return e.checkFileClipboard(sess, item) }
 	sess.onItem = func(item clip.Item) error { return e.deliverFrom(sess, item) }
 	sess.onClipboardResult = func(result wire.Ack) {
-		if result.State != "complete" {
+		if result.State != "complete" && result.State != "sending" {
 			e.allowLocalRetry(sess, result.ItemID)
 		}
-		e.Log.Info("对端剪贴板处理结果", "item", result.ItemID, "state", result.State, "message", result.Message)
+		if result.State != "sending" {
+			e.Log.Info("对端剪贴板处理结果", "item", result.ItemID, "state", result.State, "message", result.Message)
+		}
 		e.notify(Notice{Kind: NoticeSync, Message: result.Message, PeerID: peer.id, PeerName: hello.Name, ClipboardState: result.State, SessionID: sess.sessionID})
 	}
 	for _, cap := range hello.Capabilities {
 		if cap == wire.FileCapability {
 			sess.fileSupported = true
 		}
+		if cap == wire.FileClipboardCapability {
+			sess.fileClipboardSupported = true
+		}
 		if cap == wire.ClipboardResultCapability {
 			sess.clipboardResultSupported = true
 		}
 	}
 	sess.receiveDir = e.ReceiveDir
+	sess.fileLimit = e.FileLimit
 	sess.onFile = func(n Notice) { n.PeerID = peer.id; n.PeerName = hello.Name; e.notify(n) }
 	e.authMu.Lock()
 	if epoch != e.authEpoch {
@@ -606,7 +650,7 @@ func (e *Engine) handshake(conn *tls.Conn) (*identityResult, wire.Hello, error) 
 		Proto:        wire.Proto,
 		Fingerprint:  e.Fingerprint,
 		ListenPort:   e.ListenPort,
-		Capabilities: []string{wire.FileCapability, wire.PairCapability, wire.ClipboardResultCapability},
+		Capabilities: []string{wire.FileCapability, wire.PairCapability, wire.ClipboardResultCapability, wire.FileClipboardCapability},
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- wire.WriteMsg(conn, wire.TypeHello, hello) }()

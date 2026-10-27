@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/filetransfer"
+	"github.com/2fa0/snapover/internal/settings"
 	"github.com/2fa0/snapover/internal/wire"
 	"github.com/oklog/ulid/v2"
 	"github.com/zeebo/blake3"
@@ -17,20 +19,33 @@ import (
 
 const fileWait = 60 * time.Second
 
-// Existing peers have no chunk acknowledgments. Allow one complete legal file
-// to wait for disk without stalling control/clipboard frames or changing the
-// protocol. Both bytes and frame count remain bounded, including envelopes.
+// Keep the backlog bounded independently of the configurable file limit.
+// A default-sized file can wait for disk without stalling clipboard frames.
 const (
-	fileQueueSize  = int(filetransfer.MaxBytes)/wire.ChunkSize + 4
-	fileQueueBytes = int(filetransfer.MaxBytes) + fileQueueSize*1024
+	fileQueueSize  = (settings.DefaultMaxFileMB<<20)/wire.ChunkSize + 4
+	fileQueueBytes = (settings.DefaultMaxFileMB << 20) + fileQueueSize*1024
 )
 
 type fileFrame struct {
-	typ     byte
-	payload []byte
+	typ               byte
+	payload           []byte
+	sequence, version uint64
+	sequenceErr       error
 }
 
 func (s *Session) queueFileFrame(typ byte, payload []byte) bool {
+	frame := fileFrame{typ: typ, payload: payload, version: s.clipboardVersion.Load()}
+	if typ == wire.TypeFileBegin {
+		var begin wire.FileBegin
+		if wire.Unmarshal(payload, &begin) == nil && begin.Clipboard {
+			frame.version = s.clipboardVersion.Add(1)
+			if s.clipboardSequence != nil {
+				frame.sequence, frame.sequenceErr = s.clipboardSequence()
+			} else {
+				frame.sequenceErr = errors.New("文件剪贴板未初始化")
+			}
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := len(payload)
@@ -38,7 +53,7 @@ func (s *Session) queueFileFrame(typ byte, payload []byte) bool {
 		return false
 	}
 	select {
-	case s.fileFrames <- fileFrame{typ, payload}:
+	case s.fileFrames <- frame:
 		s.fileFrameBytes += n
 		return true
 	default:
@@ -50,7 +65,7 @@ func (s *Session) fileLoop() {
 	var incoming *fileReceive
 	defer func() {
 		if incoming != nil {
-			incoming.file.Abort()
+			incoming.abort()
 			s.fileNotice(incoming, "error", "", "连接已断开，未完成的文件已清理，请重新发送")
 		}
 	}()
@@ -64,7 +79,7 @@ func (s *Session) fileLoop() {
 			return
 		case <-timeout:
 			s.rejectFile(incoming.id, "接收超时，请重新发送")
-			incoming.file.Abort()
+			incoming.abort()
 			s.fileNotice(incoming, "error", "", "接收超时，请重新发送")
 			incoming, timeout = nil, nil
 		case frame := <-s.fileFrames:
@@ -74,7 +89,7 @@ func (s *Session) fileLoop() {
 				return
 			default:
 			}
-			incoming = s.receiveFile(frame.typ, frame.payload, incoming)
+			incoming = s.receiveFileFrame(frame, incoming)
 			s.mu.Lock()
 			s.fileFrameBytes = max(0, s.fileFrameBytes-len(frame.payload))
 			s.mu.Unlock()
@@ -86,6 +101,28 @@ func (s *Session) fileLoop() {
 			}
 		}
 	}
+}
+
+func (e *Engine) SetFileLimit(maxBytes int64) {
+	e.mu.Lock()
+	e.maxFile = maxBytes
+	e.mu.Unlock()
+}
+
+func (e *Engine) FileLimit() int64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.maxFile <= 0 {
+		return settings.DefaultMaxFileMB << 20
+	}
+	return e.maxFile
+}
+
+func (s *Session) maxFileBytes() int64 {
+	if s.fileLimit != nil {
+		return s.fileLimit()
+	}
+	return settings.DefaultMaxFileMB << 20
 }
 
 func (e *Engine) SetReceiveDir(dir string) {
@@ -118,12 +155,20 @@ func (e *Engine) SendFile(ctx context.Context, peerID, path string, progress fun
 	return s.sendFile(ctx, path, progress)
 }
 
-func (s *Session) sendFile(ctx context.Context, path string, progress func(int64, int64)) (saved string, err error) {
+func (s *Session) sendFile(ctx context.Context, path string, progress func(int64, int64)) (string, error) {
+	return s.sendFileMode(ctx, path, progress, nil)
+}
+
+func (s *Session) sendFileMode(ctx context.Context, path string, progress func(int64, int64), clipboard *queuedItem) (saved string, err error) {
 	if !s.fileSendMu.TryLock() {
 		return "", errors.New("已有文件正在发送，请等待完成")
 	}
 	defer s.fileSendMu.Unlock()
-	if _, err := filetransfer.Validate(path); err != nil {
+	limit := s.maxFileBytes()
+	if clipboard != nil {
+		limit = filetransfer.BundleLimit(limit)
+	}
+	if _, err := filetransfer.Validate(path, limit); err != nil {
 		return "", err
 	}
 	f, err := os.Open(path)
@@ -135,14 +180,22 @@ func (s *Session) sendFile(ctx context.Context, path string, progress func(int64
 	if err != nil {
 		return "", err
 	}
-	if !info.Mode().IsRegular() || info.Size() > filetransfer.MaxBytes {
-		return "", errors.New("请选择 50 MB 以内的普通文件")
+	if !info.Mode().IsRegular() || info.Size() > limit {
+		return "", fmt.Errorf("请选择 %d MB 以内的普通文件", limit>>20)
 	}
 	name, err := filetransfer.SafeName(filepath.Base(path))
 	if err != nil {
 		return "", err
 	}
 	id := ulid.Make().String()
+	begin := wire.FileBegin{ItemID: id, Name: name, TotalSize: info.Size()}
+	if clipboard != nil {
+		if err = s.fileClipboardCheck(*clipboard); err != nil {
+			return "", err
+		}
+		begin.Clipboard = true
+		begin.SourceApp = clip.CleanSource(clipboard.SourceApp)
+	}
 	results := make(chan wire.FileResult, 4)
 	s.fileResultMu.Lock()
 	s.fileSendID, s.fileResults = id, results
@@ -170,7 +223,7 @@ func (s *Session) sendFile(ctx context.Context, path string, progress func(int64
 		case <-watchDone:
 		}
 	}()
-	if err = s.write(wire.TypeFileBegin, wire.FileBegin{ItemID: id, Name: name, TotalSize: info.Size()}); err != nil {
+	if err = s.write(wire.TypeFileBegin, begin); err != nil {
 		return "", err
 	}
 	if _, err = s.waitFileResult(ctx, results, "ready"); err != nil {
@@ -184,6 +237,11 @@ func (s *Session) sendFile(ctx context.Context, path string, progress func(int64
 	var offset int64
 	last := time.Now()
 	for offset < info.Size() {
+		if clipboard != nil {
+			if err = s.fileClipboardCheck(*clipboard); err != nil {
+				return "", err
+			}
+		}
 		if err = ctx.Err(); err != nil {
 			return "", err
 		}
@@ -212,6 +270,11 @@ func (s *Session) sendFile(ctx context.Context, path string, progress func(int64
 	after, statErr := f.Stat()
 	if statErr != nil || after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
 		return "", errors.New("源文件在发送期间发生变化，请重新发送")
+	}
+	if clipboard != nil {
+		if err = s.fileClipboardCheck(*clipboard); err != nil {
+			return "", err
+		}
 	}
 	if err = s.write(wire.TypeFileEnd, wire.FileEnd{ItemID: id, Hash: hash.Sum(nil)}); err != nil {
 		return "", err
@@ -245,10 +308,11 @@ type fileReceive struct {
 	id, name          string
 	file              *filetransfer.Incoming
 	updated, notified time.Time
+	clipboard         *clipboardReceive
 }
 
 func (s *Session) fileNotice(f *fileReceive, state, path, message string) {
-	if s.onFile != nil {
+	if f.clipboard == nil && s.onFile != nil {
 		s.onFile(Notice{Kind: NoticeFile, FileName: f.name, FileState: state, FilePath: path, FileDone: f.file.Written, FileTotal: f.file.Size, Message: message})
 	}
 }
@@ -258,6 +322,11 @@ func (s *Session) rejectFile(id, message string) {
 }
 
 func (s *Session) receiveFile(typ byte, payload []byte, current *fileReceive) *fileReceive {
+	return s.receiveFileFrame(fileFrame{typ: typ, payload: payload, version: s.clipboardVersion.Load()}, current)
+}
+
+func (s *Session) receiveFileFrame(frame fileFrame, current *fileReceive) *fileReceive {
+	typ, payload := frame.typ, frame.payload
 	if typ == wire.TypeFileBegin {
 		var b wire.FileBegin
 		if wire.Unmarshal(payload, &b) != nil || b.ItemID == "" || len(b.ItemID) > 64 {
@@ -268,15 +337,38 @@ func (s *Session) receiveFile(typ byte, payload []byte, current *fileReceive) *f
 			return current
 		}
 		dir := ""
-		if s.receiveDir != nil {
+		if !b.Clipboard && s.receiveDir != nil {
 			dir = s.receiveDir()
 		}
-		f, err := filetransfer.Begin(dir, b.Name, b.TotalSize)
+		limit := s.maxFileBytes()
+		var clipboard *clipboardReceive
+		if b.Clipboard {
+			if !s.fileClipboardSupported || s.fileCache == nil || s.captureFileClipboard == nil || frame.sequenceErr != nil {
+				s.rejectFile(b.ItemID, "文件剪贴板不可用，请更新双方 Snapover 后重新复制")
+				return nil
+			}
+			publish, protected, err := s.captureFileClipboard(frame.sequence, frame.version)
+			if err != nil {
+				s.rejectFile(b.ItemID, err.Error())
+				return nil
+			}
+			lease, err := s.fileCache.Begin(protected, limit, b.TotalSize)
+			if err != nil {
+				s.rejectFile(b.ItemID, err.Error())
+				return nil
+			}
+			clipboard = &clipboardReceive{lease: lease, publish: publish, source: b.SourceApp, limit: limit}
+			dir, b.Name, limit = lease.Dir, "contents.zip", filetransfer.BundleLimit(limit)
+		}
+		f, err := filetransfer.Begin(dir, b.Name, b.TotalSize, limit)
 		if err != nil {
+			if clipboard != nil {
+				clipboard.lease.Release(false)
+			}
 			s.rejectFile(b.ItemID, err.Error())
 			return nil
 		}
-		current = &fileReceive{id: b.ItemID, name: b.Name, file: f, updated: time.Now(), notified: time.Now()}
+		current = &fileReceive{id: b.ItemID, name: b.Name, file: f, clipboard: clipboard, updated: time.Now(), notified: time.Now()}
 		s.fileNotice(current, "receiving", "", "正在接收文件")
 		s.respond(wire.TypeFileResult, wire.FileResult{ItemID: b.ItemID, State: "ready"})
 		return current
@@ -315,6 +407,16 @@ func (s *Session) receiveFile(typ byte, payload []byte, current *fileReceive) *f
 			var path string
 			path, err = current.file.Finish(end.Hash)
 			if err == nil {
+				if current.clipboard != nil {
+					err = s.finishFileClipboard(current, path)
+					current.clipboard.lease.Release(err == nil || current.clipboard.prepared)
+					if err != nil {
+						s.rejectFile(end.ItemID, err.Error())
+					} else {
+						s.respond(wire.TypeFileResult, wire.FileResult{ItemID: end.ItemID, State: "complete"})
+					}
+					return nil
+				}
 				s.respond(wire.TypeFileResult, wire.FileResult{ItemID: end.ItemID, State: "complete", Message: filepath.Base(path)})
 				s.fileNotice(current, "complete", path, "已收到文件")
 				return nil
@@ -327,7 +429,7 @@ func (s *Session) receiveFile(typ byte, payload []byte, current *fileReceive) *f
 		}
 		err = errors.New("对方已停止发送，请重新发送")
 	}
-	current.file.Abort()
+	current.abort()
 	s.rejectFile(current.id, err.Error())
 	s.fileNotice(current, "error", "", err.Error())
 	return nil

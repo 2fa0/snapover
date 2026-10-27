@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/filetransfer"
 	"github.com/2fa0/snapover/internal/identity"
 	"github.com/2fa0/snapover/internal/wire"
 )
@@ -330,7 +331,8 @@ func engineFor(t *testing.T, id *identity.Identity, board clip.Board) *Engine {
 	return &Engine{
 		LocalID: id.DeviceID, Name: "test", Platform: "macos", Fingerprint: id.Fingerprint,
 		TLS: identity.TLSConfig(id), Peers: store, Board: board,
-		Guard: clip.NewEchoGuard(5 * time.Second), Log: discardLog(),
+		FileCache: filetransfer.NewClipboardCache(t.TempDir()),
+		Guard:     clip.NewEchoGuard(5 * time.Second), Log: discardLog(),
 	}
 }
 

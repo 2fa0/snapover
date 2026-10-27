@@ -101,7 +101,7 @@ func (a *app) copySelection(ctx context.Context, target paste.Target) error {
 				observed = true
 			case <-timeout.C:
 				if cancel() {
-					return errors.New("未复制到新内容，请选中文本或图片后再试")
+					return errors.New("未复制到新内容，请选中文本、图片或文件后再试")
 				}
 				observed = true
 			case <-tick.C:

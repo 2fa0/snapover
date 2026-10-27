@@ -69,6 +69,13 @@ func (s *Store) entryBytesLocked(entry Entry) (int64, error) {
 func (s *Store) entryBytes(entry Entry) (int64, error) {
 	size := int64(len(entry.Text))
 	paths := []string{}
+	if entry.FileBundle != "" {
+		path, err := s.bundlePath(entry.FileBundle)
+		if err != nil {
+			return 0, err
+		}
+		paths = append(paths, path)
+	}
 	if entry.TextFile != "" {
 		path, err := s.textPath(entry.TextFile)
 		if err != nil {
@@ -107,7 +114,7 @@ func (s *Store) cleanOrphansLocked() error {
 		live[entry.ID] = true
 	}
 	var failures []error
-	for _, dir := range []string{"blobs", "thumbs", "previews", "texts"} {
+	for _, dir := range []string{"blobs", "thumbs", "previews", "texts", "files"} {
 		entries, err := os.ReadDir(filepath.Join(s.dir, dir))
 		if err != nil {
 			failures = append(failures, err)
@@ -116,6 +123,8 @@ func (s *Store) cleanOrphansLocked() error {
 		suffix := ".png"
 		if dir == "texts" {
 			suffix = ".txt"
+		} else if dir == "files" {
+			suffix = ".zip"
 		}
 		for _, entry := range entries {
 			id := strings.TrimSuffix(entry.Name(), suffix)

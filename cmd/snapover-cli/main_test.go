@@ -79,12 +79,12 @@ func TestParseFilePathsAndLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Truncate((50 << 20) + 1); err != nil {
+	if err := f.Truncate((settings.DefaultMaxFileMB << 20) + 1); err != nil {
 		t.Fatal(err)
 	}
 	f.Close()
-	if _, err := parse(context.Background(), []string{"send", "file", "--data", dir, path}, nil); err == nil {
-		t.Fatal("oversize file accepted")
+	if _, err := parse(context.Background(), []string{"send", "file", "--data", dir, path}, nil); err != nil {
+		t.Fatalf("file size must be checked by the running app: %v", err)
 	}
 }
 

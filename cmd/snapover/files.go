@@ -124,7 +124,7 @@ func (a *app) selectFile(paths []string) {
 		a.fileMessage = "一次只能发送一个文件，请重新选择"
 		return
 	}
-	info, err := filetransfer.Validate(paths[0])
+	info, err := filetransfer.Validate(paths[0], a.engine.FileLimit())
 	if err != nil {
 		a.fileMessage = err.Error()
 		a.filePath = ""

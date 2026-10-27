@@ -52,6 +52,8 @@ type Hello struct {
 
 const FileCapability = "file-transfer-v1"
 
+const FileClipboardCapability = "file-clipboard-v1"
+
 const PairCapability = "pair-confirm-v1"
 
 const ClipboardResultCapability = "clipboard-result-v1"
@@ -68,6 +70,8 @@ type FileBegin struct {
 	ItemID    string `msgpack:"item_id"`
 	Name      string `msgpack:"name"`
 	TotalSize int64  `msgpack:"total_size"`
+	Clipboard bool   `msgpack:"clipboard,omitempty"`
+	SourceApp string `msgpack:"source_app,omitempty"`
 }
 
 type FileChunk struct {
