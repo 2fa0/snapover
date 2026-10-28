@@ -75,12 +75,9 @@ func (a *app) handleFileRequest(paths []string, cold bool) {
 	}
 	// Resolve the cold-launch target before checking an already online peer.
 	// An incoming connection may win the race with the saved-device reconnect.
-	var expectedID string
-	for _, dev := range a.devices {
-		if dev.Peer.Addr == a.peer {
-			expectedID = dev.ID
-			break
-		}
+	expectedID := a.targetPeerID
+	if cold {
+		expectedID = a.coldTargetID
 	}
 	if link, online := a.engine.Link(); online {
 		if !canAutoSendFile(cold, expectedID, link.ID) {

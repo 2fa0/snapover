@@ -60,6 +60,8 @@ type app struct {
 	copyShortcutError         string
 	copyBusy                  bool
 	keepAwake                 bool
+	allowTailscale            bool
+	tailscaleError            string
 	keepAwakeWorker           keepAwakeSession
 	keepAwakeError            string
 	syncMode                  int
@@ -72,44 +74,52 @@ type app struct {
 	historyUsageVersion       uint64
 	historyUsagePending       chan historyUsageResult
 	historyCleanupPending     chan historyCleanupResult
+	showDiskUsage             bool
+	diskUsage                 diskUsageResult
+	diskUsageValid            bool
+	diskUsagePending          chan diskUsageResult
+	diskUsageCancel           context.CancelFunc
 
-	showDiskUsage    bool
-	diskUsage        diskUsageResult
-	diskUsageValid   bool
-	diskUsagePending chan diskUsageResult
-	diskUsageCancel  context.CancelFunc
+	page                string
+	peer                string
+	startupPeerExplicit bool
+	query               string
+	status              string
+	syncStatus          string
+	syncFailure         string
+	syncSessionID       string
+	flash               string
+	pendingToast        string
+	confirm             bool
+	confirmClear        bool
+	showIdentity        bool
+	showDiagnostics     bool
+	showNetwork         bool
+	showAddress         bool
+	showSyncLimits      bool
+	showReceiveFolder   bool
+	historyKind         int
+	shownEntries        []history.Entry
+	shownSource         []history.Entry
+	shownKind           int
 
-	page              string
-	peer              string
-	query             string
-	status            string
-	syncStatus        string
-	syncFailure       string
-	syncSessionID     string
-	flash             string
-	pendingToast      string
-	confirm           bool
-	confirmClear      bool
-	showIdentity      bool
-	showDiagnostics   bool
-	showNetwork       bool
-	showAddress       bool
-	showSyncLimits    bool
-	showReceiveFolder bool
-	historyKind       int
-	shownEntries      []history.Entry
-	shownSource       []history.Entry
-	shownKind         int
-
-	discovered       []discovery.Device
-	discoveryMessage string
-	discoveryScope   atomic.Value
-	discoveryWake    chan struct{}
-	segments         []segmentRow
-	targetPeerID     string
-	dialSeq          uint64
-	deviceDetails    string
-	confirmRemove    string
+	discovered        []discovery.Device
+	discoveryMessage  string
+	discoveryScope    atomic.Value
+	discoveryWake     chan struct{}
+	segments          []segmentRow
+	targetPeerID      string
+	coldTargetID      string
+	addressRoute      int
+	editTailscaleID   string
+	editTailscaleAddr string
+	dialTarget        *clipsync.DialTarget
+	dialProposed      lan.Endpoint
+	probeCancel       context.CancelFunc
+	probeSeq          uint64
+	dialSeq           uint64
+	deviceDetails     string
+	confirmRemove     string
 
 	devices           []clipsync.Device
 	entries           []history.Entry
@@ -181,39 +191,43 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 	if cfg.Values.HistoryMaxMB <= 0 {
 		cfg.Values.HistoryMaxMB = settings.DefaultHistoryMB
 	}
+	engine.SetAllowTailscale(cfg.Values.AllowTailscale)
 	engine.SetTextLimit(cfg.Values.MaxTextMB << 20)
 	engine.SetFileLimit(cfg.Values.MaxFileMB << 20)
 	devices := engine.Peers.List()
+	explicitPeer := peer != ""
 	if peer == "" {
 		for _, dev := range devices {
-			if dev.Peer.Addr != "" {
-				peer = dev.Peer.Addr
+			if endpoints := dev.Peer.Endpoints(true); len(endpoints) > 0 {
+				peer = endpoints[0].Addr
 				break
 			}
 		}
 	}
 	a := &app{
-		engine:         engine,
-		hist:           hist,
-		cfg:            cfg,
-		board:          engine.Board,
-		deviceID:       id.DeviceID,
-		fingerprint:    identity.FormatFingerprint(id.Fingerprint),
-		name:           engine.Name,
-		listen:         listen,
-		addrs:          addrs,
-		paused:         cfg.Values.Paused,
-		textOnly:       cfg.Values.TextOnly,
-		keepAwake:      cfg.Values.KeepAwake,
-		maxImageText:   strconv.Itoa(cfg.Values.MaxImageMB),
-		maxTextText:    strconv.Itoa(cfg.Values.MaxTextMB),
-		maxFileText:    strconv.FormatInt(cfg.Values.MaxFileMB, 10),
-		historyMaxText: strconv.Itoa(cfg.Values.HistoryMaxMB),
-		page:           pageDevices,
-		peer:           peer,
-		status:         "未连接",
-		histSel:        -1,
-		pickSel:        -1,
+		engine:              engine,
+		hist:                hist,
+		cfg:                 cfg,
+		board:               engine.Board,
+		deviceID:            id.DeviceID,
+		fingerprint:         identity.FormatFingerprint(id.Fingerprint),
+		name:                engine.Name,
+		listen:              listen,
+		addrs:               addrs,
+		paused:              cfg.Values.Paused,
+		textOnly:            cfg.Values.TextOnly,
+		keepAwake:           cfg.Values.KeepAwake,
+		allowTailscale:      cfg.Values.AllowTailscale,
+		maxImageText:        strconv.Itoa(cfg.Values.MaxImageMB),
+		maxTextText:         strconv.Itoa(cfg.Values.MaxTextMB),
+		maxFileText:         strconv.FormatInt(cfg.Values.MaxFileMB, 10),
+		historyMaxText:      strconv.Itoa(cfg.Values.HistoryMaxMB),
+		page:                pageDevices,
+		peer:                peer,
+		startupPeerExplicit: explicitPeer,
+		status:              "未连接",
+		histSel:             -1,
+		pickSel:             -1,
 
 		entries: hist.List(),
 		devices: devices,
@@ -229,8 +243,12 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 	}
 	a.shortcutText = displayPickerShortcut(a.shortcutText)
 	for _, dev := range devices {
-		if dev.Peer.Addr == peer && peer != "" {
+		if dev.Peer.HasAddress(peer) {
 			a.targetPeerID = dev.ID
+			a.coldTargetID = dev.ID
+			if dev.Peer.Endpoint(peer).Route == lan.RouteTailscale {
+				a.addressRoute = 1
+			}
 			break
 		}
 	}
@@ -414,7 +432,24 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 	if added != nil {
 		a.refreshEntries()
 	}
+	if n.DialSeq != 0 && n.DialSeq != a.dialSeq {
+		return
+	}
+	if n.Kind == clipsync.NoticeDial && (n.DialSeq != a.dialSeq || a.dialTarget == nil) {
+		return
+	}
+	if n.SessionID != "" && n.Kind == clipsync.NoticeStatus {
+		link, up := a.engine.Link()
+		if (up && link.SessionID != n.SessionID) || (!up && n.Addr != "") {
+			return
+		}
+	}
 	switch n.Kind {
+	case clipsync.NoticeDial:
+		if !a.engine.Connected() {
+			a.dialAddr = n.Addr
+			a.status = n.Message
+		}
 	case clipsync.NoticePairing:
 		if n.Message != "" {
 			a.status = n.Message
@@ -430,13 +465,24 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 		a.status = n.Message
 		a.devices = a.engine.Peers.List()
 		if link, up := a.engine.Link(); up && n.PeerID == link.ID && n.Kind == clipsync.NoticeStatus {
-			for _, dev := range a.devices {
-				if dev.ID == link.ID && a.targetPeerID != link.ID {
-					a.targetPeerID = link.ID
-					a.peer = dev.Peer.Addr
-					a.connect()
-					a.status = n.Message
+			if a.targetPeerID != link.ID {
+				a.targetPeerID = link.ID
+				if p, ok := a.engine.Peers.Get(link.ID); ok {
+					a.peer = p.Addr
 				}
+			}
+			if a.dialTarget != nil && a.dialTarget.PeerID() == "" {
+				a.dialTarget.BindPeer(link.ID)
+			}
+			if a.dialTarget == nil || a.dialTarget.PeerID() != link.ID {
+				a.connect()
+			} else {
+				a.dialProposed = lan.Endpoint{}
+				a.refreshConnectionCandidates()
+			}
+			a.status = n.Message
+			if a.editTailscaleID == link.ID && link.Route == lan.RouteTailscale {
+				a.editTailscaleID, a.editTailscaleAddr = "", ""
 			}
 		}
 	case clipsync.NoticeLocal, clipsync.NoticeRemote:
@@ -615,6 +661,7 @@ func (a *app) settingsPage(c *ui.Context) {
 			a.keepAwakeSettings(c)
 		})
 	}
+	settingsGroup(c, "跨网络连接", func() { a.tailscaleSettings(c) })
 	settingsGroup(c, "文件同步", func() {
 		ui.Collapsible(c, "接收文件夹", &a.showReceiveFolder, func() {
 			ui.Column(c).Padding(12, 0).Gap(10).Children(func() { a.receiveSettings(c) })
@@ -632,6 +679,11 @@ func (a *app) settingsPage(c *ui.Context) {
 				}
 				for _, addr := range a.addrs {
 					kv(c, "地址", addr)
+				}
+				for _, addr := range lan.IPv4() {
+					if lan.TailscaleInterface(addr) {
+						kv(c, "Tailscale IPv4", addr.IP.String())
+					}
 				}
 			})
 		})
@@ -755,50 +807,6 @@ func (a *app) historyPage(c *ui.Context) {
 	a.updatePickPreview(c, a.win, hoverID, hoverBounds)
 }
 
-func (a *app) connect() {
-	addr, err := normalizePeer(a.peer)
-	if err != nil || addr == "" {
-		a.status = "填写对端 IP，例如 192.168.1.20"
-		return
-	}
-	a.peer = addr
-	a.stopDial()
-	parent := a.root
-	if parent == nil {
-		parent = context.Background()
-	}
-	ctx, cancel := context.WithCancel(parent)
-	a.dialCancel = cancel
-	a.dialAddr = addr
-	if a.targetPeerID == "" {
-		for _, dev := range a.devices {
-			if dev.Peer.Addr == addr {
-				a.targetPeerID = dev.ID
-				break
-			}
-		}
-	}
-	if link, up := a.engine.Link(); up && link.ID != a.targetPeerID {
-		a.engine.Disconnect()
-	}
-	if !a.isPaired(a.targetPeerID) {
-		a.engine.SetPairing(true)
-	}
-	a.status = "正在连接 " + addr
-	seq := a.dialSeq
-	peerID := a.targetPeerID
-	go func() {
-		clipsync.DialPeer(ctx, addr, peerID, a.engine)
-		if ctx.Err() == nil {
-			a.update(func() {
-				if a.dialSeq == seq {
-					a.dialCancel = nil
-				}
-			})
-		}
-	}()
-}
-
 func (a *app) forget(id string) {
 	var addr string
 	for _, dev := range a.devices {
@@ -826,10 +834,12 @@ func (a *app) forget(id string) {
 func (a *app) stopDial() {
 	a.dialSeq++
 	if a.dialCancel != nil {
-		a.dialCancel()
+		a.engine.CancelDial(a.dialCancel)
 		a.dialCancel = nil
 	}
 	a.dialAddr = ""
+	a.dialTarget = nil
+	a.dialProposed = lan.Endpoint{}
 }
 
 func (a *app) shown() []history.Entry {
@@ -960,31 +970,6 @@ func (a *app) saveTextLimit() {
 	a.status = fmt.Sprintf("文本大小上限已设为 %d MB", n)
 }
 
-func (a *app) probe() {
-	addr, err := normalizePeer(a.peer)
-	if err != nil || addr == "" {
-		a.status = "先填写对端地址"
-		return
-	}
-	a.status = "正在测试 " + addr
-	go func() {
-		conn, bind, err := lan.DialTimeout(addr, 3*time.Second)
-		msg := "端口通了。若仍不同步，确认双方已完成配对，并检查防火墙是否放行了入站 TCP " + defaultPort
-		if bind != nil {
-			msg = "已从 " + bind.String() + " 拨出，不走虚拟网卡。" + msg
-		}
-		if err != nil {
-			msg = "连不上 " + addr + "。对端可能没启动，或防火墙没放行入站 TCP " + defaultPort
-			if bind != nil {
-				msg += "。已避开虚拟网卡，请填局域网地址"
-			}
-		} else {
-			_ = conn.Close()
-		}
-		a.update(func() { a.status = msg })
-	}()
-}
-
 func (a *app) pinSelected() {
 	entry, ok := a.selected()
 	if !ok {
@@ -1106,7 +1091,7 @@ func lanAddrs(listen string) []string {
 	for _, addr := range lan.IPv4() {
 		label := addr.Name + "  " + addr.IP.String() + ":" + port
 		if addr.Virtual {
-			virtual = append(virtual, label+"  ·  不用于连接")
+			virtual = append(virtual, label+"  ·  "+virtualConnectionHint(addr))
 			continue
 		}
 		physical = append(physical, label)

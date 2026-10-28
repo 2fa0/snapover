@@ -3,6 +3,7 @@ package sync
 import "time"
 
 import "github.com/2fa0/snapover/internal/clip"
+import "github.com/2fa0/snapover/internal/lan"
 
 const (
 	NoticeLocal   = "local"
@@ -12,6 +13,7 @@ const (
 	NoticeFile    = "file"
 	NoticePairing = "pairing"
 	NoticeSync    = "clipboard-result"
+	NoticeDial    = "dial"
 )
 
 // Notice is a clipboard or connection change the window can show.
@@ -32,6 +34,8 @@ type Notice struct {
 	FileTotal      int64
 	ClipboardState string
 	SessionID      string
+	Route          lan.Route
+	DialSeq        uint64
 }
 
 // Link is the peer of the live session, if there is one.
@@ -42,6 +46,7 @@ type Link struct {
 	Platform     string
 	Addr         string
 	FileTransfer bool
+	Route        lan.Route
 }
 
 func (e *Engine) notify(n Notice) error {

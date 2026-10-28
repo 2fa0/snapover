@@ -37,6 +37,7 @@ type Values struct {
 	PickerShortcut string `json:"picker_shortcut,omitempty"`
 	CopyShortcut   string `json:"copy_shortcut,omitempty"`
 	ManualSync     bool   `json:"manual_sync,omitempty"`
+	AllowTailscale bool   `json:"allow_tailscale,omitempty"`
 	HistoryMaxMB   int    `json:"history_max_mb"`
 
 	WindowsNetworkGuideDismissed bool `json:"windows_network_guide_dismissed,omitempty"`

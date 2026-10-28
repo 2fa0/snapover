@@ -248,11 +248,11 @@ func TestPairedDevicesRevealSearchOnlyWhenAdding(t *testing.T) {
 	a.devices = a.engine.Peers.List()
 	tt := ui.NewTester(a.view, 960, 640)
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
-	if !tt.HasText("工作电脑") || tt.HasText("附近的设备") || tt.HasText("对端局域网地址") {
+	if !tt.HasText("工作电脑") || tt.HasText("附近的设备") || tt.HasText("对端地址") {
 		t.Fatal("paired devices should take priority over search and address input")
 	}
 	clickInterface(t, tt, "通过地址连接")
-	if !tt.HasText("对端局域网地址") {
+	if !tt.HasText("对端地址") {
 		t.Fatal("manual connection should remain available on demand")
 	}
 	clickInterface(t, tt, "添加设备")
