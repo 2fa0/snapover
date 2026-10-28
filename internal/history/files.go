@@ -3,6 +3,7 @@ package history
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -28,9 +29,8 @@ func (s *Store) bundlePath(name string) (string, error) {
 	return filepath.Join(s.dir, "files", name), nil
 }
 
-// AddFiles snapshots content before taking the storage lock. Text writes and
-// list readers can proceed while a large folder is being read. Clear revokes
-// an unfinished snapshot; its late completion cannot repopulate cleared history.
+// AddFiles records names and a one-level tree. File bodies stay out of
+// history, so a copy does not consume history capacity.
 func (s *Store) AddFiles(ctx context.Context, dir, peer string, item clip.Item, limit int64) (Entry, error) {
 	if err := s.errDisabled(); err != nil {
 		return Entry{}, err
@@ -38,28 +38,19 @@ func (s *Store) AddFiles(ctx context.Context, dir, peer string, item clip.Item, 
 	if item.Kind != clip.KindFiles || item.Sensitive || item.Skip != "" {
 		return Entry{}, errors.New("没有可记录的文件")
 	}
-	s.mu.Lock()
-	epoch := s.fileEpoch
-	capacity := s.capacity
-	s.mu.Unlock()
-	if capacity > 0 {
-		limit = min(limit, capacity)
-	}
 	if limit < 0 {
 		return Entry{}, errors.New("历史文件大小上限无效")
 	}
+	s.mu.Lock()
+	epoch := s.fileEpoch
+	s.mu.Unlock()
 	at := time.Now()
-	archive, err := filetransfer.PackBundleIn(ctx, item.Files, limit, nil, filepath.Join(s.dir, "files"))
-	if err != nil {
-		return Entry{}, err
-	}
-	defer os.Remove(archive)
-	entries, err := filetransfer.ReadBundle(archive, limit)
+	files, err := inspectClipboardFiles(ctx, item.Files)
 	if err != nil {
 		return Entry{}, err
 	}
 	entry := Entry{ID: ulid.Make().String(), At: at, Dir: dir, Kind: string(clip.KindFiles), Peer: peer, SourceApp: clip.CleanSource(item.SourceApp)}
-	for _, f := range entries {
+	for _, f := range files {
 		entry.Size += int(f.Size)
 		if !strings.Contains(f.Name, "/") {
 			if entry.FileCount == 0 {
@@ -71,11 +62,9 @@ func (s *Store) AddFiles(ctx context.Context, dir, peer string, item clip.Item, 
 	if entry.FileCount == 0 {
 		return Entry{}, errors.New("历史文件缺少顶层条目")
 	}
-	entry.FileBundle = entry.ID + ".zip"
-	target, err := s.bundlePath(entry.FileBundle)
-	if err != nil {
-		return Entry{}, err
-	}
+	preview := filePreviewFrom(entry, files)
+	entry.FileTree = preview.Items
+	entry.FileMore = preview.More
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer s.publishLocked()
@@ -85,36 +74,99 @@ func (s *Store) AddFiles(ctx context.Context, dir, peer string, item clip.Item, 
 	if epoch != s.fileEpoch {
 		return Entry{}, context.Canceled
 	}
-	if err := os.Rename(archive, target); err != nil {
-		return Entry{}, err
-	}
 	return s.addLocked(entry)
 }
 
-// FilePreview contains one folder's immediate children, or a bounded list of
-// copied roots for a multi-selection. It never loads file bodies or recurses.
-type FilePreview struct {
+type fileMeta struct {
 	Name      string
 	Directory bool
-	Items     []FilePreviewItem
-	More      bool
+	Size      int64
 }
 
-type FilePreviewItem struct {
-	Name      string
-	Directory bool
-	Depth     int
+func inspectClipboardFiles(ctx context.Context, paths []string) ([]fileMeta, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return nil, errors.New("没有可记录的文件")
+	}
+	var entries []fileMeta
+	add := func(name string, dir bool, size int64) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if len(entries) >= filetransfer.MaxBundleEntries {
+			return nil
+		}
+		if size < 0 {
+			return errors.New("历史文件大小无效")
+		}
+		entries = append(entries, fileMeta{Name: name, Directory: dir, Size: size})
+		return nil
+	}
+	for _, p := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !filepath.IsAbs(p) || filepath.Clean(p) == filepath.VolumeName(p)+string(filepath.Separator) {
+			return nil, errors.New("不能复制整个磁盘或相对路径")
+		}
+		info, err := os.Lstat(p)
+		if err != nil {
+			return nil, err
+		}
+		name := filepath.Base(p)
+		if info.IsDir() {
+			if err := add(name, true, 0); err != nil {
+				return nil, err
+			}
+			root, err := os.OpenRoot(p)
+			if err != nil {
+				return nil, err
+			}
+			err = fs.WalkDir(root.FS(), ".", func(local string, d fs.DirEntry, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+				if local == "." {
+					return nil
+				}
+				if len(entries) >= filetransfer.MaxBundleEntries {
+					return fs.SkipAll
+				}
+				entry, err := d.Info()
+				if err != nil {
+					return err
+				}
+				rel := name + "/" + local
+				if entry.IsDir() {
+					return add(rel, true, 0)
+				}
+				if !entry.Mode().IsRegular() {
+					return nil
+				}
+				return add(rel, false, entry.Size())
+			})
+			root.Close()
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		if err := add(name, false, info.Size()); err != nil {
+			return nil, err
+		}
+	}
+	if len(entries) == 0 {
+		return nil, errors.New("没有可记录的文件")
+	}
+	return entries, nil
 }
 
-func (s *Store) FilePreview(id string) (FilePreview, error) {
-	entry, archive, err := s.fileEntry(id)
-	if err != nil {
-		return FilePreview{}, err
-	}
-	files, err := filetransfer.ReadBundle(archive, int64(entry.Size))
-	if err != nil {
-		return FilePreview{}, err
-	}
+func filePreviewFrom(entry Entry, files []fileMeta) FilePreview {
 	preview := FilePreview{Name: fileTitle(entry), Directory: entry.Folder && entry.FileCount == 1}
 	for _, f := range files {
 		name := f.Name
@@ -143,58 +195,84 @@ func (s *Store) FilePreview(id string) (FilePreview, error) {
 		}
 		preview.Items = append(preview.Items, FilePreviewItem{Name: name, Directory: f.Directory, Depth: depth})
 	}
-	return preview, nil
+	return preview
 }
 
-func (s *Store) fileEntry(id string) (Entry, string, error) {
+// FilePreview contains one folder's immediate children, or a bounded list of
+// copied roots for a multi-selection. It never loads file bodies or recurses.
+type FilePreview struct {
+	Name      string
+	Directory bool
+	Items     []FilePreviewItem
+	More      bool
+}
+
+type FilePreviewItem struct {
+	Name      string `json:"name,omitempty"`
+	Directory bool   `json:"directory,omitempty"`
+	Depth     int    `json:"depth,omitempty"`
+}
+
+func (s *Store) FilePreview(id string) (FilePreview, error) {
 	if err := s.errDisabled(); err != nil {
-		return Entry{}, "", err
+		return FilePreview{}, err
 	}
 	s.mu.Lock()
 	entry, ok := s.findLocked(id)
 	s.mu.Unlock()
 	if !ok || entry.Kind != string(clip.KindFiles) {
-		return Entry{}, "", os.ErrNotExist
+		return FilePreview{}, os.ErrNotExist
 	}
-	archive, err := s.bundlePath(entry.FileBundle)
-	if entry.Size < 0 {
-		return Entry{}, "", errors.New("历史文件大小无效")
-	}
-	return entry, archive, err
+	items := append([]FilePreviewItem(nil), entry.FileTree...)
+	return FilePreview{
+		Name:      fileTitle(entry),
+		Directory: entry.Folder && entry.FileCount == 1,
+		Items:     items,
+		More:      entry.FileMore,
+	}, nil
 }
 
-// PrepareFiles extracts a fresh paste copy into the shared clipboard cache.
-// Deleting history or changing the pasted copy cannot damage the other copy.
-// The caller releases the lease, keeping it only after native publication.
-func (s *Store) PrepareFiles(ctx context.Context, id string, cache *filetransfer.ClipboardCache, protected []string) (clip.Item, *filetransfer.ClipboardLease, error) {
-	if cache == nil {
-		return clip.Item{}, nil, errors.New("文件剪贴板缓存未初始化")
+func (s *Store) dropFileBundles() error {
+	changed := false
+	for i, entry := range s.entries {
+		if entry.Kind != string(clip.KindFiles) || entry.FileBundle == "" {
+			continue
+		}
+		path, err := s.bundlePath(entry.FileBundle)
+		if err == nil {
+			if len(entry.FileTree) == 0 {
+				if files, err := filetransfer.ReadBundle(path, int64(entry.Size)); err == nil {
+					meta := make([]fileMeta, len(files))
+					for i, f := range files {
+						meta[i] = fileMeta{Name: f.Name, Directory: f.Directory, Size: f.Size}
+					}
+					preview := filePreviewFrom(entry, meta)
+					entry.FileTree = preview.Items
+					entry.FileMore = preview.More
+				}
+			}
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		entry.FileBundle = ""
+		s.entries[i] = entry
+		changed = true
 	}
-	entry, archive, err := s.fileEntry(id)
-	if err != nil {
-		return clip.Item{}, nil, err
+	listing, err := os.ReadDir(filepath.Join(s.dir, "files"))
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	// Unpacking is cancelable and happens off the UI thread.
-	info, err := os.Stat(archive)
-	if err != nil {
-		return clip.Item{}, nil, err
+	for _, file := range listing {
+		if file.IsDir() {
+			continue
+		}
+		_ = os.Remove(filepath.Join(s.dir, "files", file.Name()))
 	}
-	lease, err := cache.Begin(protected, int64(entry.Size), info.Size())
-	if err != nil {
-		return clip.Item{}, nil, err
+	if changed {
+		return s.saveLocked()
 	}
-	paths, err := filetransfer.UnpackBundle(ctx, archive, lease.Dir, int64(entry.Size))
-	if err != nil {
-		lease.Release(false)
-		return clip.Item{}, nil, err
-	}
-	item, err := clip.FromFiles(paths)
-	if err != nil {
-		lease.Release(false)
-		return clip.Item{}, nil, err
-	}
-	item.SourceApp = entry.SourceApp
-	return item, lease, nil
+	return nil
 }
 
 func fileTitle(entry Entry) string {

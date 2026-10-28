@@ -2,11 +2,8 @@ package history
 
 import (
 	"context"
-	"github.com/charlievieth/strcase"
-	"github.com/2fa0/snapover/internal/filetransfer"
 	"io"
 	"os"
-	"path"
 	"unicode/utf8"
 
 	"github.com/charlievieth/strcase/bytcase"
@@ -34,33 +31,6 @@ func (s *Store) Search(ctx context.Context, query string) ([]Entry, error) {
 			return nil, err
 		}
 		match := Matches(entry, query)
-		if !match && entry.FileBundle != "" {
-			archive, err := s.bundlePath(entry.FileBundle)
-			if err != nil {
-				return nil, err
-			}
-			files, err := filetransfer.ReadBundle(archive, int64(entry.Size))
-			if err != nil {
-				if os.IsNotExist(err) {
-					s.mu.Lock()
-					_, exists := s.findLocked(entry.ID)
-					s.mu.Unlock()
-					if !exists {
-						continue
-					}
-				}
-				return nil, err
-			}
-			for _, file := range files {
-				if err := ctx.Err(); err != nil {
-					return nil, err
-				}
-				if strcase.Contains(path.Base(file.Name), query) {
-					match = true
-					break
-				}
-			}
-		}
 		if !match && entry.TextFile != "" {
 			path, err := s.textPath(entry.TextFile)
 			if err != nil {

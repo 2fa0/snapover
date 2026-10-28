@@ -37,7 +37,7 @@ func writeHistoryFile(t *testing.T, dir, name, body string) string {
 	return p
 }
 
-func TestFileHistorySnapshotRestoresAfterSourceRemovalAndRestart(t *testing.T) {
+func TestFileHistoryKeepsNamesAfterSourceRemovalAndRestart(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -54,8 +54,12 @@ func TestFileHistorySnapshotRestoresAfterSourceRemovalAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.FileName != "项目资料" || !entry.Folder || entry.FileCount != 1 || entry.Size != 8 || Title(entry) != "项目资料" {
+	if entry.FileName != "项目资料" || !entry.Folder || entry.FileCount != 1 || entry.Size != 8 || Title(entry) != "项目资料" || entry.FileBundle != "" {
 		t.Fatalf("incorrect metadata: %+v", entry)
+	}
+	files, err := os.ReadDir(filepath.Join(s.dir, "files"))
+	if err != nil || len(files) != 0 {
+		t.Fatalf("history stored file bodies: %v %v", files, err)
 	}
 	if err := os.RemoveAll(source); err != nil {
 		t.Fatal(err)
@@ -65,44 +69,15 @@ func TestFileHistorySnapshotRestoresAfterSourceRemovalAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := s.List()
-	if len(list) != 1 || list[0].SourceApp != "Finder" || list[0].FileBundle != entry.FileBundle {
+	if len(list) != 1 || list[0].SourceApp != "Finder" || list[0].FileName != "项目资料" || list[0].FileBundle != "" {
 		t.Fatal(list)
 	}
 	preview, err := s.FilePreview(entry.ID)
 	if err != nil || len(preview.Items) != 2 || !preview.Directory {
 		t.Fatalf("preview lost: %+v %v", preview, err)
 	}
-	cache := filetransfer.NewClipboardCache(t.TempDir())
-	pasted, lease, err := s.PrepareFiles(context.Background(), entry.ID, cache, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lease.Release(true)
-	data, err := os.ReadFile(filepath.Join(pasted.Files[0], "报告.txt"))
-	if err != nil || string(data) != "original" {
-		t.Fatal("snapshot changed", err)
-	}
-	// Editing a paste copy must leave the immutable stored archive intact.
-	if err := os.WriteFile(filepath.Join(pasted.Files[0], "报告.txt"), []byte("changed"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	restored, next, err := s.PrepareFiles(context.Background(), entry.ID, cache, pasted.Files)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer next.Release(false)
-	data, err = os.ReadFile(filepath.Join(restored.Files[0], "报告.txt"))
-	if err != nil || string(data) != "original" {
-		t.Fatal("paste rewrote history", err)
-	}
-	if err := s.Delete(entry.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(pasted.Files[0]); err != nil {
-		t.Fatal("deleting history broke the published clipboard", err)
-	}
-	if _, err := s.FilePreview(entry.ID); !os.IsNotExist(err) {
-		t.Fatal("deleted preview retained", err)
+	if _, err := s.PasteItem(entry.ID); err == nil {
+		t.Fatal("file history still prepared a paste body")
 	}
 }
 
@@ -178,12 +153,12 @@ func TestFileHistoryNamesMultiSelectionAndSearch(t *testing.T) {
 	}
 }
 
-func TestFileHistoryCapacityPinsAndOrphans(t *testing.T) {
+func TestFileHistoryDoesNotCountBodiesTowardCapacity(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := writeHistoryFile(t, t.TempDir(), "file.txt", "payload")
+	p := writeHistoryFile(t, t.TempDir(), "file.txt", strings.Repeat("payload", 1000))
 	pinned, err := s.Add(DirLocal, "", fileItem(t, p))
 	if err != nil {
 		t.Fatal(err)
@@ -191,26 +166,18 @@ func TestFileHistoryCapacityPinsAndOrphans(t *testing.T) {
 	if err := s.SetPinned(pinned.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	old, err := s.Add(DirLocal, "", fileItem(t, p))
-	if err != nil {
+	if _, err := s.Add(DirLocal, "", fileItem(t, p)); err != nil {
 		t.Fatal(err)
 	}
 	usage, err := s.Usage()
-	if err != nil || usage.PinnedBytes <= int64(pinned.Size) || usage.ContentBytes != 2*usage.PinnedBytes {
-		t.Fatalf("archive not counted: %+v %v", usage, err)
+	if err != nil || usage.ContentBytes >= int64(pinned.Size) || usage.PinnedBytes >= int64(pinned.Size) {
+		t.Fatalf("file bodies counted as history content: %+v size=%d", usage, pinned.Size)
 	}
-	if err := s.SetCapacity(usage.PinnedBytes); err != nil {
+	if err := s.SetCapacity(1); err != nil {
 		t.Fatal(err)
 	}
-	if list := s.List(); len(list) != 1 || list[0].ID != pinned.ID {
-		t.Fatal("pins not protected", list)
-	}
-	oldArchive, _ := s.bundlePath(old.FileBundle)
-	if _, err := os.Stat(oldArchive); !os.IsNotExist(err) {
-		t.Fatal("evicted archive retained", err)
-	}
-	if _, err := s.Add(DirLocal, "", fileItem(t, p)); err == nil {
-		t.Fatal("pinned history capacity exceeded")
+	if list := s.List(); len(list) != 2 {
+		t.Fatal("metadata-only file history was pruned", list)
 	}
 	orphan := filepath.Join(s.dir, "files", ulid.Make().String()+".zip")
 	if err := os.WriteFile(orphan, []byte("orphan"), 0600); err != nil {
@@ -226,8 +193,49 @@ func TestFileHistoryCapacityPinsAndOrphans(t *testing.T) {
 		t.Fatal("clear removed pin")
 	}
 	files, err := os.ReadDir(filepath.Join(s.dir, "files"))
-	if err != nil || len(files) != 1 {
-		t.Fatalf("failed add leaked files: %v %v", files, err)
+	if err != nil || len(files) != 0 {
+		t.Fatalf("file history left bodies: %v %v", files, err)
+	}
+}
+
+func TestFileHistoryDropsLegacyBundlesOnOpen(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := writeHistoryFile(t, t.TempDir(), "报告.txt", "original")
+	archive, err := filetransfer.PackBundle(context.Background(), []string{p}, 100, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := ulid.Make().String()
+	bundle := id + ".zip"
+	if err := os.Rename(archive, filepath.Join(s.dir, "files", bundle)); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	_, err = s.addLocked(Entry{ID: id, At: time.Now(), Kind: string(clip.KindFiles), FileName: "报告.txt", FileCount: 1, Size: 8, FileBundle: bundle})
+	s.publishLocked()
+	s.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := s.List()
+	if len(list) != 1 || list[0].FileBundle != "" || list[0].FileName != "报告.txt" {
+		t.Fatalf("legacy bundle not dropped: %+v", list)
+	}
+	preview, err := s.FilePreview(list[0].ID)
+	if err != nil || preview.Name != "报告.txt" {
+		t.Fatalf("legacy preview lost: %+v %v", preview, err)
+	}
+	files, err := os.ReadDir(filepath.Join(s.dir, "files"))
+	if err != nil || len(files) != 0 {
+		t.Fatalf("legacy archive retained: %v %v", files, err)
 	}
 }
 

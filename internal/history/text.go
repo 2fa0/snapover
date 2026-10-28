@@ -178,7 +178,15 @@ func TitleTruncated(entry Entry) bool {
 // Matches checks inline text and display fields without copying long bodies.
 func Matches(entry Entry, query string) bool {
 	if entry.Kind == string(clip.KindFiles) {
-		return strcase.Contains(entry.FileName+" "+entry.Peer+" "+entry.SourceApp, query)
+		if strcase.Contains(entry.FileName+" "+entry.Peer+" "+entry.SourceApp, query) {
+			return true
+		}
+		for _, item := range entry.FileTree {
+			if strcase.Contains(item.Name, query) {
+				return true
+			}
+		}
+		return false
 	}
 	if entry.TextFile != "" {
 		return strcase.Contains(entry.Peer+" "+entry.SourceApp+" "+Title(entry), query)

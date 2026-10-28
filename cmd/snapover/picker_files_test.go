@@ -10,7 +10,6 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
-	"github.com/2fa0/snapover/internal/filetransfer"
 	"github.com/2fa0/snapover/internal/history"
 	clipsync "github.com/2fa0/snapover/internal/sync"
 )
@@ -97,66 +96,32 @@ func TestFileTreePreviewUsesOnlyOneLevelAndSignalsMore(t *testing.T) {
 	}
 }
 
-func TestFileHistoryPastePublishesIndependentFiles(t *testing.T) {
+func TestFileHistoryPasteKeepsNamesWithoutPublishingBodies(t *testing.T) {
 	a := interfaceTestApp(t)
 	entry := historyFileEntry(t, a, true)
-	a.engine.FileCache = filetransfer.NewClipboardCache(t.TempDir())
 	board := &pasteTestBoard{}
 	a.board = board
 	a.startHistoryPaste(entry.ID, nil)
-	r := a.historyPaste
-	if r == nil || len(board.writes) != 0 {
-		t.Fatal("file paste blocked the caller or published before preparation")
+	if a.historyPaste != nil || len(board.writes) != 0 {
+		t.Fatal("file history paste started a body copy")
 	}
-	waitFilePaste(t, r)
-	a.completeHistoryPaste(r)
-	if len(board.writes) != 1 || board.writes[0].Kind != clip.KindFiles {
-		t.Fatal("native file clipboard not published")
-	}
-	if a.pasteFileCleanup != nil {
-		<-a.pasteFileCleanup
-	}
-	p := filepath.Join(board.writes[0].Files[0], "README.md")
-	data, err := os.ReadFile(p)
-	if err != nil || string(data) != "snapshot" {
-		t.Fatal("paste body changed", err)
-	}
-	if err := a.hist.Delete(entry.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(p); err != nil {
-		t.Fatal("history deletion broke the current clipboard", err)
+	if a.flash != "文件内容未保存在历史中，请重新复制后再粘贴" {
+		t.Fatalf("missing explanation: %q", a.flash)
 	}
 }
 
-func waitFilePaste(t *testing.T, r *pasteRequest) {
-	t.Helper()
-	select {
-	case result := <-r.result:
-		r.result <- result
-	case <-time.After(3 * time.Second):
-		t.Fatal("file paste preparation stalled")
-	}
-}
-
-func TestCancelledFileHistoryPasteDiscardsStagedContent(t *testing.T) {
+func TestFileHistoryPasteFromPickerExplainsMissingBody(t *testing.T) {
 	a := interfaceTestApp(t)
-	entry := historyFileEntry(t, a, true)
-	dir := t.TempDir()
-	a.engine.FileCache = filetransfer.NewClipboardCache(dir)
+	entry := historyFileEntry(t, a, false)
+	a.picker = &mygo.Window{}
 	board := &pasteTestBoard{}
 	a.board = board
-	a.startHistoryPaste(entry.ID, nil)
-	r := a.historyPaste
-	waitFilePaste(t, r)
-	a.cancelHistoryPaste()
-	a.completeHistoryPaste(r)
-	if a.pasteFileCleanup != nil {
-		<-a.pasteFileCleanup
+	a.startHistoryPaste(entry.ID, a.picker)
+	if a.historyPaste != nil || a.pickBusy || len(board.writes) != 0 {
+		t.Fatal("file history paste started a body copy")
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) != 0 || len(board.writes) != 0 {
-		t.Fatalf("canceled file paste leaked or published: %v %v", entries, err)
+	if a.pickFlash != "文件内容未保存在历史中，请重新复制后再粘贴" {
+		t.Fatalf("missing picker explanation: %q", a.pickFlash)
 	}
 }
 

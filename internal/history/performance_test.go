@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestStreamingIndexCompatibilityAndFailure(t *testing.T) {
 	if err := json.Unmarshal(data, &oldFormat); err != nil {
 		t.Fatal(err)
 	}
-	if len(oldFormat.Items) != 1 || oldFormat.Items[0] != s.entries[0] {
+	if len(oldFormat.Items) != 1 || !reflect.DeepEqual(oldFormat.Items[0], s.entries[0]) {
 		t.Fatal("JSON format changed")
 	}
 	// A serialization error must leave the previous index intact.
@@ -43,7 +44,7 @@ func TestStreamingIndexCompatibilityAndFailure(t *testing.T) {
 		t.Fatal("invalid date accepted")
 	}
 	again, err := Open(s.dir)
-	if err != nil || len(again.List()) != 1 || again.List()[0] != oldFormat.Items[0] {
+	if err != nil || len(again.List()) != 1 || !reflect.DeepEqual(again.List()[0], oldFormat.Items[0]) {
 		t.Fatal("failed save replaced previous index")
 	}
 	if _, err := os.Stat(s.indexPath() + ".tmp"); !os.IsNotExist(err) {
