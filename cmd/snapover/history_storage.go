@@ -74,6 +74,7 @@ func (a *app) historyStorageSettings(c *ui.Context) {
 	if a.historyUsagePending != nil || a.historyCleanupPending != nil {
 		c.After(50 * time.Millisecond)
 	}
+	a.otherDiskUsageSettings(c)
 }
 
 func (a *app) historyQuotaBar(c *ui.Context, used, limit int64) {

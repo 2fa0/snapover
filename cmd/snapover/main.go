@@ -183,6 +183,13 @@ func main() {
 		receiveDir = defaultReceiveDir()
 	}
 	engine.SetReceiveDir(receiveDir)
+	if !*check {
+		go func() {
+			if err := filetransfer.CleanStaleTransfers(receiveDir); err != nil {
+				log.Warn("清理过期传输临时文件失败", "err", err)
+			}
+		}()
+	}
 	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
 	if historyOpenErr != nil {
 		uiApp.status = "历史不可用，其他功能仍可使用"
@@ -210,12 +217,12 @@ func main() {
 	})
 
 	mygo.App.WhenReady(func() {
-		go engine.MaintainClipboardCache(ctx)
 		if *check {
 			runCheck(log, engine.Board)
 			mygo.App.Quit()
 			return
 		}
+		go engine.MaintainClipboardCache(ctx)
 		uiApp.open(ctx)
 		if _, err := control.Start(ctx, dataDir, uiApp.handleCLI); err != nil {
 			log.Error("CLI 服务启动失败", "err", err)

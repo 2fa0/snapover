@@ -207,3 +207,96 @@ func TestCleanOpenedStopsConcurrentAndLateStages(t *testing.T) {
 		t.Fatalf("stopping staging affected the history blob: %v", err)
 	}
 }
+
+func TestStageImageReusesOnlyUnmodifiedCopies(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.CleanOpened)
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, image.NewNRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	item, _ := clip.FromPNG(raw.Bytes())
+	entry, err := s.Add(DirLocal, "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.StageImage(entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.StageImage(entry.ID)
+	if err != nil || first != second {
+		t.Fatalf("repeated open created another copy: %s %s %v", first, second, err)
+	}
+	// An editor may change the viewer file, but reopening must show the original.
+	if err := os.WriteFile(first, []byte("edited"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	third, err := s.StageImage(entry.ID)
+	if err != nil || first == third {
+		t.Fatalf("edited viewer copy was reused: %s %v", third, err)
+	}
+	got, err := os.ReadFile(third)
+	if err != nil || !bytes.Equal(got, item.PNG) {
+		t.Fatal("reopening did not restore original contents", err)
+	}
+	if _, err := os.Stat(first); err != nil {
+		t.Fatal("recent edited copy was deleted", err)
+	}
+}
+
+func TestStageImageCapacityAndIdleCleanup(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.CleanOpened)
+	var raw bytes.Buffer
+	_ = png.Encode(&raw, image.NewNRGBA(image.Rect(0, 0, 2, 2)))
+	item, _ := clip.FromPNG(raw.Bytes())
+	entry, err := s.Add(DirLocal, "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := filepath.Join(s.openedDir(), "recent.png")
+	f, err := os.Create(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = f.Truncate(maxStagedImageBytes)
+	_ = f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StageImage(entry.ID); !errors.Is(err, ErrOpenedCacheFull) {
+		t.Fatal("opening did not report viewer cache capacity", err)
+	}
+	if _, err := os.Stat(full); err != nil {
+		t.Fatal("capacity eviction removed a recent viewer file", err)
+	}
+	old := time.Now().Add(-stagedImageTTL - time.Minute)
+	if err := os.Chtimes(full, old, old); err != nil {
+		t.Fatal(err)
+	}
+	path, err := s.StageImage(entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	// Run the timer's callback without waiting 15 minutes or opening another image.
+	s.openedMu.Lock()
+	s.openedTimer.Stop()
+	s.openedMu.Unlock()
+	s.maintainOpened()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("idle cleanup left an expired viewer copy", err)
+	}
+	if len(s.openedCopies) != 0 || s.openedTimer != nil {
+		t.Fatal("empty viewer cache retained bookkeeping or a timer")
+	}
+}
