@@ -121,7 +121,6 @@ type app struct {
 	pickerSearch      historySearch
 	historyPaste      *pasteRequest
 	pasteWorker       *pasteRequest
-	pasteFileCleanup  <-chan struct{}
 	queuedPaste       *pasteRequest
 	notificationOnce  sync.Once
 	notificationQueue chan fileNotification

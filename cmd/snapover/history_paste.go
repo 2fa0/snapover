@@ -7,7 +7,6 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
-	"github.com/2fa0/snapover/internal/filetransfer"
 	"github.com/2fa0/snapover/internal/paste"
 )
 
@@ -15,7 +14,6 @@ type pasteResult struct {
 	item     clip.Item
 	err      error
 	prepared clip.PreparedWrite
-	files    *filetransfer.ClipboardLease
 }
 
 type pasteRequest struct {
@@ -25,7 +23,6 @@ type pasteRequest struct {
 	result chan pasteResult
 	cancel context.CancelFunc
 	ctx    context.Context
-	files  bool
 }
 
 func (a *app) cancelHistoryPaste() {
@@ -53,6 +50,17 @@ func (a *app) startHistoryPaste(id string, picker *mygo.Window) {
 	if a.historyPaste != nil {
 		return
 	}
+	for _, entry := range a.entries {
+		if entry.ID == id && entry.Kind == string(clip.KindFiles) {
+			msg := "文件内容未保存在历史中，请重新复制后再粘贴"
+			if picker != nil {
+				a.pickFlash = msg
+			} else {
+				a.flash = msg
+			}
+			return
+		}
+	}
 	parent := a.root
 	if parent == nil {
 		parent = context.Background()
@@ -60,12 +68,6 @@ func (a *app) startHistoryPaste(id string, picker *mygo.Window) {
 	ctx, cancel := context.WithCancel(parent)
 	r := &pasteRequest{id: id, picker: picker, target: a.pasteTo, result: make(chan pasteResult, 1)}
 	r.cancel, r.ctx = cancel, ctx
-	for _, entry := range a.entries {
-		if entry.ID == id {
-			r.files = entry.Kind == string(clip.KindFiles)
-			break
-		}
-	}
 	a.historyPaste = r
 	if picker != nil {
 		a.pickBusy = true
@@ -85,34 +87,8 @@ func (a *app) startHistoryPaste(id string, picker *mygo.Window) {
 func (a *app) prepareHistoryPaste(r *pasteRequest) {
 	a.pasteWorker = r
 	store, board, ctx := a.hist, a.board, r.ctx
-	cache := a.engine.FileCache
-	cleanup := a.pasteFileCleanup
 	go func() {
-		var item clip.Item
-		var err error
-		var files *filetransfer.ClipboardLease
-		if r.files && cleanup != nil {
-			select {
-			case <-cleanup:
-			case <-ctx.Done():
-				err = ctx.Err()
-			}
-		}
-		if r.files && err == nil {
-			var protected []string
-			if b, ok := board.(interface{ FilePaths() ([]string, error) }); ok {
-				protected, err = b.FilePaths()
-			} else {
-				var current clip.Item
-				current, err = board.Snapshot()
-				protected = current.Files
-			}
-			if err == nil {
-				item, files, err = store.PrepareFiles(ctx, r.id, cache, protected)
-			}
-		} else if !r.files {
-			item, err = store.PasteItem(r.id)
-		}
+		item, err := store.PasteItem(r.id)
 		var prepared clip.PreparedWrite
 		if err == nil && ctx.Err() == nil {
 			if b, ok := board.(interface {
@@ -124,13 +100,9 @@ func (a *app) prepareHistoryPaste(r *pasteRequest) {
 		}
 		if ctx.Err() != nil {
 			prepared.Close()
-			if files != nil {
-				files.Release(false)
-				files = nil
-			}
 			prepared, item, err = clip.PreparedWrite{}, clip.Item{}, ctx.Err()
 		}
-		r.result <- pasteResult{item: item, err: err, prepared: prepared, files: files}
+		r.result <- pasteResult{item: item, err: err, prepared: prepared}
 		if a.root != nil {
 			a.update(func() { a.completeHistoryPaste(r) })
 		}
@@ -156,14 +128,8 @@ func (a *app) completeHistoryPaste(r *pasteRequest) {
 	default:
 		return
 	}
-	keepFiles := false
 	defer func() {
 		result.prepared.Close()
-		if result.files != nil {
-			done := make(chan struct{})
-			a.pasteFileCleanup = done
-			go func() { result.files.Release(keepFiles); close(done) }()
-		}
 		if next := a.queuedPaste; next != nil && a.pasteWorker == nil {
 			a.queuedPaste = nil
 			if a.historyPaste == next {
@@ -205,8 +171,6 @@ func (a *app) completeHistoryPaste(r *pasteRequest) {
 		if publish == nil {
 			publish = func() error { return a.board.Write(result.item) }
 		}
-		// A native write may publish paths even if persistence later fails.
-		keepFiles = true
 		if err := publish(); err == nil {
 			if r.picker == nil {
 				if a.flash == "正在读取历史…" {

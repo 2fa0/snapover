@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/paste"
 )
@@ -258,6 +259,8 @@ func (a *app) pickerView(c *ui.Context) {
 		hint := "回车或双击粘贴到光标处，Esc 关闭"
 		if a.pickNeedsAccess {
 			hint = "首次粘贴需要在辅助功能里允许 Snapover"
+		} else if shown := a.filtered(a.pickQuery); a.pickSel >= 0 && a.pickSel < len(shown) && shown[a.pickSel].Kind == string(clip.KindFiles) {
+			hint = "文件历史只保留名称，请重新复制后再粘贴，Esc 关闭"
 		}
 		ui.Text(c, hint).FontSize(11).TextColor(t.TextMuted)
 	})

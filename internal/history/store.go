@@ -33,24 +33,26 @@ const (
 
 // Entry is one clipboard snapshot kept for the history page.
 type Entry struct {
-	ID         string    `json:"id"`
-	At         time.Time `json:"at"`
-	Dir        string    `json:"dir"`
-	Kind       string    `json:"kind"`
-	Text       string    `json:"text,omitempty"`
-	TextFile   string    `json:"text_file,omitempty"`
-	Width      int       `json:"width,omitempty"`
-	Height     int       `json:"height,omitempty"`
-	Size       int       `json:"size,omitempty"`
-	Peer       string    `json:"peer,omitempty"`
-	ImageFile  string    `json:"image,omitempty"`
-	ThumbFile  string    `json:"thumb,omitempty"`
-	Pinned     bool      `json:"pinned,omitempty"`
-	SourceApp  string    `json:"source_app,omitempty"`
-	FileBundle string    `json:"file_bundle,omitempty"`
-	FileName   string    `json:"file_name,omitempty"`
-	FileCount  int       `json:"file_count,omitempty"`
-	Folder     bool      `json:"folder,omitempty"`
+	ID         string            `json:"id"`
+	At         time.Time         `json:"at"`
+	Dir        string            `json:"dir"`
+	Kind       string            `json:"kind"`
+	Text       string            `json:"text,omitempty"`
+	TextFile   string            `json:"text_file,omitempty"`
+	Width      int               `json:"width,omitempty"`
+	Height     int               `json:"height,omitempty"`
+	Size       int               `json:"size,omitempty"`
+	Peer       string            `json:"peer,omitempty"`
+	ImageFile  string            `json:"image,omitempty"`
+	ThumbFile  string            `json:"thumb,omitempty"`
+	Pinned     bool              `json:"pinned,omitempty"`
+	SourceApp  string            `json:"source_app,omitempty"`
+	FileBundle string            `json:"file_bundle,omitempty"`
+	FileName   string            `json:"file_name,omitempty"`
+	FileCount  int               `json:"file_count,omitempty"`
+	Folder     bool              `json:"folder,omitempty"`
+	FileTree   []FilePreviewItem `json:"file_tree,omitempty"`
+	FileMore   bool              `json:"file_more,omitempty"`
 }
 
 // Store keeps the newest clipboard items on disk.
@@ -113,6 +115,9 @@ func Open(dir string) (*Store, error) {
 		}
 	}
 	if err := s.replayJournal(); err != nil {
+		return nil, err
+	}
+	if err := s.dropFileBundles(); err != nil {
 		return nil, err
 	}
 	if migrated {
@@ -280,7 +285,7 @@ func (s *Store) readItem(id string, forPaste bool) (clip.Item, error) {
 		return clip.Item{}, os.ErrNotExist
 	}
 	if entry.Kind == string(clip.KindFiles) {
-		return clip.Item{}, errors.New("文件历史需要先准备粘贴副本")
+		return clip.Item{}, errors.New("文件内容未保存在历史中，请重新复制后再粘贴")
 	}
 	if entry.Kind == string(clip.KindText) {
 		if entry.TextFile != "" {
