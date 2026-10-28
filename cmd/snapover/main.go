@@ -118,6 +118,10 @@ func main() {
 		"platform", platformName(),
 	)
 	for _, addr := range lan.IPv4() {
+		if lan.TailscaleInterface(addr) {
+			log.Info("本机 Tailscale 地址（需在设置中开启连接）", "iface", addr.Name, "suggest", net.JoinHostPort(addr.IP.String(), portOf(*listen)))
+			continue
+		}
 		if addr.Virtual {
 			log.Info("跳过虚拟网卡", "iface", addr.Name, "ip", addr.IP)
 			continue

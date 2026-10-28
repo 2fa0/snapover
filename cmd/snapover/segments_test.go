@@ -31,7 +31,7 @@ func TestSegmentRowsGroupSubnetAndMarkVirtual(t *testing.T) {
 	if rows[0].virtual || rows[0].key != "en0/192.168.1.0/24" || rows[0].label != "192.168.1.0/24 · en0 · 本机 192.168.1.23、192.168.1.24" {
 		t.Fatalf("physical row = %+v", rows[0])
 	}
-	if !rows[1].virtual || rows[1].label != "100.64.0.0/10 · utun3 · 本机 100.64.0.1 · 不用于连接" {
+	if !rows[1].virtual || rows[1].label != "100.64.0.0/10 · utun3 · 本机 100.64.0.1 · 仅用于 Tailscale 地址连接（需开启），不参与发现" {
 		t.Fatalf("virtual row = %+v", rows[1])
 	}
 }

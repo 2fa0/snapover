@@ -1,12 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/discovery"
 	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/lan"
 )
 
 func (a *app) devicesPage(c *ui.Context) {
@@ -77,20 +77,14 @@ func (a *app) devicesPage(c *ui.Context) {
 						})
 						state, color := "离线", t.TextMuted
 						if online {
-							state, color = "已连接", t.Success
+							state, color = "已连接 · "+link.Route.Label(), t.Success
 						} else if a.targetPeerID == dev.ID && a.dialCancel != nil {
 							state = "正在重连"
 						}
 						ui.Text(c, state).FontSize(12).TextColor(color).SingleLine().ContentTransition(ui.ContentTransition{})
-						if !online && ui.Button(c, "连接").Disabled(waiting || dev.Peer.Addr == "").Clicked() {
-							addr := dev.Peer.Addr
-							for _, found := range a.discovered {
-								if found.ID == dev.ID {
-									addr = found.Addr
-									break
-								}
-							}
-							a.connectDevice(dev.ID, addr)
+						endpoints := dev.Peer.Endpoints(a.allowTailscale)
+						if !online && ui.Button(c, "连接").Disabled(waiting || len(endpoints) == 0).Clicked() {
+							a.connectDevice(dev.ID, endpoints[0].Addr)
 						}
 						if ui.Button(c, "详情").Clicked() {
 							if a.deviceDetails == dev.ID {
@@ -107,7 +101,7 @@ func (a *app) devicesPage(c *ui.Context) {
 								Enter:    &ui.Motion{Collapse: true},
 								Exit:     &ui.Motion{Collapse: true},
 							}).Children(func() {
-							kv(c, "地址", dev.Peer.Addr)
+							a.tailscaleDeviceAddress(c, dev, waiting)
 							ui.Text(c, "证书指纹").FontSize(12).TextColor(t.TextMuted)
 							ui.Text(c, identity.FormatFingerprint(dev.Peer.Fingerprint)).Selectable().FontSize(12)
 							if a.confirmRemove == dev.ID {
@@ -163,12 +157,19 @@ func (a *app) devicesPage(c *ui.Context) {
 		})
 	}
 	ui.Collapsible(c, "通过地址连接", &a.showAddress, func() {
-		ui.Row(c).Gap(8).Padding(12, 0).Children(func() {
-			submit := ui.TextInput(c.Key("peer"), &a.peer).Label("对端局域网地址").Placeholder("192.168.1.20，端口可省略").Grow(1).Submitted()
-			if ui.Button(c, "连接地址").Disabled(waiting).Clicked() || (submit && !waiting) {
-				a.targetPeerID = ""
-				a.connect()
+		ui.Column(c).Gap(10).Padding(12, 0).Children(func() {
+			ui.Segmented(c, &a.addressRoute, "局域网", "Tailscale").Label("连接方式")
+			placeholder := "192.168.1.20，端口可省略"
+			if a.addressRoute == 1 {
+				placeholder = "100.x.y.z，端口可省略"
+				ui.Text(c, "两端需开启 Tailscale 连接，首次配对仍需双方核对校验码。").FontSize(12).TextColor(t.TextMuted)
 			}
+			ui.Row(c).Gap(8).Children(func() {
+				submit := ui.TextInput(c.Key("peer"), &a.peer).Label("对端地址").Placeholder(placeholder).Grow(1).Submitted()
+				if ui.Button(c, "连接地址").Disabled(waiting).Clicked() || (submit && !waiting) {
+					a.connectAddress()
+				}
+			})
 		})
 	})
 	ui.Collapsible(c, "广播网段与配对管理", &a.showNetwork, func() {
@@ -264,15 +265,19 @@ func (a *app) applyDiscovery(snapshot discovery.Snapshot) {
 	}
 	a.discovered = snapshot.Devices
 	a.discoveryMessage = snapshot.Message
-	if a.engine.Connected() || a.targetPeerID == "" || !a.isPaired(a.targetPeerID) {
+	if a.targetPeerID == "" || !a.isPaired(a.targetPeerID) {
 		return
 	}
-	for _, dev := range snapshot.Devices {
-		if dev.ID == a.targetPeerID && dev.Addr != a.dialAddr {
-			a.peer = dev.Addr
-			a.connect()
-			a.status = fmt.Sprintf("已找到 %s 的新地址，正在重连", displayName(dev.Name, dev.ID))
-			return
+	if a.dialTarget != nil {
+		a.refreshConnectionCandidates()
+		return
+	}
+	if !a.engine.Connected() {
+		for _, dev := range snapshot.Devices {
+			if dev.ID == a.targetPeerID {
+				a.startConnection(lan.Endpoint{Addr: dev.Addr, Route: lan.RouteLAN}, dev.ID, false)
+				return
+			}
 		}
 	}
 }

@@ -73,9 +73,16 @@ func segmentLabel(addr lan.Addr, ips []string) string {
 		label += " · 本机 " + strings.Join(shown, "、")
 	}
 	if addr.Virtual {
-		label += " · 不用于连接"
+		label += " · " + virtualConnectionHint(addr)
 	}
 	return label
+}
+
+func virtualConnectionHint(addr lan.Addr) string {
+	if lan.TailscaleInterface(addr) {
+		return "仅用于 Tailscale 地址连接（需开启），不参与发现"
+	}
+	return "不用于连接"
 }
 
 func (a *app) selection() discovery.Selection {

@@ -104,6 +104,11 @@ func (e *Engine) Revoke(id string) error {
 	if err != nil {
 		return err
 	}
+	if id == "" {
+		e.tailscaleRemovals = nil
+	} else {
+		delete(e.tailscaleRemovals, id)
+	}
 	e.authEpoch++
 	e.pairingUntil = time.Time{}
 	if e.pendingPair != nil {
@@ -189,7 +194,7 @@ func pairingCode(conn *tls.Conn) (string, error) {
 	return code[:3] + " " + code[3:], nil
 }
 
-func (e *Engine) authorizePair(conn *tls.Conn, peer *identityResult, hello wire.Hello, epoch uint64, weDialed bool) (bool, error) {
+func (e *Engine) authorizePair(conn *tls.Conn, peer *identityResult, hello wire.Hello, epoch uint64, weDialed bool, dialSeq uint64) (bool, error) {
 	trusted, err := e.Peers.Check(peer.id, peer.fp)
 	if err != nil {
 		return false, err
@@ -246,10 +251,10 @@ func (e *Engine) authorizePair(conn *tls.Conn, peer *identityResult, hello wire.
 			e.pendingPair = nil
 		}
 		e.authMu.Unlock()
-		e.notify(Notice{Kind: NoticePairing, Message: ""})
+		e.notify(Notice{Kind: NoticePairing, Message: "", DialSeq: dialSeq})
 	}()
 	_ = conn.SetDeadline(p.Expires)
-	e.notify(Notice{Kind: NoticePairing, Message: "核对两台电脑的校验码后确认配对", PeerID: peer.id, PeerName: hello.Name})
+	e.notify(Notice{Kind: NoticePairing, Message: "核对两台电脑的校验码后确认配对", PeerID: peer.id, PeerName: hello.Name, DialSeq: dialSeq})
 	// Read immediately so cancellation or rejection on the other computer
 	// ends the prompt even when the local user has not clicked anything.
 	remoteChoice := make(chan error, 1)
@@ -284,7 +289,7 @@ func (e *Engine) authorizePair(conn *tls.Conn, peer *identityResult, hello wire.
 			if !accept {
 				return false, ErrPairingStopped
 			}
-			e.notify(Notice{Kind: NoticePairing, Message: "已确认，等待另一台电脑确认", PeerID: peer.id, PeerName: hello.Name})
+			e.notify(Notice{Kind: NoticePairing, Message: "已确认，等待另一台电脑确认", PeerID: peer.id, PeerName: hello.Name, DialSeq: dialSeq})
 			if !remoteAccepted {
 				select {
 				case <-p.done:

@@ -3,6 +3,7 @@
 package lan
 
 import (
+	"context"
 	"net"
 	"strings"
 	"time"
@@ -142,17 +143,7 @@ func bindIP(host string, ifaces []Addr) net.IP {
 // DialTimeout dials addr. Non-loopback targets are bound to a physical NIC
 // when one exists. The returned IP is that bind address, or nil.
 func DialTimeout(addr string, timeout time.Duration) (net.Conn, net.IP, error) {
-	d := net.Dialer{Timeout: timeout}
-	var bind net.IP
-	host, _, err := net.SplitHostPort(addr)
-	if err == nil {
-		bind = BindIP(host)
-		if bind != nil {
-			d.LocalAddr = &net.TCPAddr{IP: bind}
-		}
-	}
-	conn, err := d.Dial("tcp", addr)
-	return conn, bind, err
+	return DialContext(context.Background(), Endpoint{Addr: addr, Route: RouteLAN}, false, timeout)
 }
 
 // LocalIP reads the local side of a TCP connection.

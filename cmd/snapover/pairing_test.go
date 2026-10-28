@@ -53,7 +53,7 @@ func TestRestorePairedDeviceAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine.Peers = peers
+	engine = &clipsync.Engine{Peers: peers}
 	a = newApp(engine, hist, nil, &identity.Identity{}, ":47821", nil, "")
 	if a.peer != "" || len(a.devices) != 0 {
 		t.Fatal("removed device returned after restart")
@@ -86,8 +86,11 @@ func TestDiscoveryRetargetsOnlySelectedTrustedDevice(t *testing.T) {
 		t.Fatal("unselected advertisement changed reconnect target")
 	}
 	a.applyDiscovery(discovery.Snapshot{Devices: []discovery.Device{{ID: "selected", Addr: "192.168.1.60:47821"}}})
-	if a.dialAddr != "192.168.1.60:47821" || a.targetPeerID != "selected" {
-		t.Fatal("selected device's new address was not used")
+	if a.dialAddr != "192.168.1.20:47821" || a.targetPeerID != "selected" {
+		t.Fatal("discovery interrupted the active attempt")
+	}
+	if candidates := a.dialTarget.Endpoints(); len(candidates) != 2 || candidates[0].Addr != "192.168.1.60:47821" {
+		t.Fatalf("selected device's new address was not queued: %+v", candidates)
 	}
 	for _, dev := range peers.List() {
 		if dev.ID == "selected" && dev.Peer.Addr != "192.168.1.20:47821" {

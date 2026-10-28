@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/filetransfer"
+	"github.com/2fa0/snapover/internal/lan"
 	"github.com/2fa0/snapover/internal/wire"
 	"github.com/oklog/ulid/v2"
 )
@@ -42,15 +44,22 @@ type Engine struct {
 	RunOnBoard func(func())
 	FileCache  *filetransfer.ClipboardCache
 
-	authMu        sync.Mutex
-	authEpoch     uint64
-	authConns     map[*tls.Conn]string
-	pairingUntil  time.Time
-	pairLast      time.Time
-	pairLastID    string
-	pairPreferred bool
-	pairSerial    uint64
-	pendingPair   *pairRequest
+	authMu              sync.Mutex
+	authEpoch           uint64
+	authConns           map[*tls.Conn]string
+	pairingUntil        time.Time
+	pairLast            time.Time
+	pairLastID          string
+	pairPreferred       bool
+	pairSerial          uint64
+	pendingPair         *pairRequest
+	allowTailscale      bool
+	tailscaleEpoch      uint64
+	tailscaleConns      map[*tls.Conn]struct{}
+	tailscaleDials      map[uint64]tailscaleDial
+	nextNetworkDial     uint64
+	tailscaleRemovalSeq uint64
+	tailscaleRemovals   map[string]uint64
 
 	clipMu      sync.Mutex
 	mu          sync.Mutex
@@ -521,22 +530,45 @@ func (e *Engine) Attach(conn *tls.Conn, weDialed bool) error {
 // AttachPeer also checks the identity selected in the device list. Discovery
 // advertisements and saved addresses are routing hints, never proof of identity.
 func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) error {
+	return e.attachPeer(context.Background(), conn, weDialed, expectedID, lan.RouteLAN)
+}
+
+func (e *Engine) attachPeer(ctx context.Context, conn *tls.Conn, weDialed bool, expectedID string, route lan.Route) error {
+	sequence := dialSequence(ctx)
 	// Rejection must release the transport immediately; a TLS close-notify
 	// can otherwise wait for a peer that has already stopped reading.
 	defer conn.NetConn().Close()
+	stop := context.AfterFunc(ctx, func() { _ = conn.NetConn().Close() })
+	defer stop()
 	e.authMu.Lock()
+	if route == lan.RouteTailscale && !e.allowTailscale {
+		e.authMu.Unlock()
+		return lan.ErrTailscaleDisabled
+	}
 	epoch := e.authEpoch
+	networkEpoch := e.tailscaleEpoch
+	removalSeq := e.tailscaleRemovalSeq
 	if e.authConns == nil {
 		e.authConns = make(map[*tls.Conn]string)
 	}
-	e.authConns[conn] = ""
+	e.authConns[conn] = expectedID
+	if route == lan.RouteTailscale {
+		if e.tailscaleConns == nil {
+			e.tailscaleConns = make(map[*tls.Conn]struct{})
+		}
+		e.tailscaleConns[conn] = struct{}{}
+	}
 	e.authMu.Unlock()
 	defer func() {
 		e.authMu.Lock()
 		delete(e.authConns, conn)
+		delete(e.tailscaleConns, conn)
 		e.authMu.Unlock()
 	}()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	if err := conn.HandshakeContext(ctx); err != nil {
+		return fmt.Errorf("TLS 握手失败：%w", err)
+	}
 	peer, hello, err := e.handshake(conn)
 	if err != nil {
 		return err
@@ -546,15 +578,19 @@ func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) er
 	}
 	e.authMu.Lock()
 	e.authConns[conn] = peer.id
+	if route == lan.RouteTailscale && e.tailscaleRemovals[peer.id] > removalSeq {
+		e.authMu.Unlock()
+		return ErrTailscaleAddressRemoved
+	}
 	e.authMu.Unlock()
-	paired, err := e.authorizePair(conn, peer, hello, epoch, weDialed)
+	paired, err := e.authorizePair(conn, peer, hello, epoch, weDialed, sequence)
 	if err != nil {
 		if errors.Is(err, ErrFingerprintMismatch) {
-			e.notify(Notice{Kind: NoticeError, Message: "设备身份发生变化，已拒绝连接。确认对端重装后，解除配对再重新添加", PeerID: peer.id})
+			e.notify(Notice{Kind: NoticeError, Message: "设备身份发生变化，已拒绝连接。确认对端重装后，解除配对再重新添加", PeerID: peer.id, DialSeq: sequence})
 		} else {
 			_ = conn.SetWriteDeadline(time.Now().Add(time.Second))
 			_ = wire.WriteMsg(conn, wire.TypeError, wire.Error{Code: 2, Msg: err.Error()})
-			e.notify(Notice{Kind: NoticeError, Message: err.Error(), PeerID: peer.id})
+			e.notify(Notice{Kind: NoticeError, Message: err.Error(), PeerID: peer.id, DialSeq: sequence})
 		}
 		return err
 	}
@@ -606,20 +642,28 @@ func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) er
 	sess.fileLimit = e.FileLimit
 	sess.onFile = func(n Notice) { n.PeerID = peer.id; n.PeerName = hello.Name; e.notify(n) }
 	e.authMu.Lock()
-	if epoch != e.authEpoch {
+	if epoch != e.authEpoch || ctx.Err() != nil {
 		e.authMu.Unlock()
 		return ErrPairingStopped
 	}
-	_, err = e.Peers.Allow(peer.id, peer.fp, hello.Name, hello.Platform, reconnectAddr(addr, weDialed, hello.ListenPort))
+	if route == lan.RouteTailscale && (!e.allowTailscale || networkEpoch != e.tailscaleEpoch) {
+		e.authMu.Unlock()
+		return lan.ErrTailscaleDisabled
+	}
+	if route == lan.RouteTailscale && e.tailscaleRemovals[peer.id] > removalSeq {
+		e.authMu.Unlock()
+		return ErrTailscaleAddressRemoved
+	}
+	_, err = e.Peers.AllowEndpoint(peer.id, peer.fp, hello.Name, hello.Platform, lan.Endpoint{Addr: reconnectAddr(addr, weDialed, hello.ListenPort), Route: route})
 	if err != nil {
 		e.authMu.Unlock()
-		e.notify(Notice{Kind: NoticeError, Message: "保存配对失败，请检查数据目录权限后重试", PeerID: peer.id})
+		e.notify(Notice{Kind: NoticeError, Message: "保存配对失败，请检查数据目录权限后重试", PeerID: peer.id, DialSeq: sequence})
 		return err
 	}
 	if paired {
 		e.pairingUntil = time.Time{}
 	}
-	adopted := e.adopt(sess, Link{SessionID: sess.sessionID, ID: peer.id, Name: hello.Name, Platform: hello.Platform, Addr: addr, FileTransfer: sess.fileSupported})
+	adopted := e.adopt(sess, Link{SessionID: sess.sessionID, ID: peer.id, Name: hello.Name, Platform: hello.Platform, Addr: addr, FileTransfer: sess.fileSupported, Route: route})
 	e.authMu.Unlock()
 	if !adopted {
 		e.Log.Info("关掉重复连接", "peer", peer.id, "dialed", weDialed)
@@ -627,17 +671,20 @@ func (e *Engine) AttachPeer(conn *tls.Conn, weDialed bool, expectedID string) er
 	}
 	e.Log.Info("已连接", "peer", peer.id, "name", hello.Name, "platform", hello.Platform, "dialed", weDialed)
 	e.notify(Notice{
-		Kind:     NoticeStatus,
-		Message:  "已连接 " + hello.Name,
-		PeerID:   peer.id,
-		PeerName: hello.Name,
-		Platform: hello.Platform,
-		Addr:     addr,
+		Kind:      NoticeStatus,
+		Message:   "已通过" + route.Label() + "连接 " + hello.Name,
+		PeerID:    peer.id,
+		PeerName:  hello.Name,
+		Platform:  hello.Platform,
+		Addr:      addr,
+		Route:     route,
+		SessionID: sess.sessionID,
+		DialSeq:   sequence,
 	})
 	sess.run()
 	if e.drop(sess) {
 		e.Log.Info("连接断开", "peer", peer.id)
-		e.notify(Notice{Kind: NoticeStatus, Message: "设备离线，等待重连", PeerID: peer.id, PeerName: hello.Name})
+		e.notify(Notice{Kind: NoticeStatus, Message: "设备离线，等待重连", PeerID: peer.id, PeerName: hello.Name, SessionID: sess.sessionID, DialSeq: sequence})
 	}
 	return nil
 }

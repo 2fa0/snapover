@@ -4,7 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/2fa0/snapover/internal/lan"
@@ -36,14 +39,15 @@ func Listen(ctx context.Context, addr string, e *Engine) error {
 			_ = conn.Close()
 			continue
 		}
-		if !lan.AllowLocal(lan.LocalIP(tlsConn)) {
-			e.Log.Info("忽略虚拟网卡上的连接", "local", tlsConn.LocalAddr().String(), "remote", tlsConn.RemoteAddr().String())
+		route, routeErr := lan.IncomingRoute(tlsConn, e.TailscaleEnabled())
+		if routeErr != nil {
+			e.Log.Info("忽略不允许的连接", "local", tlsConn.LocalAddr().String(), "remote", tlsConn.RemoteAddr().String(), "err", routeErr)
 			_ = tlsConn.Close()
 			continue
 		}
 		enableKeepAlive(tlsConn)
 		go func() {
-			if err := e.Attach(tlsConn, false); err != nil {
+			if err := e.attachPeer(ctx, tlsConn, false, "", route); err != nil {
 				e.Log.Warn("接入失败", "addr", tlsConn.RemoteAddr().String(), "err", err)
 			}
 		}()
@@ -57,85 +61,191 @@ func Dial(ctx context.Context, addr string, e *Engine) {
 }
 
 func DialPeer(ctx context.Context, addr, expectedID string, e *Engine) {
-	backoff := time.Second
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		if e.Connected() {
-			if !wait(ctx, 500*time.Millisecond) {
-				return
-			}
-			continue
-		}
-		conn, bind, err := lan.DialTimeout(addr, 5*time.Second)
-		if err == nil && bind != nil {
-			e.Log.Info("从局域网网卡拨号", "addr", addr, "bind", bind.String())
-		}
-		if err != nil {
-			msg := "连不上 " + addr
-			if bind != nil {
-				msg += "（已从 " + bind.String() + " 拨出，不走虚拟网卡）"
-			}
-			e.Log.Warn("拨号失败", "addr", addr, "bind", bindString(bind), "err", err)
-			e.notify(Notice{Kind: NoticeError, Message: msg, Addr: addr})
-			if !wait(ctx, backoff) {
-				return
-			}
-			backoff = min(backoff*2, 30*time.Second)
-			continue
-		}
-		enableKeepAlive(conn)
-		tlsConn := tls.Client(conn, e.TLS)
-		_ = tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
-		err = tlsConn.Handshake()
-		_ = tlsConn.SetDeadline(time.Time{})
-		if err != nil {
-			_ = conn.Close()
-			e.Log.Warn("TLS 握手失败", "addr", addr, "err", err)
-			e.notify(Notice{Kind: NoticeError, Message: "TLS 握手失败", Addr: addr})
-			if !wait(ctx, backoff) {
-				return
-			}
-			backoff = min(backoff*2, 30*time.Second)
-			continue
-		}
-		attached := make(chan struct{})
-		go func() {
-			select {
-			case <-ctx.Done():
-				_ = conn.Close()
-			case <-attached:
-			}
-		}()
-		err = e.AttachPeer(tlsConn, true, expectedID)
-		close(attached)
-		if errors.Is(err, ErrPairingStopped) || errors.Is(err, ErrFingerprintMismatch) || errors.Is(err, ErrWrongPeer) {
-			e.notify(Notice{Kind: NoticeError, Message: err.Error(), PeerID: expectedID, Addr: addr})
-			return
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		if e.Connected() {
-			// This dial lost the tie-break. The other session is still up.
-			backoff = time.Second
-			continue
-		}
-		if err != nil {
-			e.Log.Warn("连接失败", "addr", addr, "err", err)
-		} else {
-			e.Log.Info("连接结束，准备重连", "addr", addr)
-		}
-		if !wait(ctx, backoff) {
-			return
-		}
-		if err != nil {
-			backoff = min(backoff*2, 30*time.Second)
-		} else {
-			backoff = time.Second
+	Reconnect(ctx, NewDialTarget(expectedID, 0, []lan.Endpoint{{Addr: addr, Route: lan.RouteLAN}}), e)
+}
+
+// DialTarget keeps the selected identity fixed while discovery updates routing hints.
+// A target owns at most three candidates and is replaced on explicit user retry.
+type DialTarget struct {
+	peerID    string
+	Sequence  uint64
+	mu        sync.Mutex
+	endpoints []lan.Endpoint
+	preferred lan.Endpoint
+}
+
+func NewDialTarget(peerID string, sequence uint64, endpoints []lan.Endpoint) *DialTarget {
+	t := &DialTarget{peerID: peerID, Sequence: sequence}
+	t.Update(endpoints)
+	return t
+}
+
+func (t *DialTarget) PeerID() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.peerID
+}
+
+// BindPeer fixes the identity after a manually addressed first pairing succeeds.
+// It cannot retarget an already identified device.
+func (t *DialTarget) BindPeer(id string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.peerID == "" {
+		t.peerID = id
+	}
+}
+
+func (t *DialTarget) Prefer(ep lan.Endpoint) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.preferred = ep
+}
+
+func (t *DialTarget) firstEndpoints() []lan.Endpoint {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.preferred.Addr == "" {
+		return slices.Clone(t.endpoints)
+	}
+	out := []lan.Endpoint{t.preferred}
+	for _, ep := range t.endpoints {
+		if !slices.Contains(out, ep) && len(out) < 3 {
+			out = append(out, ep)
 		}
 	}
+	return out
+}
+
+func (t *DialTarget) Update(endpoints []lan.Endpoint) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	next := make([]lan.Endpoint, 0, 3)
+	for _, ep := range endpoints {
+		if ep.Addr == "" || slices.Contains(next, ep) {
+			continue
+		}
+		next = append(next, ep)
+		if len(next) == 3 {
+			break
+		}
+	}
+	t.endpoints = next
+}
+
+func (t *DialTarget) Endpoints() []lan.Endpoint {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return slices.Clone(t.endpoints)
+}
+
+func Reconnect(ctx context.Context, target *DialTarget, e *Engine) {
+	reconnect(ctx, target, e, dialEndpoint, wait)
+}
+
+type dialSequenceKey struct{}
+
+func dialSequence(ctx context.Context) uint64 {
+	sequence, _ := ctx.Value(dialSequenceKey{}).(uint64)
+	return sequence
+}
+
+// The attempt and pause parameters keep routing failures and backoff testable
+// without touching a real VPN, clipboard, or user identity directory.
+func reconnect(ctx context.Context, target *DialTarget, e *Engine,
+	attempt func(context.Context, lan.Endpoint, string, *Engine) error,
+	pause func(context.Context, time.Duration) bool) {
+	ctx = context.WithValue(ctx, dialSequenceKey{}, target.Sequence)
+	backoff := time.Second
+	blocked := map[lan.Endpoint]bool{}
+	first := true
+	initialID := target.PeerID()
+	_, wasTrusted := e.Peers.Get(initialID)
+	for ctx.Err() == nil {
+		peerID := target.PeerID()
+		_, trusted := e.Peers.Get(peerID)
+		if !trusted && (wasTrusted || (peerID != "" && peerID != initialID)) {
+			return
+		}
+		wasTrusted = wasTrusted || trusted
+		if e.Connected() {
+			backoff = time.Second
+			if !pause(ctx, 500*time.Millisecond) {
+				return
+			}
+			continue
+		}
+		candidates := target.Endpoints()
+		if first {
+			candidates = target.firstEndpoints()
+			first = false
+		}
+		for ep := range blocked {
+			if !slices.Contains(candidates, ep) {
+				delete(blocked, ep)
+			}
+		}
+		for _, ep := range candidates {
+			if ctx.Err() != nil || e.Connected() {
+				break
+			}
+			if blocked[ep] {
+				continue
+			}
+			e.notify(Notice{Kind: NoticeDial, Message: "正在通过" + ep.Route.Label() + "连接 " + ep.Addr,
+				PeerID: peerID, Addr: ep.Addr, Route: ep.Route, DialSeq: target.Sequence})
+			err := attempt(ctx, ep, peerID, e)
+			if ctx.Err() != nil {
+				return
+			}
+			if err == nil {
+				backoff = time.Second
+				break
+			}
+			e.notify(Notice{Kind: NoticeDial, Message: err.Error(), PeerID: peerID,
+				Addr: ep.Addr, Route: ep.Route, DialSeq: target.Sequence})
+			if errors.Is(err, ErrPairingStopped) {
+				return
+			}
+			if errors.Is(err, ErrWrongPeer) || errors.Is(err, ErrFingerprintMismatch) {
+				blocked[ep] = true
+				if peerID == "" {
+					return
+				}
+			}
+		}
+		if !pause(ctx, backoff) {
+			return
+		}
+		backoff = min(backoff*2, 30*time.Second)
+	}
+}
+
+func dialEndpoint(ctx context.Context, ep lan.Endpoint, expectedID string, e *Engine) error {
+	if ep.Route == lan.RouteTailscale {
+		networkCtx, finish, err := e.tailscaleContext(ctx, expectedID)
+		if err != nil {
+			return err
+		}
+		defer finish()
+		ctx = networkCtx
+	}
+	conn, bind, err := lan.DialContext(ctx, ep, e.TailscaleEnabled(), 5*time.Second)
+	if err != nil {
+		if e.Log != nil {
+			e.Log.Warn("拨号失败", "addr", ep.Addr, "route", ep.Route, "bind", bindString(bind), "err", err)
+		}
+		return fmt.Errorf("%s连接失败（%s）：%w", ep.Route.Label(), ep.Addr, err)
+	}
+	if e.Log != nil {
+		e.Log.Info("正在拨号", "addr", ep.Addr, "route", ep.Route, "bind", bindString(bind))
+	}
+	enableKeepAlive(conn)
+	err = e.attachPeer(ctx, tls.Client(conn, e.TLS), true, expectedID, ep.Route)
+	if ep.Route == lan.RouteTailscale && !e.TailscaleEnabled() {
+		return lan.ErrTailscaleDisabled
+	}
+	return err
 }
 
 func enableKeepAlive(conn net.Conn) {

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/2fa0/snapover/internal/lan"
 )
 
 // ErrFingerprintMismatch means a known device presented a different certificate.
@@ -15,11 +17,13 @@ var ErrFingerprintMismatch = errors.New("证书指纹不匹配")
 
 // Peer is a device this machine has trusted on first connect.
 type Peer struct {
-	Name        string    `json:"name"`
-	Platform    string    `json:"platform"`
-	Fingerprint string    `json:"fingerprint"`
-	Addr        string    `json:"addr,omitempty"`
-	TrustedAt   time.Time `json:"trusted_at"`
+	Name          string    `json:"name"`
+	Platform      string    `json:"platform"`
+	Fingerprint   string    `json:"fingerprint"`
+	Addr          string    `json:"addr,omitempty"`
+	LANAddr       string    `json:"lan_addr,omitempty"`
+	TailscaleAddr string    `json:"tailscale_addr,omitempty"`
+	TrustedAt     time.Time `json:"trusted_at"`
 }
 
 // Store persists peers approved by the pairing flow.
@@ -84,6 +88,13 @@ func (s *Store) List() []Device {
 	return out
 }
 
+func (s *Store) Get(id string) (Peer, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.Peer[id]
+	return p, ok
+}
+
 // Forget drops one trusted device. The live connection, if any, is left to the caller.
 func (s *Store) Forget(id string) error {
 	id = strings.ToLower(strings.TrimSpace(id))
@@ -133,6 +144,44 @@ func deviceLess(a, b Device) bool {
 // Allow trusts id on first sight and refuses a changed fingerprint.
 // first is true when this call created the record.
 func (s *Store) Allow(id, fingerprint, name, platform, addr string) (bool, error) {
+	return s.AllowEndpoint(id, fingerprint, name, platform, lan.Endpoint{Addr: addr, Route: lan.RouteLAN})
+}
+
+func (p Peer) LANAddress() string {
+	if p.LANAddr != "" {
+		return p.LANAddr
+	}
+	if p.Addr != p.TailscaleAddr {
+		return p.Addr
+	}
+	return ""
+}
+
+func (p Peer) Endpoint(addr string) lan.Endpoint {
+	route := lan.RouteLAN
+	if addr != "" && addr == p.TailscaleAddr {
+		route = lan.RouteTailscale
+	}
+	return lan.Endpoint{Addr: addr, Route: route}
+}
+
+func (p Peer) HasAddress(addr string) bool {
+	return addr != "" && (p.Addr == addr || p.LANAddr == addr || p.TailscaleAddr == addr)
+}
+
+func (p Peer) Endpoints(allowTailscale bool) []lan.Endpoint {
+	var out []lan.Endpoint
+	if addr := p.LANAddress(); addr != "" {
+		out = append(out, lan.Endpoint{Addr: addr, Route: lan.RouteLAN})
+	}
+	if allowTailscale && p.TailscaleAddr != "" {
+		out = append(out, lan.Endpoint{Addr: p.TailscaleAddr, Route: lan.RouteTailscale})
+	}
+	return out
+}
+
+// AllowEndpoint is called only after the remote identity and pairing are verified.
+func (s *Store) AllowEndpoint(id, fingerprint, name, platform string, ep lan.Endpoint) (bool, error) {
 	id = strings.ToLower(strings.TrimSpace(id))
 	fp := normalizeFP(fingerprint)
 	if id == "" || fp == "" {
@@ -151,9 +200,7 @@ func (s *Store) Allow(id, fingerprint, name, platform, addr string) (bool, error
 		if platform != "" {
 			cur.Platform = platform
 		}
-		if addr != "" {
-			cur.Addr = addr
-		}
+		cur.rememberEndpoint(ep)
 		s.Peer[id] = cur
 		if err := s.saveLocked(); err != nil {
 			s.Peer[id] = old
@@ -161,18 +208,54 @@ func (s *Store) Allow(id, fingerprint, name, platform, addr string) (bool, error
 		}
 		return false, nil
 	}
-	s.Peer[id] = Peer{
+	cur := Peer{
 		Name:        name,
 		Platform:    platform,
 		Fingerprint: fp,
-		Addr:        addr,
 		TrustedAt:   time.Now(),
 	}
+	cur.rememberEndpoint(ep)
+	s.Peer[id] = cur
 	if err := s.saveLocked(); err != nil {
 		delete(s.Peer, id)
 		return false, err
 	}
 	return true, nil
+}
+
+func (p *Peer) rememberEndpoint(ep lan.Endpoint) {
+	if ep.Addr == "" {
+		return
+	}
+	if p.LANAddr == "" {
+		p.LANAddr = p.LANAddress()
+	}
+	if ep.Route == lan.RouteTailscale {
+		p.TailscaleAddr = ep.Addr
+	} else {
+		p.LANAddr = ep.Addr
+	}
+	p.Addr = ep.Addr
+}
+
+func (s *Store) RemoveTailscaleAddress(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur, ok := s.Peer[id]
+	if !ok {
+		return errors.New("设备已解除配对")
+	}
+	old := cur
+	if cur.Addr == cur.TailscaleAddr {
+		cur.Addr = cur.LANAddress()
+	}
+	cur.TailscaleAddr = ""
+	s.Peer[id] = cur
+	if err := s.saveLocked(); err != nil {
+		s.Peer[id] = old
+		return err
+	}
+	return nil
 }
 
 func (s *Store) saveLocked() error {
