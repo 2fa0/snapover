@@ -62,6 +62,8 @@ type Store struct {
 	listed       []Entry
 	openedMu     sync.Mutex
 	openedClosed bool
+	openedCopies map[string]stagedImage
+	openedTimer  *time.Timer
 	dir          string
 	entries      []Entry
 	sequence     uint64
@@ -85,6 +87,26 @@ func Open(dir string) (*Store, error) {
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "texts"), 0o700); err != nil {
 		return nil, err
+	}
+	// Staging files are never indexed. Leave recent ones alone because the
+	// diagnostic -check process can open history while the app is still running.
+	texts, err := os.ReadDir(filepath.Join(dir, "texts"))
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range texts {
+		if suffix, ok := strings.CutPrefix(file.Name(), ".text-"); ok && suffix != "" && strings.Trim(suffix, "0123456789") == "" && file.Type().IsRegular() {
+			info, err := file.Info()
+			if err != nil {
+				return nil, err
+			}
+			if time.Since(info.ModTime()) < 24*time.Hour {
+				continue
+			}
+			if err := os.Remove(filepath.Join(dir, "texts", file.Name())); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "opened"), 0o700); err != nil {
 		return nil, err

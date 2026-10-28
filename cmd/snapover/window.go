@@ -73,6 +73,12 @@ type app struct {
 	historyUsagePending       chan historyUsageResult
 	historyCleanupPending     chan historyCleanupResult
 
+	showDiskUsage    bool
+	diskUsage        diskUsageResult
+	diskUsageValid   bool
+	diskUsagePending chan diskUsageResult
+	diskUsageCancel  context.CancelFunc
+
 	page              string
 	peer              string
 	query             string
@@ -325,6 +331,7 @@ func (a *app) openMainWindow() {
 	win.OnBlur(func() { a.cancelShortcutRecording(); win.Invalidate() })
 	win.OnClosed(func() {
 		a.cancelShortcutRecording()
+		a.cancelDiskUsage()
 		if a.pickPreview.parent == win {
 			a.closePickPreview()
 		}

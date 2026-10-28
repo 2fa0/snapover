@@ -54,6 +54,7 @@ type Incoming struct {
 	file          *os.File
 	hash          *blake3.Hasher
 	dir, name     string
+	stageDir      string
 	Size, Written int64
 }
 
@@ -68,11 +69,17 @@ func Begin(dir, name string, size, maxBytes int64) (*Incoming, error) {
 	if err := CheckReceiveDir(dir); err != nil {
 		return nil, err
 	}
-	f, err := os.CreateTemp(dir, ".snapover-*.part")
+	stageDir, err := os.MkdirTemp(dir, ".snapover-incoming-")
 	if err != nil {
+		return nil, fmt.Errorf("无法创建接收暂存目录：%w", err)
+	}
+	f, err := os.OpenFile(filepath.Join(stageDir, "contents.part"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		_ = os.Remove(stageDir)
 		return nil, fmt.Errorf("无法写入接收文件夹：%w", err)
 	}
-	return &Incoming{file: f, hash: blake3.New(), dir: dir, name: name, Size: size}, nil
+	activeParts.Store(partKey(stageDir), true)
+	return &Incoming{file: f, hash: blake3.New(), dir: dir, name: name, stageDir: stageDir, Size: size}, nil
 }
 
 // CheckReceiveDir rejects volumes without a safe publish operation before
@@ -84,6 +91,8 @@ func CheckReceiveDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("无法创建接收文件夹：%w", err)
 	}
+	// Cleanup failure must not prevent receiving a new file in a writable folder.
+	_ = CleanStaleTransfers(dir)
 	f, err := os.CreateTemp(dir, ".snapover-check-*.part")
 	if err != nil {
 		return fmt.Errorf("无法写入接收文件夹：%w", err)
@@ -115,6 +124,8 @@ func (f *Incoming) Append(offset int64, data []byte) error {
 func (f *Incoming) Abort() {
 	_ = f.file.Close()
 	_ = os.Remove(f.file.Name())
+	_ = os.Remove(f.stageDir)
+	activeParts.Delete(partKey(f.stageDir))
 }
 
 func (f *Incoming) Finish(hash []byte) (string, error) {

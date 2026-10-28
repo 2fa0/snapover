@@ -61,3 +61,62 @@ func TestClipboardCachePreservesNativeReferencesAndCleansExpired(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestClipboardCacheCleansAbandonedSendsAndKeepsLiveTransfers(t *testing.T) {
+	dir := t.TempDir()
+	c := NewClipboardCache(dir)
+	abandoned := filepath.Join(dir, "send-abandoned")
+	if err := os.Mkdir(abandoned, 0700); err != nil {
+		t.Fatal(err)
+	}
+	send, err := c.BeginSend()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer send.Release(false)
+	if err := c.Clean(nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(abandoned); !os.IsNotExist(err) {
+		t.Fatal("abandoned outgoing directory retained", err)
+	}
+	if _, err := os.Stat(send.Dir); err != nil {
+		t.Fatal("maintenance removed a live send", err)
+	}
+	receive, err := c.Begin(nil, 100, 100)
+	if err != nil {
+		t.Fatal("outgoing archive blocked an independent receive", err)
+	}
+	receive.Release(false)
+}
+
+func TestClipboardCacheRetentionDoesNotGrowWithFileLimit(t *testing.T) {
+	c := NewClipboardCache(t.TempDir())
+	// A single large receive still gets space for its archive and extracted body.
+	large, err := c.Begin(nil, 2<<30, 2<<30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	large.Release(false)
+	old := filepath.Join(c.dir, "copy-retained")
+	if err := os.Mkdir(old, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(old, "file")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = f.Truncate(clipboardCacheBytes + 1)
+	_ = f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease, err := c.Begin([]string{path}, 10<<30, 100); err == nil {
+		lease.Release(false)
+		t.Fatal("raising file limit expanded retained-cache budget")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("admission deleted the current clipboard", err)
+	}
+}

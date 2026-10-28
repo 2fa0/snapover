@@ -164,7 +164,15 @@ func (s *Session) sendFileClipboard(item queuedItem) error {
 		}
 	}
 	progress("正在准备文件剪贴板…")
-	archive, err := filetransfer.PackBundle(s.ctx, item.Files, s.maxFileBytes(), check)
+	if s.fileCache == nil {
+		return errors.New("文件剪贴板缓存未初始化")
+	}
+	lease, err := s.fileCache.BeginSend()
+	if err != nil {
+		return err
+	}
+	defer lease.Release(false)
+	archive, err := filetransfer.PackBundleIn(s.ctx, item.Files, s.maxFileBytes(), check, lease.Dir)
 	if err != nil {
 		return err
 	}

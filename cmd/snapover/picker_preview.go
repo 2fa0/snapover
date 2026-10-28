@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -326,7 +327,11 @@ func (a *app) finishPickImage(parent *mygo.Window, err error) {
 		return
 	}
 	if err != nil {
-		a.previewError(parent, "原图打开失败，请重新选择图片后重试")
+		message := "原图打开失败，请重新选择图片后重试"
+		if errors.Is(err, history.ErrOpenedCacheFull) {
+			message = err.Error()
+		}
+		a.previewError(parent, message)
 		return
 	}
 	a.finishPreview(parent)
