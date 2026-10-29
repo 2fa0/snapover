@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -192,7 +193,7 @@ func TestMainWindowClosedPickerLoadsAndFileRequestsStillWork(t *testing.T) {
 			t.Error("closing main window released thumbnails still used by the picker")
 		}
 		a.handleFileRequest([]string{path}, false)
-		if a.win != nil || a.pendingFileRequest != nil || a.fileWin == nil || a.filePath != path {
+		if a.win != nil || a.pendingFileRequest != nil || a.fileWin == nil || !slices.Equal(a.filePaths, []string{path}) {
 			t.Error("file request waited for the closed main window")
 		}
 		a.fileWin.Close()

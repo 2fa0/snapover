@@ -28,6 +28,7 @@ var (
 	deviceIcon   = interfaceIcon("computer-desktop")
 	historyIcon  = interfaceIcon("clipboard-document-list")
 	textIcon     = interfaceIcon("document-text")
+	fileIcon     = interfaceIcon("document")
 	imageIcon    = interfaceIcon("photo")
 	folderIcon   = interfaceIcon("folder")
 	pinIcon      = interfaceIcon("bookmark")
@@ -85,16 +86,27 @@ func (a *app) historyThumb(c *ui.Context, entry history.Entry, t *ui.Theme, sele
 			return
 		}
 	}
-	icon := textIcon
-	if entry.Kind == string(clip.KindImage) {
-		icon = imageIcon
-	} else if entry.Kind == string(clip.KindFiles) && entry.Folder {
-		icon = folderIcon
-	}
+	// Filled shapes mark the items that name something on disk (files,
+	// folders, images), while text keeps the outline page with its lines: the
+	// fill is what tells them apart at 20 DIPs, where the line detail is lost.
+	icon := historyKindIcon(entry)
 	ui.Column(c).Size(size, size).Radius(6).Background(rowThumbPlaceholder(t, selected)).
 		AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 		ui.Icon(c, icon).FontSize(size * 0.5).TextColor(rowMetaColor(t, selected))
 	})
+}
+
+func historyKindIcon(entry history.Entry) *ui.SVG {
+	switch {
+	case entry.Kind == string(clip.KindImage):
+		return imageIcon
+	case entry.Kind == string(clip.KindFiles) && entry.Folder:
+		return folderIcon
+	case entry.Kind == string(clip.KindFiles):
+		return fileIcon
+	default:
+		return textIcon
+	}
 }
 
 func historySource(e history.Entry) string {

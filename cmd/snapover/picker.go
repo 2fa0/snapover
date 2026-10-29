@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"runtime"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/paste"
+	"github.com/2fa0/snapover/internal/settings"
 )
 
 func pickerShortcuts() []string {
@@ -49,9 +50,18 @@ func (a *app) openPicker(atCaret bool) {
 		a.pickSel = 0
 	}
 	a.pickList.ScrollTo(0, ui.Start)
+	// The flyout cannot grow past the work area it opens in: dragging toward
+	// the screen edge must stop where the window would leave it.
+	area := mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint()).WorkArea
+	a.pickArea = area
+	width, height := a.pickerSize()
+	a.pickSizeW, a.pickSizeH = width, height
+	a.pickDragW, a.pickDragH = float32(width), float32(height)
+	a.pickResizing = false
 	if atCaret && (runtime.GOOS == "darwin" || runtime.GOOS == "windows") {
 		paste.Prompt()
-		bounds, scale := pickerScreenBounds(a.pasteTo)
+		bounds, scale := pickerScreenBounds(a.pasteTo, width, height)
+		a.pickPlaced, a.pickRect, a.pickScale = true, bounds, scale
 		a.picker = mygo.NewFlyout(mygo.FlyoutOptions{
 			Tray: a.tray, Width: bounds.Width, Height: bounds.Height,
 			Hidden: true, Focusable: true, Shadow: true,
@@ -64,12 +74,16 @@ func (a *app) openPicker(atCaret bool) {
 		}
 		setPickerBounds(a.picker, bounds, scale)
 	} else {
+		// The platform places this one next to the tray icon; the first
+		// frame reads back where it landed.
+		a.pickPlaced = false
+		a.pickRect, a.pickScale = mygo.Rectangle{}, 1
 		opts := mygo.FlyoutOptions{
 			Tray:      a.tray,
 			Placement: mygo.PlacementBottom,
 			Gap:       4,
-			Width:     380,
-			Height:    440,
+			Width:     width,
+			Height:    height,
 			Focusable: true,
 			Shadow:    true,
 			Content:   ui.View(a.pickerView),
@@ -97,11 +111,14 @@ func (a *app) openPicker(atCaret bool) {
 	})
 	a.picker.Show()
 	a.picker.Focus()
+	// A tray flyout is placed by the platform: read where it landed so a drag
+	// or a resize moves it from there. The caret flyout is already recorded.
+	a.syncPickerPlacement()
 }
 
-func pickerBounds(anchor, area mygo.Rectangle) mygo.Rectangle {
+func pickerBounds(anchor, area mygo.Rectangle, width, height int) mygo.Rectangle {
 	const gap = 4
-	width, height := min(380, area.Width), min(440, area.Height)
+	width, height = min(width, area.Width), min(height, area.Height)
 	x, y := anchor.X, anchor.Y+anchor.Height+gap
 	if y+height > area.Y+area.Height {
 		y = anchor.Y - height - gap
@@ -110,6 +127,186 @@ func pickerBounds(anchor, area mygo.Rectangle) mygo.Rectangle {
 		X:     max(area.X, min(x, area.X+area.Width-width)),
 		Y:     max(area.Y, min(y, area.Y+area.Height-height)),
 		Width: width, Height: height,
+	}
+}
+
+// pickerSize is the size the picker opens at: the one the pointer left it at
+// last time, or the default before the first drag.
+func (a *app) pickerSize() (int, int) {
+	if a.cfg == nil {
+		return settings.DefaultPickerWidth, settings.DefaultPickerHeight
+	}
+	return a.cfg.PickerSize()
+}
+
+// The picker has no frame, so the platform draws no resize border: this grip
+// along the right and bottom edges and the corner between them stands in for
+// one. Dragging grows the window in the direction of the pointer, which keeps
+// the pointer inside it.
+const pickerResizeGrip = 6
+
+func (a *app) pickerResizeHandles(c *ui.Context) {
+	width, height := c.Size()
+	if width < pickerResizeGrip*2 || height < pickerResizeGrip*2 {
+		return
+	}
+	w, h, grip := float32(width), float32(height), float32(pickerResizeGrip)
+	right, bottom := w-grip, h-grip
+	ui.Overlay(c, func() {
+		a.dragPickerSize(ui.Column(c).Absolute().Left(right).Top(0).Width(grip).Height(h).Cursor(ui.CursorResizeEW), true, false)
+		a.dragPickerSize(ui.Column(c).Absolute().Left(0).Top(bottom).Width(w).Height(grip).Cursor(ui.CursorResizeNS), false, true)
+		a.dragPickerSize(ui.Column(c).Absolute().Left(right).Top(bottom).Width(grip).Height(grip).Cursor(ui.CursorResizeNWSE), true, true)
+	})
+}
+
+// dragPickerSize sizes the open picker from the handle the pointer holds.
+// Dragged reports the movement of one frame, so the size the drag started at
+// accumulates the frames instead of the window chasing its own result.
+func (a *app) dragPickerSize(handle ui.Element, horizontal, vertical bool) {
+	dx, dy, held := handle.Dragged()
+	if !held {
+		if a.pickResizing {
+			a.pickResizing = false
+			a.savePickerSize()
+		}
+		return
+	}
+	if !a.pickResizing {
+		a.pickResizing = true
+		a.pickDragW, a.pickDragH = float32(a.pickSizeW), float32(a.pickSizeH)
+	}
+	width, height := a.pickDragW, a.pickDragH
+	if horizontal {
+		width += dx
+	}
+	if vertical {
+		height += dy
+	}
+	a.pickDragW, a.pickDragH = a.clampPickerSize(width, height)
+	a.applyPickerSize(int(math.Round(float64(a.pickDragW))), int(math.Round(float64(a.pickDragH))))
+}
+
+// clampPickerSize keeps the window usable, and inside the work area it is on.
+func (a *app) clampPickerSize(width, height float32) (float32, float32) {
+	minW, minH := float32(settings.MinPickerWidth), float32(settings.MinPickerHeight)
+	maxW, maxH := float32(settings.MaxPickerWidth), float32(settings.MaxPickerHeight)
+	if a.pickArea.Width > 0 {
+		maxW = min(maxW, float32(a.pickArea.Width))
+	}
+	if a.pickArea.Height > 0 {
+		maxH = min(maxH, float32(a.pickArea.Height))
+	}
+	return min(max(width, minW), max(minW, maxW)), min(max(height, minH), max(minH, maxH))
+}
+
+// syncPickerPlacement records where the window is now. The tray flyout is
+// placed by the platform, so its record is read back once it shows, on the
+// main thread: reading it while building a frame would block a test's frame
+// loop, which no window answers.
+func (a *app) syncPickerPlacement() {
+	if a.picker == nil || a.pickPlaced {
+		return
+	}
+	bounds := a.picker.Bounds()
+	if bounds.Width <= 0 || bounds.Height <= 0 {
+		return
+	}
+	a.pickPlaced, a.pickRect = true, bounds
+	a.pickSizeW, a.pickSizeH = bounds.Width, bounds.Height
+	a.pickArea = pickerAreaAt(bounds)
+	a.pickScale = float64(mygo.Screen.DisplayNearestPoint(mygo.Point{X: bounds.X, Y: bounds.Y}).ScaleFactor)
+}
+
+// pickerAreaAt is the work area of the display the picker is on.
+func pickerAreaAt(bounds mygo.Rectangle) mygo.Rectangle {
+	return mygo.Screen.DisplayNearestPoint(mygo.Point{X: bounds.X, Y: bounds.Y}).WorkArea
+}
+
+// pickerCursor is where the pointer is on the screen, in the DIPs a window's
+// bounds are in. A test moves it to drive a drag.
+var pickerCursor = func() mygo.Point { return mygo.Screen.CursorScreenPoint() }
+
+// dragPickerMove moves the window with the pointer. The picker has no title
+// bar, so its padding and the seams beside the search field do the job: they
+// take the press themselves, while a row, the field and the grips above them
+// keep theirs.
+//
+// Where the window goes comes from where the pointer is on the screen, never
+// from the movements the press reports. A window that follows the pointer
+// changes the frame those movements are measured in: added up, each frame
+// counts the movement of a window a frame behind, then hands back what it put
+// there, and the window shakes against the pointer instead of following it.
+func (a *app) dragPickerMove(handle ui.Element) {
+	if _, _, held := handle.Dragged(); !held {
+		a.pickMoving = false
+		return
+	}
+	if !a.pickPlaced {
+		return
+	}
+	at := pickerCursor()
+	if !a.pickMoving {
+		a.pickMoving = true
+		a.pickGrab = at
+		a.pickX, a.pickY = a.pickRect.X, a.pickRect.Y
+		// A preview still open from the row the pointer left would follow the
+		// window a frame behind it.
+		a.closePickPreview()
+	}
+	x, y := a.pickX+at.X-a.pickGrab.X, a.pickY+at.Y-a.pickGrab.Y
+	if a.pickArea.Width > 0 && a.pickArea.Height > 0 {
+		// Keep the whole window on the screen it is dragged across. Stopping
+		// at its edge holds no offset: dragging back moves the window at once.
+		x = min(max(x, a.pickArea.X), a.pickArea.X+a.pickArea.Width-a.pickSizeW)
+		y = min(max(y, a.pickArea.Y), a.pickArea.Y+a.pickArea.Height-a.pickSizeH)
+	}
+	rect := a.pickRect
+	rect.X, rect.Y = x, y
+	if rect == a.pickRect {
+		return
+	}
+	a.pickRect = rect
+	if a.picker != nil {
+		setPickerBounds(a.picker, rect, a.pickScale)
+	}
+}
+
+func (a *app) applyPickerSize(width, height int) {
+	if width == a.pickSizeW && height == a.pickSizeH {
+		return
+	}
+	a.pickSizeW, a.pickSizeH = width, height
+	rect := a.pickRect
+	rect.Width, rect.Height = width, height
+	// Growing past a screen edge slides the window back inside instead of
+	// pushing the edge the pointer follows out of reach.
+	if a.pickArea.Width > 0 && a.pickArea.Height > 0 {
+		rect.X = max(a.pickArea.X, min(rect.X, a.pickArea.X+a.pickArea.Width-width))
+		rect.Y = max(a.pickArea.Y, min(rect.Y, a.pickArea.Y+a.pickArea.Height-height))
+	}
+	if !a.pickPlaced || rect == a.pickRect {
+		return
+	}
+	a.pickRect = rect
+	if a.picker != nil {
+		setPickerBounds(a.picker, rect, a.pickScale)
+	}
+}
+
+// savePickerSize remembers the size the drag left, so opening the picker again
+// keeps it.
+func (a *app) savePickerSize() {
+	if a.cfg == nil || a.pickSizeW <= 0 || a.pickSizeH <= 0 {
+		return
+	}
+	if a.cfg.Values.PickerWidth == a.pickSizeW && a.cfg.Values.PickerHeight == a.pickSizeH {
+		return
+	}
+	previousWidth, previousHeight := a.cfg.Values.PickerWidth, a.cfg.Values.PickerHeight
+	a.cfg.Values.PickerWidth, a.cfg.Values.PickerHeight = a.pickSizeW, a.pickSizeH
+	if err := a.cfg.Save(); err != nil {
+		a.cfg.Values.PickerWidth, a.cfg.Values.PickerHeight = previousWidth, previousHeight
+		a.status = "快速历史窗口大小没能保存，请检查数据目录权限后重试"
 	}
 }
 
@@ -178,7 +375,9 @@ func (a *app) pickerView(c *ui.Context) {
 	}
 	t := c.Theme()
 	c.Root().Background(ui.Transparent)
-	box := ui.Column(c).Fill().Padding(14).Gap(10)
+	// The window has no title bar: its padding and the seams between the
+	// search field and the list move it, as a title bar would.
+	box := ui.Column(c).Fill().Padding(14).Gap(10).Cursor(ui.CursorGrab)
 	switch {
 	case c.Vibrancy():
 	case runtime.GOOS == "windows":
@@ -187,10 +386,6 @@ func (a *app) pickerView(c *ui.Context) {
 		box.Background(t.Surface).Radius(10).Border(1, t.Border)
 	}
 	box.Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, historyIcon).FontSize(18).TextColor(t.TextMuted)
-			ui.Text(c, "复制历史").FontSize(15).Bold().Grow(1)
-		})
 		field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).Label("搜索快速历史").AutoFocus().Placeholder("搜索内容或来源")
 		if field.Shortcut(0, ui.KeyDown) {
 			a.movePick(1)
@@ -256,16 +451,16 @@ func (a *app) pickerView(c *ui.Context) {
 		if a.pickFlash != "" {
 			ui.Text(c, a.pickFlash).FontSize(12).TextColor(t.TextMuted)
 		}
-		hint := "回车或双击粘贴到光标处，Esc 关闭"
+		// Only a state that changes what pasting can do earns a line here; the
+		// everyday key hints live in settings and the README.
 		if a.pickNeedsAccess {
-			hint = "首次粘贴需要在辅助功能里允许 Snapover"
-		} else if shown := a.filtered(a.pickQuery); a.pickSel >= 0 && a.pickSel < len(shown) && shown[a.pickSel].Kind == string(clip.KindFiles) {
-			hint = "文件历史只保留名称，请重新复制后再粘贴，Esc 关闭"
+			ui.Text(c, "首次粘贴需要在辅助功能里允许 Snapover").FontSize(11).TextColor(t.TextMuted)
 		}
-		ui.Text(c, hint).FontSize(11).TextColor(t.TextMuted)
 	})
+	a.dragPickerMove(box)
 	width, _ := c.Size()
 	hoverBounds.X, hoverBounds.W = 0, width
+	a.pickerResizeHandles(c)
 	a.updatePickPreview(c, a.picker, hoverID, hoverBounds)
 }
 

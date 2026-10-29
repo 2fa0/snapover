@@ -27,6 +27,27 @@ func Validate(path string, maxBytes int64) (os.FileInfo, error) {
 	return info, nil
 }
 
+// ValidatePaths checks an explicit send batch and returns each size in order.
+// Explicit sending stays per-file: every entry must be a regular file within the
+// limit, and the sizes are only used for display and batch progress.
+func ValidatePaths(paths []string, maxBytes int64) ([]int64, error) {
+	if len(paths) == 0 {
+		return nil, errors.New("请选择要发送的文件")
+	}
+	sizes := make([]int64, len(paths))
+	for i, path := range paths {
+		info, err := Validate(path, maxBytes)
+		if err != nil {
+			if len(paths) == 1 {
+				return nil, err
+			}
+			return nil, fmt.Errorf("%s：%w", filepath.Base(path), err)
+		}
+		sizes[i] = info.Size()
+	}
+	return sizes, nil
+}
+
 // SafeName applies the filename restrictions of both supported platforms.
 func SafeName(name string) (string, error) {
 	if !utf8.ValidString(name) || name == "" || len(name) > 240 || strings.ContainsAny(name, "/\\") {

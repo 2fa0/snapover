@@ -18,7 +18,7 @@ import (
 )
 
 const usage = `用法：
-  snapover-cli send file  [--timeout 60s] [--data 目录] [--] 文件路径
+  snapover-cli send file  [--timeout 60s] [--data 目录] [--] 文件路径...
   snapover-cli send text  [--timeout 60s] [--data 目录] [--] "文本"
   snapover-cli send text  --stdin [--timeout 60s] [--data 目录]
   snapover-cli send image [--timeout 60s] [--data 目录] [--] 图片路径
@@ -27,7 +27,8 @@ const usage = `用法：
 进入对端剪贴板，不改动本机剪贴板。路径包含空格时请加引号。
 文字使用 UTF-8，上限沿用 Snapover 设置（默认 1 MB，最多 20 MB）；
 图片支持 PNG/JPEG/BMP/WebP，最大 20 MB；
-单文件上限沿用 Snapover 设置（默认 200 MB），双方分别校验。
+发送文件可一次提供多个路径，按顺序逐个传输，每个文件上限沿用
+ Snapover 设置（默认 200 MB），双方分别校验。
 可设置 snapover 别名以缩短命令。
 退出码：0 成功，1 发送失败，2 参数或输入无效。
 `
@@ -65,6 +66,7 @@ func parse(ctx context.Context, args []string, stdin io.Reader) (command, error)
 	}
 	values := flags.Args()
 	var value string
+	var paths []string
 	if *fromStdin {
 		if kind != "text" || len(values) != 0 {
 			return command{}, errors.New("--stdin 仅用于文本，不能同时提供文本参数")
@@ -77,6 +79,32 @@ func parse(ctx context.Context, args []string, stdin io.Reader) (command, error)
 			return command{}, fmt.Errorf("标准输入超过 %d MB", settings.MaxTextMB)
 		}
 		value = strings.TrimPrefix(string(data), "\ufeff")
+	} else if kind == "file" {
+		if len(values) == 0 {
+			return command{}, errors.New("请提供至少一个文件路径；包含空格时请加引号")
+		}
+		if len(values) > control.MaxRequestPaths {
+			return command{}, fmt.Errorf("一次最多发送 %d 个文件", control.MaxRequestPaths)
+		}
+		// Every entry stays an independent single-file transfer, so each path
+		// must be a regular file. The size limit belongs to the running app.
+		for _, arg := range values {
+			if arg == "" {
+				return command{}, errors.New("文件路径不能为空")
+			}
+			path, err := filepath.Abs(arg)
+			if err != nil {
+				return command{}, err
+			}
+			info, err := os.Stat(path)
+			if err != nil {
+				return command{}, fmt.Errorf("无法读取文件：%w", err)
+			}
+			if !info.Mode().IsRegular() {
+				return command{}, fmt.Errorf("%s：请选择一个普通文件，不支持文件夹", filepath.Base(path))
+			}
+			paths = append(paths, path)
+		}
 	} else {
 		if len(values) != 1 {
 			return command{}, errors.New("请提供一个文本参数或一个文件路径；包含空格时请加引号")
@@ -87,26 +115,22 @@ func parse(ctx context.Context, args []string, stdin io.Reader) (command, error)
 		if value == "" || len(value) > settings.MaxTextMB<<20 || !utf8.ValidString(value) {
 			return command{}, fmt.Errorf("请输入非空、%d MB 以内的 UTF-8 文本", settings.MaxTextMB)
 		}
-	} else {
+	} else if kind == "image" {
 		if value == "" {
 			return command{}, errors.New("文件路径不能为空")
 		}
-		var err error
-		value, err = filepath.Abs(value)
+		path, err := filepath.Abs(value)
 		if err != nil {
 			return command{}, err
 		}
-		info, err := os.Stat(value)
+		info, err := os.Stat(path)
 		if err != nil {
 			return command{}, fmt.Errorf("无法读取文件：%w", err)
 		}
-		if !info.Mode().IsRegular() {
-			return command{}, errors.New("请选择一个普通文件，不支持文件夹")
-		}
-		// File size is checked against the running app's current setting.
-		if kind == "image" && info.Size() > 20<<20 {
+		if !info.Mode().IsRegular() || info.Size() > 20<<20 {
 			return command{}, errors.New("请选择 20 MB 以内的普通文件")
 		}
+		value = path
 	}
 	if *dataDir == "" {
 		var err error
@@ -115,7 +139,8 @@ func parse(ctx context.Context, args []string, stdin io.Reader) (command, error)
 			return command{}, err
 		}
 	}
-	return command{request: control.Request{Kind: kind, Value: value, TimeoutMS: timeout.Milliseconds()}, dataDir: *dataDir, timeout: *timeout}, nil
+	request := control.Request{Kind: kind, Value: value, Paths: paths, TimeoutMS: timeout.Milliseconds()}
+	return command{request: request, dataDir: *dataDir, timeout: *timeout}, nil
 }
 
 func readInput(ctx context.Context, stdin io.Reader) ([]byte, error) {

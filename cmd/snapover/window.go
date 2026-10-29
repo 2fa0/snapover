@@ -142,28 +142,46 @@ type app struct {
 	notificationQueue chan fileNotification
 	pasteSerial       atomic.Uint64
 
-	win                *mygo.Window
-	tray               *mygo.Tray
-	trayMenuOpen       bool
-	picker             *mygo.Window
-	pickPreview        pickerPreview
-	pickLoading        bool
-	pickOriginal       *mygo.Window
-	quitting           bool
-	sendToColdLaunch   bool
-	openAtLogin        bool
-	pickQuery          string
-	pickSel            int
-	pickList           ui.ListState
-	pickFlash          string
-	pickBusy           bool
-	pickNeedsAccess    bool
+	win              *mygo.Window
+	tray             *mygo.Tray
+	trayMenuOpen     bool
+	picker           *mygo.Window
+	pickPreview      pickerPreview
+	pickLoading      bool
+	pickOriginal     *mygo.Window
+	quitting         bool
+	sendToColdLaunch bool
+	openAtLogin      bool
+	pickQuery        string
+	pickSel          int
+	pickList         ui.ListState
+	pickFlash        string
+	pickBusy         bool
+	pickNeedsAccess  bool
+	// The picker's own size and place, in DIPs: pickSizeW and pickSizeH are
+	// what the window shows, pickDragW and pickDragH the size the running
+	// resize is heading for, before rounding. pickPlaced says the record was
+	// read back from the window. A move starts at the place the window had
+	// then, pickX and pickY, and the pointer's, pickGrab.
+	pickSizeW          int
+	pickSizeH          int
+	pickDragW          float32
+	pickDragH          float32
+	pickResizing       bool
+	pickPlaced         bool
+	pickMoving         bool
+	pickGrab           mygo.Point
+	pickX              int
+	pickY              int
+	pickRect           mygo.Rectangle
+	pickScale          float64
+	pickArea           mygo.Rectangle
 	pasteTo            paste.Target
 	dialCancel         context.CancelFunc
 	dialAddr           string
 	fileWin            *mygo.Window
 	networkGuide       *networkGuide
-	filePath           string
+	filePaths          []string
 	fileSize           int64
 	fileBusy           bool
 	fileChoosing       bool
@@ -337,13 +355,15 @@ func (a *app) openMainWindow() {
 		return
 	}
 	win := mygo.NewWindow(mygo.WindowOptions{
-		Title:     "Snapover",
-		Width:     960,
-		Height:    640,
-		MinWidth:  720,
-		MinHeight: 440,
-		StateKey:  "main",
-		Content:   ui.View(a.view),
+		Title:          "Snapover",
+		Width:          960,
+		Height:         640,
+		MinWidth:       720,
+		MinHeight:      440,
+		StateKey:       "main",
+		TitleBarStyle:  mygo.TitleBarHiddenInset,
+		TitleBarHeight: 52,
+		Content:        ui.View(a.view),
 	})
 	a.win = win
 	win.OnBlur(func() { a.cancelShortcutRecording(); win.Invalidate() })
@@ -536,8 +556,16 @@ func (a *app) view(c *ui.Context) {
 	}
 	a.drainThumbnails()
 	t := c.Theme()
+	bar := c.TitleBar()
+	sideTop := float32(12)
+	if bar.Height > 0 {
+		sideTop = 0
+	}
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(t.Background).Children(func() {
-		ui.Column(c).Width(184).FillHeight().Padding(12, 8).Gap(12).Background(t.Surface).Children(func() {
+		ui.Column(c).Width(184).FillHeight().Padding(sideTop, 8, 12, 8).Gap(12).Background(t.Surface).Children(func() {
+			if bar.Height > 0 {
+				ui.Box(c).Height(bar.Height).Shrink(0).DragWindow()
+			}
 			ui.Column(c).Padding(10, 12, 16, 12).Children(func() {
 				ui.Text(c, "Snapover").FontSize(18).Bold()
 			})
@@ -566,15 +594,24 @@ func (a *app) view(c *ui.Context) {
 			})
 		})
 		ui.Column(c.Key("page-host")).Grow(1).FillHeight().Children(func() {
-			ui.Column(c.Key(a.page)).Fill().Padding(28).Gap(20).Transition(pageMotion).Children(func() {
-				switch a.page {
-				case pageDevices:
-					ui.Scroll(c.Key("devices-scroll")).Grow(1).Gap(20).Children(func() { a.devicesPage(c) })
-				case pageHistory:
-					a.historyPage(c)
-				default:
-					ui.Scroll(c.Key("settings-scroll")).Grow(1).Gap(20).Children(func() { a.settingsPage(c) })
+			// The drag strip is the page's own first row, not a sibling of it:
+			// the page keeps filling the host, and the strip takes its room
+			// from inside it, so the page's last row, the history actions,
+			// still ends above the window's bottom edge.
+			ui.Column(c.Key(a.page)).Fill().Transition(pageMotion).Children(func() {
+				if bar.Height > 0 {
+					ui.Box(c).Height(bar.Height).Shrink(0).DragWindow()
 				}
+				ui.Column(c).Grow(1).FillWidth().Padding(28).Gap(20).Children(func() {
+					switch a.page {
+					case pageDevices:
+						ui.Scroll(c.Key("devices-scroll")).Grow(1).Gap(20).Children(func() { a.devicesPage(c) })
+					case pageHistory:
+						a.historyPage(c)
+					default:
+						ui.Scroll(c.Key("settings-scroll")).Grow(1).Gap(20).Children(func() { a.settingsPage(c) })
+					}
+				})
 			})
 		})
 	})
@@ -723,7 +760,7 @@ func (a *app) historyPage(c *ui.Context) {
 		}
 	})
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		if ui.Segmented(c, &a.historyKind, "全部", "文本", "图片", "置顶", "文件").Label("历史类型").Changed() {
+		if ui.Segmented(c, &a.historyKind, "全部", "置顶", "文本", "图片", "文件").Label("历史类型").Changed() {
 			a.closePickPreview()
 			a.histSel = -1
 			a.histList.ScrollTo(0, ui.Start)
@@ -853,15 +890,29 @@ func (a *app) shown() []history.Entry {
 	}
 	shown := make([]history.Entry, 0, len(entries))
 	for _, entry := range entries {
-		if (a.historyKind == 1 && entry.Kind == string(clip.KindText)) ||
-			(a.historyKind == 2 && entry.Kind == string(clip.KindImage)) ||
-			(a.historyKind == 3 && entry.Pinned) ||
-			(a.historyKind == 4 && entry.Kind == string(clip.KindFiles)) {
+		if historyKindMatches(a.historyKind, entry) {
 			shown = append(shown, entry)
 		}
 	}
 	a.shownSource, a.shownEntries, a.shownKind = entries, shown, a.historyKind
 	return shown
+}
+
+// The segmented control reads 全部, 置顶, 文本, 图片, 文件; 置顶 comes early
+// because keeping a record is the more frequent action than one kind.
+func historyKindMatches(kind int, entry history.Entry) bool {
+	switch kind {
+	case 1:
+		return entry.Pinned
+	case 2:
+		return entry.Kind == string(clip.KindText)
+	case 3:
+		return entry.Kind == string(clip.KindImage)
+	case 4:
+		return entry.Kind == string(clip.KindFiles)
+	default:
+		return true
+	}
 }
 
 func (a *app) filtered(query string) []history.Entry {

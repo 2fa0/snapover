@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -195,5 +196,36 @@ func assertNoParts(t *testing.T, dir string) {
 		if bytes.HasSuffix([]byte(e.Name()), []byte(".part")) {
 			t.Fatalf("partial file left: %s", e.Name())
 		}
+	}
+}
+
+func TestValidatePathsKeepsExplicitSendingPerFile(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "a.txt")
+	second := filepath.Join(dir, "b 中文.txt")
+	if err := os.WriteFile(first, []byte("one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte("second"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sizes, err := ValidatePaths([]string{first, second}, testMaxBytes)
+	if err != nil || len(sizes) != 2 || sizes[0] != 3 || sizes[1] != 6 {
+		t.Fatalf("%v %v", sizes, err)
+	}
+	if _, err := ValidatePaths(nil, testMaxBytes); err == nil {
+		t.Fatal("accepted an empty batch")
+	}
+	// A batch names the entry that failed instead of dropping the whole list.
+	if _, err := ValidatePaths([]string{first, dir}, testMaxBytes); err == nil || !strings.Contains(err.Error(), filepath.Base(dir)) {
+		t.Fatalf("folder in batch: %v", err)
+	}
+	// Each file keeps the single-file limit; the batch total is not capped.
+	_, err = ValidatePaths([]string{first, second}, 4)
+	if err == nil || !strings.Contains(err.Error(), filepath.Base(second)) {
+		t.Fatalf("over-limit entry: %v", err)
+	}
+	if _, err := ValidatePaths([]string{first}, 4); err != nil {
+		t.Fatalf("single file within the limit: %v", err)
 	}
 }

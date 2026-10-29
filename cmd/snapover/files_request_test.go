@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -46,18 +47,25 @@ func TestFileRequestValidationAndBusyState(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &app{engine: &clipsync.Engine{}}
-	if !a.prepareFileRequest([]string{path}) || a.filePath != path || a.fileSize != 5 {
+	if !a.prepareFileRequest([]string{path}) || !slices.Equal(a.filePaths, []string{path}) || a.fileSize != 5 {
 		t.Fatalf("file not selected: %+v", a)
 	}
 	a.fileBusy = true
-	if a.prepareFileRequest([]string{"different"}) || a.filePath != path || a.fileCommandHint == "" {
+	if a.prepareFileRequest([]string{"different"}) || !slices.Equal(a.filePaths, []string{path}) || a.fileCommandHint == "" {
 		t.Fatal("busy request replaced the current file")
 	}
 	a.fileBusy = false
-	for _, paths := range [][]string{{path, path}, {dir}, {filepath.Join(dir, "missing")}, nil} {
-		if a.prepareFileRequest(paths) || a.filePath != "" || a.fileMessage == "" {
+	for _, paths := range [][]string{{dir}, {path, dir}, {filepath.Join(dir, "missing")}, nil} {
+		if a.prepareFileRequest(paths) || a.fileSelected() || a.fileMessage == "" {
 			t.Fatalf("accepted invalid request %v", paths)
 		}
+	}
+	second := filepath.Join(dir, "另一份.txt")
+	if err := os.WriteFile(second, []byte("world!"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !a.prepareFileRequest([]string{path, second}) || !slices.Equal(a.filePaths, []string{path, second}) || a.fileSize != 11 {
+		t.Fatalf("batch not selected: %+v", a)
 	}
 }
 

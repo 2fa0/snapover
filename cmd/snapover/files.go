@@ -50,7 +50,7 @@ func (a *app) filesView(c *ui.Context) {
 		zone.Background(t.Surface.Mix(t.Accent.Alpha(0.08), over))
 		line := t.Border.Mix(t.Accent, over)
 		width := 1 + over
-		empty := a.filePath == ""
+		empty := !a.fileSelected()
 		zone.Draw(func(p *ui.Painter, r ui.Rect) {
 			box := ui.Rect{X: r.X + width/2, Y: r.Y + width/2, W: r.W - width, H: r.H - width}
 			if empty {
@@ -63,14 +63,14 @@ func (a *app) filesView(c *ui.Context) {
 			a.selectFile(paths)
 		}
 		zone.Children(func() {
-			if a.filePath == "" {
+			if !a.fileSelected() {
 				ui.Text(c, "把文件拖到这里").Bold()
-				ui.Text(c, fmt.Sprintf("单个文件，最大 %d MB", a.engine.FileLimit()>>20)).FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, fmt.Sprintf("可多选文件，每个最大 %d MB", a.engine.FileLimit()>>20)).FontSize(12).TextColor(t.TextMuted)
 				if press(ui.Button(c, "选择文件…").Disabled(a.fileBusy || a.fileChoosing)).Clicked() {
 					a.chooseFile()
 				}
 			} else {
-				ui.Text(c, filepath.Base(a.filePath)).Bold().MaxLines(2).Tooltip(a.filePath)
+				ui.Text(c, a.fileTitle()).Bold().MaxLines(2).Tooltip(strings.Join(a.filePaths, "\n"))
 				ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, formatSize(int(a.fileSize))).FontSize(12).TextColor(t.TextMuted)
 					ui.Spacer(c)
@@ -117,7 +117,7 @@ func (a *app) filesView(c *ui.Context) {
 				if ui.Button(c, "连接设备").Clicked() {
 					a.show(pageDevices)
 				}
-			case a.filePath != "":
+			case a.fileSelected():
 				if press(ui.PrimaryButton(c, "发送").Disabled(!link.FileTransfer || a.fileChoosing)).Clicked() {
 					a.sendSelectedFile(false)
 				}
@@ -130,21 +130,46 @@ func (a *app) updateFiles(fn func()) {
 	a.update(fn)
 }
 
+func (a *app) fileSelected() bool {
+	return len(a.filePaths) > 0
+}
+
+// fileTitle keeps a batch summary readable in the narrow drop zone.
+func (a *app) fileTitle() string {
+	if len(a.filePaths) == 1 {
+		return filepath.Base(a.filePaths[0])
+	}
+	shown := min(3, len(a.filePaths))
+	names := make([]string, 0, shown)
+	for _, path := range a.filePaths[:shown] {
+		names = append(names, filepath.Base(path))
+	}
+	title := fmt.Sprintf("%d 个文件：%s", len(a.filePaths), strings.Join(names, "、"))
+	if len(a.filePaths) > shown {
+		title += " 等"
+	}
+	return title
+}
+
 func (a *app) selectFile(paths []string) {
 	a.fileCommandHint = ""
 	a.fileSent, a.fileRecipient = false, ""
-	if len(paths) != 1 {
-		a.filePath = ""
-		a.fileMessage = "一次只能发送一个文件，请重新选择"
+	if len(paths) == 0 {
+		a.filePaths, a.fileSize = nil, 0
+		a.fileMessage = "请选择要发送的文件"
 		return
 	}
-	info, err := filetransfer.Validate(paths[0], a.engine.FileLimit())
+	sizes, err := filetransfer.ValidatePaths(paths, a.engine.FileLimit())
 	if err != nil {
+		a.filePaths, a.fileSize = nil, 0
 		a.fileMessage = err.Error()
-		a.filePath = ""
 		return
 	}
-	a.filePath, a.fileSize = paths[0], info.Size()
+	var total int64
+	for _, size := range sizes {
+		total += size
+	}
+	a.filePaths, a.fileSize = append([]string(nil), paths...), total
 	a.fileDone, a.fileMessage = 0, ""
 }
 
@@ -152,7 +177,7 @@ func (a *app) chooseFile() {
 	a.fileChoosing = true
 	parent := a.fileWin
 	go func() {
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: parent, Title: "选择要发送的文件"})
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: parent, Title: "选择要发送的文件", Multiple: true})
 		a.updateFiles(func() {
 			a.fileChoosing = false
 			if err != nil {
@@ -167,13 +192,14 @@ func (a *app) chooseFile() {
 }
 
 func (a *app) sendSelectedFile(background bool) {
-	if a.fileBusy || a.filePath == "" {
+	if a.fileBusy || !a.fileSelected() {
 		return
 	}
+	paths := append([]string(nil), a.filePaths...)
 	a.fileCommandHint = ""
 	a.fileSent = false
-	a.fileBusy, a.fileDone, a.fileMessage = true, 0, "正在等待对方接收…"
-	path := a.filePath
+	a.fileBusy, a.fileDone = true, 0
+	a.fileMessage = "正在等待对方接收…"
 	link, _ := a.engine.Link()
 	a.fileRecipient = displayName(link.Name, link.ID)
 	ctx := a.root
@@ -181,10 +207,10 @@ func (a *app) sendSelectedFile(background bool) {
 		ctx = context.Background()
 	}
 	go func() {
-		name, err := a.engine.SendFile(ctx, link.ID, path, func(done, total int64) {
+		saved, err := a.engine.SendFiles(ctx, link.ID, paths, func(index int, done, total int64) {
 			a.updateFiles(func() {
 				a.fileDone, a.fileSize = done, total
-				a.fileMessage = fmt.Sprintf("已传输 %s / %s", formatSize(int(done)), formatSize(int(total)))
+				a.fileMessage = fmt.Sprintf("正在发送 %d/%d：%s · %s / %s", index+1, len(paths), filepath.Base(paths[index]), formatSize(int(done)), formatSize(int(total)))
 				if done == total {
 					a.fileMessage = "传输完成，正在等待对方确认保存…"
 				}
@@ -194,21 +220,33 @@ func (a *app) sendSelectedFile(background bool) {
 			a.fileBusy = false
 			if err != nil {
 				a.fileMessage = "发送失败：" + err.Error() + "。请检查连接后重试"
+				if len(saved) > 0 {
+					a.fileMessage = fmt.Sprintf("已发送 %d/%d 个文件后失败：%s。请检查连接后重试", len(saved), len(paths), err)
+				}
 				if background {
 					a.openFiles()
 				}
 				return
 			}
-			a.fileSent, a.fileMessage = true, "已发送"
+			a.fileSent = true
+			if len(paths) == 1 {
+				a.fileMessage = "已发送"
+			} else {
+				a.fileMessage = fmt.Sprintf("已发送 %d 个文件", len(saved))
+			}
 			if background && runtime.GOOS == "darwin" {
-				a.sentFileNotification(name, displayName(link.Name, link.ID))
+				a.sentFilesNotification(saved, displayName(link.Name, link.ID))
 			}
 		})
 	}()
 }
 
-func (a *app) sentFileNotification(name, peer string) {
-	a.queueFileNotification(fileNotification{title: "文件已发送 · Snapover", body: name + " 已保存到 " + peer + " 的接收文件夹"})
+func (a *app) sentFilesNotification(names []string, peer string) {
+	body := fmt.Sprintf("%d 个文件已保存到 %s 的接收文件夹", len(names), peer)
+	if len(names) == 1 {
+		body = names[0] + " 已保存到 " + peer + " 的接收文件夹"
+	}
+	a.queueFileNotification(fileNotification{title: "文件已发送 · Snapover", body: body})
 }
 
 func receivedMessage(n clipsync.Notice) string {

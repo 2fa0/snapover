@@ -360,3 +360,59 @@ func waitFor(t *testing.T, fn func() bool) {
 	}
 	t.Fatal("condition timed out")
 }
+
+func TestSendFilesSendsEachFileAndReportsFailures(t *testing.T) {
+	a, b := newPair(t)
+	dir := t.TempDir()
+	b.SetReceiveDir(dir)
+	source := t.TempDir()
+	names := []string{"一.txt", "二.log", "三.bin"}
+	var paths []string
+	var total int64
+	for _, name := range names {
+		path := filepath.Join(source, name)
+		if err := os.WriteFile(path, []byte(name+name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, path)
+		total += int64(len(name + name))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var last int64
+	saved, err := a.SendFiles(ctx, b.LocalID, paths, func(index int, done, batch int64) {
+		if batch != total || done < last || done > batch {
+			t.Errorf("invalid batch progress %d/%d after %d", done, batch, last)
+		}
+		if index < 0 || index >= len(paths) {
+			t.Errorf("invalid batch index %d", index)
+		}
+		last = done
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != len(names) {
+		t.Fatalf("saved %v", saved)
+	}
+	for i, name := range names {
+		if saved[i] != name {
+			t.Fatalf("saved %v", saved)
+		}
+		if hashFile(t, filepath.Join(dir, name)) != hashFile(t, paths[i]) {
+			t.Fatalf("%s content changed", name)
+		}
+	}
+	if last != total {
+		t.Fatalf("final progress %d/%d", last, total)
+	}
+	// The batch stops before the transfer when one entry is invalid.
+	before, _ := os.ReadDir(dir)
+	if _, err := a.SendFiles(ctx, b.LocalID, []string{paths[0], source}, nil); err == nil {
+		t.Fatal("accepted a folder in the batch")
+	}
+	after, _ := os.ReadDir(dir)
+	if len(after) != len(before) {
+		t.Fatal("invalid batch still delivered files")
+	}
+}
