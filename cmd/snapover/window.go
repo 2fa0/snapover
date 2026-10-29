@@ -798,16 +798,16 @@ func (a *app) historyPage(c *ui.Context) {
 				titleText := entryTitle(entry)
 				row.Children(func() {
 					a.historyThumb(c, entry, t, sel, 40)
-					ui.Column(c).Grow(1).Gap(5).Children(func() {
+					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 						title = ui.Text(c, titleText).SingleLine()
 						ui.Row(c).Gap(6).Children(func() {
 							if entry.Pinned {
-								ui.Icon(c, pinIcon).FontSize(12).TextColor(rowMetaColor(t, sel))
+								ui.Icon(c, pinIcon).FontSize(12).TextColor(rowMetaColor(t, sel)).Shrink(0)
 							}
-							ui.Text(c, historySource(entry)).FontSize(12).TextColor(rowMetaColor(t, sel)).SingleLine()
+							historySource(c, entry, rowMetaColor(t, sel), 12)
 						})
 					})
-					ui.Column(c).Gap(5).AlignItems(ui.End).Children(func() {
+					ui.Column(c).Gap(5).AlignItems(ui.End).Shrink(0).Children(func() {
 						ui.Text(c, relTime(entry.At)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
 						ui.Text(c, formatSize(entry.Size)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
 					})

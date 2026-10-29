@@ -109,16 +109,22 @@ func historyKindIcon(entry history.Entry) *ui.SVG {
 	}
 }
 
-func historySource(e history.Entry) string {
-	if e.Dir == history.DirRemote {
-		source := "来自 " + displayName(e.Peer, "对端")
-		if e.SourceApp != "" {
-			source = e.SourceApp + " · " + source
+func historySource(c *ui.Context, e history.Entry, color ui.Color, fontSize float32) {
+	ui.Row(c).Grow(1).MinWidth(0).Gap(5).AlignItems(ui.Center).Children(func() {
+		label := "本机"
+		if e.Dir == history.DirRemote {
+			label = "同步"
 		}
-		return source
-	}
-	if e.SourceApp != "" {
-		return e.SourceApp
-	}
-	return "本机"
+		ui.Text(c, label).FontSize(fontSize).TextColor(color).SingleLine().Shrink(0)
+		if e.Dir == history.DirRemote {
+			peer := displayName(e.Peer, "对端")
+			ui.Text(c, peer).FontSize(fontSize).TextColor(color).SingleLine().MinWidth(fontSize * 2).Tooltip(peer)
+			if e.SourceApp != "" {
+				ui.Text(c, "·").FontSize(fontSize).TextColor(color).Shrink(0)
+			}
+		}
+		if e.SourceApp != "" {
+			ui.Text(c, e.SourceApp).FontSize(fontSize).TextColor(color).SingleLine().MinWidth(fontSize * 2).Tooltip(e.SourceApp)
+		}
+	})
 }
