@@ -159,3 +159,32 @@ func TestCloseCancelsServerContext(t *testing.T) {
 		t.Fatal("closing the server retained its context and cancellation watcher")
 	}
 }
+
+func TestFileBatchRequestCarriesPaths(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	s, err := Start(ctx, dir, func(_ context.Context, request Request, _ func(int64, int64)) (string, error) {
+		return strings.Join(request.Paths, "|"), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var events []Event
+	request := Request{Kind: "file", Paths: []string{"/a b/一.txt", "/c.txt"}, TimeoutMS: 1000}
+	if err := Send(ctx, dir, request, func(event Event) { events = append(events, event) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) == 0 || events[len(events)-1].Message != "/a b/一.txt|/c.txt" {
+		t.Fatalf("%+v", events)
+	}
+	tooMany := Request{Kind: "file", Paths: make([]string, MaxRequestPaths+1), TimeoutMS: 1000}
+	if err := Send(ctx, dir, tooMany, nil); err == nil || !strings.Contains(err.Error(), "文件数量超过上限") {
+		t.Fatalf("oversize batch: %v", err)
+	}
+	// A single payload keeps working for text and image commands.
+	if err := Send(ctx, dir, Request{Kind: "text", Value: "你好", TimeoutMS: 1000}, nil); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -25,7 +25,7 @@ func pickFilePreview(c *ui.Context, preview history.FilePreview, err error) {
 					branch = "└─"
 				}
 				ui.Text(c, branch).FontSize(12).TextColor(t.TextMuted)
-				icon := textIcon
+				icon := fileIcon
 				if item.Directory {
 					icon = folderIcon
 				}

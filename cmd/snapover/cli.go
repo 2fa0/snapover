@@ -5,11 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/control"
 )
+
+// savedList keeps a large batch on one readable console line.
+func savedList(names []string) string {
+	if len(names) <= 3 {
+		return strings.Join(names, "、")
+	}
+	return fmt.Sprintf("%s 等 %d 个文件", strings.Join(names[:3], "、"), len(names))
+}
 
 func (a *app) handleCLI(ctx context.Context, request control.Request, progress func(int64, int64)) (string, error) {
 	if err := ctx.Err(); err != nil {
@@ -20,14 +29,28 @@ func (a *app) handleCLI(ctx context.Context, request control.Request, progress f
 		return "", errors.New("没有在线设备，请先在 Snapover 中连接设备后重试")
 	}
 	if request.Kind == "file" {
-		if !filepath.IsAbs(request.Value) {
-			return "", errors.New("文件路径必须是绝对路径")
+		paths := request.Paths
+		if len(paths) == 0 && request.Value != "" {
+			// Older console clients send exactly one file in Value.
+			paths = []string{request.Value}
 		}
-		name, err := a.engine.SendFile(ctx, link.ID, request.Value, progress)
+		if len(paths) == 0 {
+			return "", errors.New("请提供要发送的文件路径")
+		}
+		for _, path := range paths {
+			if !filepath.IsAbs(path) {
+				return "", errors.New("文件路径必须是绝对路径")
+			}
+		}
+		saved, err := a.engine.SendFiles(ctx, link.ID, paths, func(_ int, done, total int64) {
+			if progress != nil {
+				progress(done, total)
+			}
+		})
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("已保存到 %s 的接收文件夹：%s", displayName(link.Name, link.ID), name), nil
+		return fmt.Sprintf("已保存到 %s 的接收文件夹：%s", displayName(link.Name, link.ID), savedList(saved)), nil
 	}
 	var item clip.Item
 	var err error

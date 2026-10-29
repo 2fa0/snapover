@@ -22,7 +22,7 @@ var (
 
 type pickerNativeRect struct{ Left, Top, Right, Bottom int32 }
 
-func pickerScreenBounds(target paste.Target) (mygo.Rectangle, float64) {
+func pickerScreenBounds(target paste.Target, width, height int) (mygo.Rectangle, float64) {
 	var point struct{ X, Y int32 }
 	pickerCursorPos.Call(uintptr(unsafe.Pointer(&point)))
 	anchor := mygo.Rectangle{X: int(point.X), Y: int(point.Y)}
@@ -43,7 +43,7 @@ func pickerScreenBounds(target paste.Target) (mygo.Rectangle, float64) {
 		// Screen APIs normally succeed; retain mouse positioning on failure.
 		point := mygo.Screen.CursorScreenPoint()
 		display := mygo.Screen.DisplayNearestPoint(point)
-		return pickerBounds(mygo.Rectangle{X: point.X, Y: point.Y}, display.WorkArea), display.ScaleFactor
+		return pickerBounds(mygo.Rectangle{X: point.X, Y: point.Y}, display.WorkArea, width, height), display.ScaleFactor
 	}
 	xDPI, yDPI := uint32(96), uint32(96)
 	if hr, _, _ := pickerMonitorDPI.Call(monitor, 0, uintptr(unsafe.Pointer(&xDPI)), uintptr(unsafe.Pointer(&yDPI))); hr != 0 {
@@ -54,7 +54,7 @@ func pickerScreenBounds(target paste.Target) (mygo.Rectangle, float64) {
 	work := info.Work
 	area := mygo.Rectangle{X: toDIP(int(work.Left)), Y: toDIP(int(work.Top)), Width: toDIP(int(work.Right - work.Left)), Height: toDIP(int(work.Bottom - work.Top))}
 	anchor = mygo.Rectangle{X: toDIP(anchor.X), Y: toDIP(anchor.Y), Width: toDIP(anchor.Width), Height: toDIP(anchor.Height)}
-	return pickerBounds(anchor, area), scale
+	return pickerBounds(anchor, area, width, height), scale
 }
 
 func setPickerBounds(win *mygo.Window, bounds mygo.Rectangle, scale float64) {

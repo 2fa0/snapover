@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -67,14 +68,14 @@ func TestMacFileRequestReachesRunningInstanceWithoutOpeningMainWindow(t *testing
 	}
 	forward(path)
 	mygo.RunOnMain(func() {
-		if a.win != nil || a.fileWin == nil || a.filePath != path || a.fileCommandHint == "" {
+		if a.win != nil || a.fileWin == nil || !slices.Equal(a.filePaths, []string{path}) || a.fileCommandHint == "" {
 			t.Error("offline request did not retain file in the send window")
 		}
 		a.fileBusy = true
 	})
 	forward(filepath.Join(t.TempDir(), "other.txt"))
 	mygo.RunOnMain(func() {
-		if a.win != nil || a.filePath != path || !a.fileBusy {
+		if a.win != nil || !slices.Equal(a.filePaths, []string{path}) || !a.fileBusy {
 			t.Error("busy request replaced the original file")
 		}
 	})
@@ -101,14 +102,14 @@ func TestFinderServiceUsesExistingFileRequestAndRespectsDisable(t *testing.T) {
 		if err := a.receiveFinderFiles([]string{path}, false); err != nil {
 			t.Error(err)
 		}
-		if a.win != nil || a.fileWin == nil || a.filePath != path {
+		if a.win != nil || a.fileWin == nil || !slices.Equal(a.filePaths, []string{path}) {
 			t.Error("Finder request did not reach the existing file window")
 		}
 		a.fileBusy = true
 		if err := a.receiveFinderFiles([]string{filepath.Join(t.TempDir(), "other.txt")}, false); err != nil {
 			t.Error(err)
 		}
-		if a.filePath != path || !a.fileBusy || a.win != nil {
+		if !slices.Equal(a.filePaths, []string{path}) || !a.fileBusy || a.win != nil {
 			t.Error("Finder request replaced an ongoing send")
 		}
 		if a.fileWin != nil {

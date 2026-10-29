@@ -26,7 +26,7 @@ func TestFilesViewFollowsTransferState(t *testing.T) {
 		t.Fatal("receiving information leaked into the sending window")
 	}
 
-	a.filePath, a.fileSize = "报告.pdf", 1024
+	a.filePaths, a.fileSize = []string{"报告.pdf"}, 1024
 	a.fileBusy, a.fileRecipient = true, "doze-mac"
 	a.fileMessage = "已传输 512 B / 1 KB"
 	tt.Frame()
@@ -60,6 +60,38 @@ func TestFilesViewFollowsTransferState(t *testing.T) {
 	}
 	if !tt.HasText("next.txt") || !tt.HasText("更换…") {
 		t.Fatal("selected file is missing its summary or replacement action")
+	}
+}
+
+func TestFilesViewSummarizesBatchSelection(t *testing.T) {
+	a := interfaceTestApp(t)
+	tt := ui.NewTester(a.filesView, 460, 310)
+	dir := t.TempDir()
+	var paths []string
+	for _, name := range []string{"一.txt", "二.txt", "三.txt", "四.txt"} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, path)
+	}
+	a.selectFile(paths)
+	if len(a.filePaths) != 4 || a.fileSize != 28 {
+		t.Fatalf("batch not selected: %v %d", a.filePaths, a.fileSize)
+	}
+	tt.Frame()
+	// The narrow drop zone names a few entries and counts the rest.
+	if !tt.HasText("4 个文件：一.txt、二.txt、三.txt 等") || !tt.HasText("28 B") || !tt.HasText("更换…") {
+		t.Fatal("batch selection is missing its summary or size")
+	}
+	// A folder anywhere in the batch keeps the previous selection untouched.
+	a.selectFile([]string{paths[0], dir})
+	if a.fileSelected() || a.fileMessage == "" {
+		t.Fatal("folder in batch replaced the selection without a reason")
+	}
+	tt.Frame()
+	if a.fileMessage == "" {
+		t.Fatal("invalid batch did not report a reason")
 	}
 }
 
@@ -97,7 +129,7 @@ func TestFileLimitSettingAppliesAndPersists(t *testing.T) {
 		t.Fatal("file limit was not restored on startup")
 	}
 	view := ui.NewTester(b.filesView, 460, 340)
-	if !view.HasText("单个文件，最大 4096 MB") {
+	if !view.HasText("可多选文件，每个最大 4096 MB") {
 		t.Fatal("send window does not show configured limit")
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
@@ -101,6 +102,46 @@ func TestMainNavigationRemainsImmediateDuringMotion(t *testing.T) {
 		tt.Key(0, ui.KeyDown)
 		if a.page != pageDevices {
 			t.Fatal("sidebar keyboard navigation stopped working")
+		}
+	}
+}
+
+func TestHiddenTitleBarKeepsSidebarAndActionsClearOfWindowControls(t *testing.T) {
+	a := interfaceTestApp(t)
+	tt := ui.NewTester(a.view, 960, 640)
+	tt.SetTitleBar(ui.TitleBar{Height: 52, Left: 78})
+	title, ok := tt.Find("Snapover")
+	if !ok {
+		t.Fatal("app name missing under a hidden title bar")
+	}
+	if title.Y < 52 {
+		t.Fatalf("app name overlaps traffic lights: %+v", title)
+	}
+	clickInterface(t, tt, "复制历史")
+	if a.page != pageHistory {
+		t.Fatal("sidebar navigation failed under a hidden title bar")
+	}
+	a.page = pageHistory
+	tt.SetTitleBar(ui.TitleBar{Height: 52, Right: 138})
+	clear, ok := tt.Find("清空未置顶")
+	if !ok {
+		t.Fatal("history actions missing under a hidden title bar")
+	}
+	if clear.Y < 52 {
+		t.Fatalf("history action sits under caption buttons: %+v", clear)
+	}
+	// The drag strip takes its room from the page, so the actions at the
+	// bottom of the page stay inside the window instead of below its edge.
+	for _, label := range []string{"搜索复制历史", "历史类型", "复制", "删除"} {
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("%s missing under a hidden title bar", label)
+		}
+		if r.Y < 52 {
+			t.Fatalf("%s sits under the drag strip: %+v", label, r)
+		}
+		if r.Y+r.H > 640 {
+			t.Fatalf("%s reaches past the window's bottom edge: %+v", label, r)
 		}
 	}
 }
@@ -325,5 +366,193 @@ func TestSettingsSaveFailureRollsBack(t *testing.T) {
 	}
 	if a.status == "" || a.status == "已暂停同步" {
 		t.Fatalf("status = %q", a.status)
+	}
+}
+
+// Files once shared the text icon, which made the two rows look alike.
+func TestHistoryRowsSeparateTextFilesAndFolders(t *testing.T) {
+	text := historyKindIcon(history.Entry{Kind: string(clip.KindText)})
+	file := historyKindIcon(history.Entry{Kind: string(clip.KindFiles), FileName: "报告.pdf", Folder: false})
+	folder := historyKindIcon(history.Entry{Kind: string(clip.KindFiles), FileName: "资料", Folder: true})
+	image := historyKindIcon(history.Entry{Kind: string(clip.KindImage)})
+	if text == nil || file == nil || folder == nil || image == nil {
+		t.Fatal("missing row icon")
+	}
+	if file == text {
+		t.Error("single file uses the text icon")
+	}
+	if file == folder || folder == text {
+		t.Error("folder, file and text icons must differ")
+	}
+	if image == text || image == file || image == folder {
+		t.Error("image icon must stay unique")
+	}
+}
+
+// The segmented order is 全部, 置顶, 文本, 图片, 文件.
+func TestHistoryKindsFollowSegmentOrder(t *testing.T) {
+	pinnedText := history.Entry{Kind: string(clip.KindText), Pinned: true}
+	for _, tc := range []struct {
+		kind  int
+		entry history.Entry
+		want  bool
+	}{
+		{0, pinnedText, true},
+		{0, history.Entry{Kind: string(clip.KindFiles)}, true},
+		{1, pinnedText, true},
+		{1, history.Entry{Kind: string(clip.KindText)}, false},
+		{2, history.Entry{Kind: string(clip.KindText)}, true},
+		{2, history.Entry{Kind: string(clip.KindImage)}, false},
+		{3, history.Entry{Kind: string(clip.KindImage)}, true},
+		{3, history.Entry{Kind: string(clip.KindFiles)}, false},
+		{4, history.Entry{Kind: string(clip.KindFiles)}, true},
+		{4, history.Entry{Kind: string(clip.KindText)}, false},
+	} {
+		if got := historyKindMatches(tc.kind, tc.entry); got != tc.want {
+			t.Errorf("kind %d with %q (pinned=%v) = %v, want %v", tc.kind, tc.entry.Kind, tc.entry.Pinned, got, tc.want)
+		}
+	}
+}
+
+func TestPickerResizeDragAppliesAndPersistsSize(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.pickSizeW, a.pickSizeH = 380, 440
+	a.pickDragW, a.pickDragH = 380, 440
+	tt := ui.NewTester(a.pickerView, 380, 440)
+
+	// The right edge resizes the width, the bottom edge the height.
+	tt.Press(377, 200)
+	tt.Move(477, 200)
+	tt.Release(477, 200)
+	if a.pickSizeW != 480 || a.pickSizeH != 440 {
+		t.Fatalf("width drag gave %d×%d, want 480×440", a.pickSizeW, a.pickSizeH)
+	}
+	if a.cfg.Values.PickerWidth != 480 || a.cfg.Values.PickerHeight != 440 {
+		t.Fatalf("size not remembered: %+v", a.cfg.Values)
+	}
+
+	tt.SetSize(480, 440)
+	tt.Press(200, 437)
+	tt.Move(200, 537)
+	tt.Release(200, 537)
+	if a.pickSizeW != 480 || a.pickSizeH != 540 {
+		t.Fatalf("height drag gave %d×%d, want 480×540", a.pickSizeW, a.pickSizeH)
+	}
+	if a.cfg.Values.PickerHeight != 540 {
+		t.Fatalf("height not remembered: %+v", a.cfg.Values)
+	}
+}
+
+func TestPickerResizeStopsAtLengthBounds(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.pickSizeW, a.pickSizeH = 380, 440
+	a.pickDragW, a.pickDragH = 380, 440
+	tt := ui.NewTester(a.pickerView, 380, 440)
+
+	// Dragging past the minimum keeps the window usable, and dragging past
+	// the maximum keeps it on screen.
+	tt.Press(377, 200)
+	tt.Move(-500, 200)
+	tt.Release(-500, 200)
+	if a.pickSizeW != settings.MinPickerWidth || a.pickSizeH != 440 {
+		t.Fatalf("minimum not applied: %d×%d", a.pickSizeW, a.pickSizeH)
+	}
+
+	a.pickSizeW, a.pickSizeH, a.pickArea = 380, 440, mygo.Rectangle{Width: 700, Height: 600}
+	tt.SetSize(380, 440)
+	tt.Press(377, 437)
+	tt.Move(2000, 2000)
+	tt.Release(2000, 2000)
+	if a.pickSizeW != 700 || a.pickSizeH != 600 {
+		t.Fatalf("work area not applied: %d×%d, want 700×600", a.pickSizeW, a.pickSizeH)
+	}
+}
+
+// The window has no title bar, so its padding moves it; a row keeps its own
+// press.
+func TestPickerPaddingMovesTheWindow(t *testing.T) {
+	a := interfaceTestApp(t)
+	item, err := clip.FromText("可拖动的快速历史")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.hist.Add(history.DirLocal, "", item); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshEntries()
+	tt := ui.NewTester(a.pickerView, 380, 440)
+	tt.Move(5, 220)
+	if got := tt.Cursor(); got != ui.CursorGrab {
+		t.Fatalf("padding cursor = %v, want the grab cursor", got)
+	}
+	row, ok := tt.Find("可拖动的快速历史")
+	if !ok {
+		t.Fatal("row not found")
+	}
+	tt.Move(row.X+row.W/2, row.Y+row.H/2)
+	if got := tt.Cursor(); got != ui.CursorDefault {
+		t.Fatalf("row cursor = %v, want the default cursor", got)
+	}
+}
+
+func TestPickerPaddingDragMovesTheWindow(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.pickSizeW, a.pickSizeH = 380, 440
+	a.pickPlaced = true
+	a.pickRect = mygo.Rectangle{X: 100, Y: 100, Width: 380, Height: 440}
+	a.pickArea = mygo.Rectangle{X: 0, Y: 0, Width: 1440, Height: 900}
+	// The window follows the pointer's place on the screen, so the test moves
+	// that along with the pointer in the window.
+	cursor := mygo.Point{X: 105, Y: 320}
+	restore := pickerCursor
+	pickerCursor = func() mygo.Point { return cursor }
+	t.Cleanup(func() { pickerCursor = restore })
+	tt := ui.NewTester(a.pickerView, 380, 440)
+
+	tt.Press(5, 220)
+	cursor = mygo.Point{X: 165, Y: 360}
+	tt.Move(65, 260)
+	tt.Release(65, 260)
+	if a.pickRect.X != 160 || a.pickRect.Y != 140 || a.pickSizeW != 380 || a.pickSizeH != 440 {
+		t.Fatalf("drag gave %+v, want 160,140 at 380x440", a.pickRect)
+	}
+
+	// The window stays on the screen it is dragged across.
+	a.pickArea = mygo.Rectangle{X: 0, Y: 0, Width: 500, Height: 500}
+	tt.Press(5, 220)
+	cursor = mygo.Point{X: 705, Y: 780}
+	tt.Move(600, 600)
+	tt.Release(605, 460)
+	if a.pickRect.X != 120 || a.pickRect.Y != 60 {
+		t.Fatalf("drag past the work area gave %+v, want 120,60", a.pickRect)
+	}
+}
+
+// A window that follows the pointer must follow its place on the screen, not
+// the movements of a press: a press measured in a window that moved already
+// counted them, and adding them up shakes the window.
+func TestPickerDragFollowsThePointer(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.pickSizeW, a.pickSizeH = 380, 440
+	a.pickPlaced = true
+	a.pickRect = mygo.Rectangle{X: 100, Y: 100, Width: 380, Height: 440}
+	a.pickArea = mygo.Rectangle{X: 0, Y: 0, Width: 1440, Height: 900}
+	cursor := mygo.Point{X: 105, Y: 320}
+	restore := pickerCursor
+	pickerCursor = func() mygo.Point { return cursor }
+	t.Cleanup(func() { pickerCursor = restore })
+	tt := ui.NewTester(a.pickerView, 380, 440)
+
+	// Each frame of the drag moves the pointer and the window by the same
+	// amount, so the window ends up exactly where the pointer went: no more
+	// and no less.
+	tt.Press(5, 220)
+	for i := 1; i <= 20; i++ {
+		cursor = mygo.Point{X: 105 + i*3, Y: 320 + i}
+		tt.Move(float32(5+i*3), float32(220+i))
+	}
+	tt.Release(65, 240)
+	if a.pickRect.X != 160 || a.pickRect.Y != 120 {
+		t.Fatalf("drag of 60,20 gave %+v, want 160,120", a.pickRect)
 	}
 }

@@ -155,6 +155,43 @@ func (e *Engine) SendFile(ctx context.Context, peerID, path string, progress fun
 	return s.sendFile(ctx, path, progress)
 }
 
+// SendFiles sends paths in order, one acknowledged transfer per file. Keeping
+// each file a separate transfer means peers that only know single-file sends
+// receive the whole batch, and a failure never publishes a half-received batch.
+// It stops at the first failure and reports the names already saved.
+func (e *Engine) SendFiles(ctx context.Context, peerID string, paths []string, progress func(index int, done, total int64)) ([]string, error) {
+	sizes, err := filetransfer.ValidatePaths(paths, e.FileLimit())
+	if err != nil {
+		return nil, err
+	}
+	var total int64
+	for _, size := range sizes {
+		total += size
+	}
+	saved := make([]string, 0, len(paths))
+	var offset int64
+	for i, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return saved, err
+		}
+		index, base := i, offset
+		name, err := e.SendFile(ctx, peerID, path, func(done, _ int64) {
+			if progress != nil {
+				progress(index, base+done, total)
+			}
+		})
+		if err != nil {
+			if len(paths) == 1 {
+				return saved, err
+			}
+			return saved, fmt.Errorf("%s：%w", filepath.Base(path), err)
+		}
+		saved = append(saved, name)
+		offset += sizes[i]
+	}
+	return saved, nil
+}
+
 func (s *Session) sendFile(ctx context.Context, path string, progress func(int64, int64)) (string, error) {
 	return s.sendFileMode(ctx, path, progress, nil)
 }

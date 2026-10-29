@@ -27,10 +27,16 @@ const MaxTimeout = 10 * time.Minute
 // JSON escaping can expand text sixfold.
 const maxRequestBytes = (settings.MaxTextMB<<20)*6 + 64<<10
 
+// MaxRequestPaths bounds one console batch so a request stays small.
+const MaxRequestPaths = 1000
+
+// Request carries one console command. Paths is used for file batches; Value
+// stays the single payload of text and image requests.
 type Request struct {
-	Kind      string `json:"kind"`
-	Value     string `json:"value"`
-	TimeoutMS int64  `json:"timeout_ms"`
+	Kind      string   `json:"kind"`
+	Value     string   `json:"value"`
+	Paths     []string `json:"paths,omitempty"`
+	TimeoutMS int64    `json:"timeout_ms"`
 }
 
 type Event struct {
@@ -111,6 +117,10 @@ func Start(ctx context.Context, dataDir string, handler Handler) (*Server, error
 			var extra any
 			if decoder.Decode(&extra) != io.EOF || request.TimeoutMS <= 0 || request.TimeoutMS > MaxTimeout.Milliseconds() {
 				http.Error(w, "请求内容或超时时间无效", http.StatusBadRequest)
+				return
+			}
+			if len(request.Paths) > MaxRequestPaths {
+				http.Error(w, "文件数量超过上限", http.StatusBadRequest)
 				return
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), time.Duration(request.TimeoutMS)*time.Millisecond)

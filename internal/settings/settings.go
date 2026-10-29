@@ -23,6 +23,18 @@ const (
 	MaxTextMB        = 20
 )
 
+// The quick history window keeps the flyout defaults until the user drags it
+// to another size. The bounds keep it usable: it must still show a few rows,
+// and it cannot grow beyond what the work area can hold.
+const (
+	DefaultPickerWidth  = 380
+	DefaultPickerHeight = 440
+	MinPickerWidth      = 280
+	MaxPickerWidth      = 1200
+	MinPickerHeight     = 200
+	MaxPickerHeight     = 1000
+)
+
 // Values is the small set of options the settings page can change.
 type Values struct {
 	Paused         bool   `json:"paused"`
@@ -35,6 +47,8 @@ type Values struct {
 	ReceiveDir     string `json:"receive_dir,omitempty"`
 	DisableSendTo  bool   `json:"disable_send_to,omitempty"`
 	PickerShortcut string `json:"picker_shortcut,omitempty"`
+	PickerWidth    int    `json:"picker_width,omitempty"`
+	PickerHeight   int    `json:"picker_height,omitempty"`
 	CopyShortcut   string `json:"copy_shortcut,omitempty"`
 	ManualSync     bool   `json:"manual_sync,omitempty"`
 	AllowTailscale bool   `json:"allow_tailscale,omitempty"`
@@ -79,6 +93,7 @@ func Load(dataDir string) (*File, error) {
 	f.Values.MaxImageMB = clampMB(f.Values.MaxImageMB)
 	f.Values.MaxTextMB = clampTextMB(f.Values.MaxTextMB)
 	f.Values.MaxFileMB = clampFileMB(f.Values.MaxFileMB)
+	f.Values.PickerWidth, f.Values.PickerHeight = clampPickerSize(f.Values.PickerWidth, f.Values.PickerHeight)
 	if f.Values.HistoryMaxMB <= 0 {
 		f.Values.HistoryMaxMB = DefaultHistoryMB
 	}
@@ -98,6 +113,7 @@ func (f *File) Save() error {
 	f.Values.MaxImageMB = clampMB(f.Values.MaxImageMB)
 	f.Values.MaxTextMB = clampTextMB(f.Values.MaxTextMB)
 	f.Values.MaxFileMB = clampFileMB(f.Values.MaxFileMB)
+	f.Values.PickerWidth, f.Values.PickerHeight = clampPickerSize(f.Values.PickerWidth, f.Values.PickerHeight)
 	buf, err := json.MarshalIndent(f.Values, "", "  ")
 	if err != nil {
 		return err
@@ -124,10 +140,29 @@ func clampTextMB(n int) int {
 	if n < 1 {
 		return DefaultMaxTextMB
 	}
-	if n > MaxTextMB {
-		return MaxTextMB
+	return min(n, MaxTextMB)
+}
+
+// PickerSize returns the stored quick history size, clamped to the supported
+// range so a hand-edited settings file cannot open an unusable window.
+func (f *File) PickerSize() (int, int) {
+	return clampPickerSize(f.Values.PickerWidth, f.Values.PickerHeight)
+}
+
+func clampPickerSize(width, height int) (int, int) {
+	if width < MinPickerWidth {
+		width = DefaultPickerWidth
 	}
-	return n
+	if width > MaxPickerWidth {
+		width = MaxPickerWidth
+	}
+	if height < MinPickerHeight {
+		height = DefaultPickerHeight
+	}
+	if height > MaxPickerHeight {
+		height = MaxPickerHeight
+	}
+	return width, height
 }
 
 func clampMB(n int) int {

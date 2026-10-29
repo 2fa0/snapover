@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -69,11 +70,25 @@ func TestParseFilePathsAndLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd, err := parse(context.Background(), []string{"send", "file", "--data", dir, path}, nil)
-	if err != nil || cmd.request.Value != path {
+	if err != nil || !reflect.DeepEqual(cmd.request.Paths, []string{path}) || cmd.request.Value != "" {
 		t.Fatalf("%+v %v", cmd, err)
+	}
+	second := filepath.Join(dir, "第二份.txt")
+	if err := os.WriteFile(second, []byte("two"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd, err = parse(context.Background(), []string{"send", "file", "--data", dir, path, second}, nil)
+	if err != nil || !reflect.DeepEqual(cmd.request.Paths, []string{path, second}) {
+		t.Fatalf("batch not parsed: %+v %v", cmd, err)
 	}
 	if _, err := parse(context.Background(), []string{"send", "file", "--data", dir, dir}, nil); err == nil {
 		t.Fatal("directory accepted")
+	}
+	if _, err := parse(context.Background(), []string{"send", "file", "--data", dir, path, dir}, nil); err == nil {
+		t.Fatal("batch with a directory accepted")
+	}
+	if _, err := parse(context.Background(), []string{"send", "file", "--data", dir}, nil); err == nil {
+		t.Fatal("empty batch accepted")
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY, 0o600)
 	if err != nil {

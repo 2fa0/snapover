@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -50,11 +51,11 @@ func (a *app) handleSecondInstance(args []string, workingDir string) {
 
 func (a *app) prepareFileRequest(paths []string) bool {
 	if a.fileBusy || a.fileChoosing {
-		a.fileCommandHint = "正在处理另一个文件，请完成后再发送"
+		a.fileCommandHint = "正在发送另一批文件，请完成后再发送"
 		return false
 	}
 	a.selectFile(paths)
-	return a.filePath != ""
+	return a.fileSelected()
 }
 
 func (a *app) handleFileRequest(paths []string, cold bool) {
@@ -101,7 +102,7 @@ func (a *app) handleFileRequest(paths []string, cold bool) {
 	}
 	a.fileBusy, a.fileWaiting = true, true
 	a.fileCommandHint = "正在连接最近的设备，连接成功后会自动发送…"
-	path := a.filePath
+	selected := append([]string(nil), a.filePaths...)
 	ctx := a.root
 	if ctx == nil {
 		ctx = context.Background()
@@ -118,7 +119,7 @@ func (a *app) handleFileRequest(paths []string, cold bool) {
 				return
 			}
 			link, online := a.engine.Link()
-			if !online || link.ID != expectedID || a.filePath != path {
+			if !online || link.ID != expectedID || !slices.Equal(a.filePaths, selected) {
 				a.fileCommandHint = "连接或文件已改变，请确认后点击「发送」"
 				a.openFiles()
 				return

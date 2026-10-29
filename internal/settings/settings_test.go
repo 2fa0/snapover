@@ -127,3 +127,29 @@ func TestFileLimitDefaultsAndBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestPickerSizeDefaultsAndBounds(t *testing.T) {
+	for _, test := range []struct {
+		json          string
+		width, height int
+	}{
+		{`{}`, DefaultPickerWidth, DefaultPickerHeight},
+		{`{"picker_width":600,"picker_height":500}`, 600, 500},
+		{`{"picker_width":0,"picker_height":0}`, DefaultPickerWidth, DefaultPickerHeight},
+		{`{"picker_width":-20,"picker_height":-20}`, DefaultPickerWidth, DefaultPickerHeight},
+		{`{"picker_width":100,"picker_height":100}`, DefaultPickerWidth, DefaultPickerHeight},
+		{`{"picker_width":5000,"picker_height":5000}`, MaxPickerWidth, MaxPickerHeight},
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(test.json), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f, err := Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if width, height := f.PickerSize(); width != test.width || height != test.height {
+			t.Fatalf("%s: size = %d×%d, want %d×%d", test.json, width, height, test.width, test.height)
+		}
+	}
+}
