@@ -186,7 +186,10 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 				w, h = 396, 300
 			}
 			if isFiles {
-				w, h = 396, max(44, 24+len(files.Items)*18)
+				w, h = 396, 44
+				if files.Directory || len(files.Items) > 0 {
+					h = max(220, 48+min(len(files.Items), 12)*24)
+				}
 			}
 			if err != nil {
 				w, h = 240, 60

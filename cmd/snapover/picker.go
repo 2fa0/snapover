@@ -430,13 +430,14 @@ func (a *app) pickerView(c *ui.Context) {
 				}
 				row.Children(func() {
 					a.pickerThumb(c, entry, t, sel)
-					ui.Column(c).Grow(1).Gap(2).Children(func() {
+					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 						title = ui.Text(c, titleText).SingleLine()
 						ui.Row(c).Gap(5).Children(func() {
 							if entry.Pinned {
-								ui.Icon(c, pinIcon).FontSize(11).TextColor(rowMetaColor(t, sel))
+								ui.Icon(c, pinIcon).FontSize(11).TextColor(rowMetaColor(t, sel)).Shrink(0)
 							}
-							ui.Text(c, historySource(entry)+" · "+relTime(entry.At)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
+							historySource(c, entry, rowMetaColor(t, sel), 11)
+							ui.Text(c, relTime(entry.At)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine().Shrink(0)
 						})
 					})
 				})
