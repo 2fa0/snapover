@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
+	"github.com/2fa0/snapover/resources"
 )
 
 // Heroicons, MIT licensed; see icons/LICENSE.
@@ -77,6 +78,44 @@ func emptyState(c *ui.Context, icon *ui.SVG, title, description string) {
 			ui.Text(c, description).TextColor(c.Theme().TextMuted).FontSize(12)
 		}
 	})
+}
+
+// mainTitleBarHeight is the strip at the top of the window that the window
+// controls sit in and that drags the window (Linux and Windows; macOS places
+// the controls by TrafficLightPosition and measures the strip itself).
+const mainTitleBarHeight = 40
+
+// sidebarLogoSize is the DIPs the bird in the sidebar header is drawn at: big
+// enough for the eye and the beak of the artwork to read.
+const sidebarLogoSize = 28
+
+// The sidebar's rows carry three items, so they can afford the room the
+// widget's default rows spend on sections and badges: taller than the text and
+// apart from each other, which tells three choices from one block of text.
+const (
+	sidebarItemPadding = 12
+	sidebarItemGap     = 6
+)
+
+// sidebarNavItem is one page of the main sidebar.
+func sidebarNavItem(c *ui.Context, page string, icon *ui.SVG, label string) {
+	ui.SidebarItem(c, page, icon, label).
+		Padding(sidebarItemPadding, 8).
+		Margin(0, 0, sidebarItemGap, 0).
+		Transition(navMotion)
+}
+
+// sidebarLogo is the bird in the sidebar header, a picture of the bird the app
+// icon carries, decoded once and kept for the life of the window.
+func (a *app) sidebarLogo() *ui.Bitmap {
+	if a.logo == nil {
+		bmp, err := ui.DecodeBitmap(resources.LogoPNG)
+		if err != nil {
+			return nil
+		}
+		a.logo = bmp
+	}
+	return a.logo
 }
 
 func (a *app) historyThumb(c *ui.Context, entry history.Entry, t *ui.Theme, selected bool, size float32) {

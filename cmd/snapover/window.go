@@ -125,6 +125,7 @@ type app struct {
 	entries           []history.Entry
 	histSel           int
 	histList          ui.ListState
+	logo              *ui.Bitmap
 	thumbs            *simplelru.LRU[string, *ui.Bitmap]
 	thumbBytes        int
 	thumbPending      map[string]*thumbRequest
@@ -359,15 +360,20 @@ func (a *app) openMainWindow() {
 		return
 	}
 	win := mygo.NewWindow(mygo.WindowOptions{
-		Title:          "Snapover",
-		Width:          960,
-		Height:         640,
-		MinWidth:       720,
-		MinHeight:      440,
-		StateKey:       "main",
-		TitleBarStyle:  mygo.TitleBarHiddenInset,
-		TitleBarHeight: 52,
-		Content:        ui.View(a.view),
+		Title:         "Snapover",
+		Width:         960,
+		Height:        640,
+		MinWidth:      720,
+		MinHeight:     440,
+		StateKey:      "main",
+		TitleBarStyle: mygo.TitleBarHiddenInset,
+		// The header row is as tall as the window controls, rather than the
+		// room AppKit leaves above the content: the traffic lights go where
+		// this strip ends, so the sidebar starts right below them instead of
+		// after a band of empty title bar.
+		TrafficLightPosition: &mygo.Point{X: 18, Y: 12},
+		TitleBarHeight:       mainTitleBarHeight,
+		Content:              ui.View(a.view),
 	})
 	a.win = win
 	win.OnBlur(func() { a.cancelShortcutRecording(); win.Invalidate() })
@@ -570,13 +576,18 @@ func (a *app) view(c *ui.Context) {
 			if bar.Height > 0 {
 				ui.Box(c).Height(bar.Height).Shrink(0).DragWindow()
 			}
-			ui.Column(c).Padding(10, 12, 16, 12).Children(func() {
-				ui.Text(c, "Snapover").FontSize(18).Bold()
+			ui.Column(c).Padding(8, 12, 14, 12).Children(func() {
+				ui.Row(c).Gap(9).AlignItems(ui.Center).Children(func() {
+					if logo := a.sidebarLogo(); logo != nil {
+						ui.Image(c, logo).Size(sidebarLogoSize, sidebarLogoSize).Fit(ui.Contain)
+					}
+					ui.Text(c, "Snapover").FontSize(18).Bold()
+				})
 			})
 			if ui.Sidebar(c, &a.page, func() {
-				ui.SidebarItem(c, pageSettings, settingsIcon, "设置").Transition(navMotion)
-				ui.SidebarItem(c, pageDevices, deviceIcon, "连接设备").Transition(navMotion)
-				ui.SidebarItem(c, pageHistory, historyIcon, "复制历史").Transition(navMotion)
+				sidebarNavItem(c, pageSettings, settingsIcon, "设置")
+				sidebarNavItem(c, pageDevices, deviceIcon, "连接设备")
+				sidebarNavItem(c, pageHistory, historyIcon, "复制历史")
 			}).Grow(1).Changed() {
 				a.confirm = false
 			}
@@ -606,7 +617,7 @@ func (a *app) view(c *ui.Context) {
 				if bar.Height > 0 {
 					ui.Box(c).Height(bar.Height).Shrink(0).DragWindow()
 				}
-				ui.Column(c).Grow(1).FillWidth().Padding(28).Gap(20).Children(func() {
+				ui.Column(c).Grow(1).FillWidth().Padding(20, 28, 28, 28).Gap(20).Children(func() {
 					switch a.page {
 					case pageDevices:
 						ui.Scroll(c.Key("devices-scroll")).Grow(1).Gap(20).Children(func() { a.devicesPage(c) })
