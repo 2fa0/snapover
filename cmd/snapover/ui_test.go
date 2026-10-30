@@ -96,8 +96,12 @@ func TestMainNavigationRemainsImmediateDuringMotion(t *testing.T) {
 		if tt.HasText("发送文件…") {
 			t.Fatal("main window still exposes the send-file entry")
 		}
-		if tt.HasText("测试电脑") || tt.HasText(appVersionLabel()) {
-			t.Fatal("sidebar still shows the local device name or version")
+		if tt.HasText("测试电脑") {
+			t.Fatal("sidebar still shows the local device name")
+		}
+		// 版本号只在设置页的「关于与更新」里出现，不进入侧栏。
+		if !tt.HasText("当前版本 " + appVersionLabel()) {
+			t.Fatal("settings page does not show the app version")
 		}
 		tt.Key(0, ui.KeyDown)
 		if a.page != pageDevices {
@@ -554,5 +558,24 @@ func TestPickerDragFollowsThePointer(t *testing.T) {
 	tt.Release(65, 240)
 	if a.pickRect.X != 160 || a.pickRect.Y != 120 {
 		t.Fatalf("drag of 60,20 gave %+v, want 160,120", a.pickRect)
+	}
+}
+
+// The sidebar header carries the bird the app icon shows: decoded on the first
+// frame, then kept, so no frame pays for it again.
+func TestSidebarHeaderShowsTheLogoOnce(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.page = pageDevices
+	tt := ui.NewTester(a.view, 960, 640)
+	logo := a.logo
+	if logo == nil {
+		t.Fatal("sidebar header did not load the logo")
+	}
+	tt.Frame()
+	if a.logo != logo {
+		t.Fatal("the logo was decoded again for the next frame")
+	}
+	if !tt.HasText("Snapover") {
+		t.Fatal("the wordmark left the header the logo joined")
 	}
 }

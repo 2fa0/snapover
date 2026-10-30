@@ -119,6 +119,7 @@ func (a *app) trayMenu() *mygo.Menu {
 		{Label: "打开窗口", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(a.page) }},
 		{Label: "连接设备", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageDevices) }},
 		{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageSettings) }},
+		{Label: "检查更新…", Click: func(*mygo.MenuItem, *mygo.Window) { a.checkForUpdates() }},
 		mygo.Separator(),
 		{
 			Label:   "暂停同步",
