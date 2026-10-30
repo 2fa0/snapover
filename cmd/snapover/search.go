@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,10 @@ func (s *historySearch) reset() {
 	s.query, s.results, s.valid, s.err = "", nil, false, nil
 }
 
+// filter returns the entries matching query, in history order. A query that
+// only stored bodies can answer still shows what the loaded fields match at
+// once: the disk search replaces those rows when it arrives, so typing does
+// not blank a list that already had matches.
 func (s *historySearch) filter(root context.Context, store *history.Store, entries []history.Entry, query string) []history.Entry {
 	q := strings.TrimSpace(query)
 	if q == "" {
@@ -46,13 +51,7 @@ func (s *historySearch) filter(root context.Context, store *history.Store, entri
 		return entries
 	}
 	if s.query == q {
-		if s.pending != nil {
-			select {
-			case result := <-s.pending:
-				s.results, s.err, s.valid, s.pending = result.entries, result.err, true, nil
-			default:
-			}
-		}
+		s.poll()
 		if s.valid || s.pending != nil {
 			return s.results
 		}
@@ -63,15 +62,12 @@ func (s *historySearch) filter(root context.Context, store *history.Store, entri
 	for _, entry := range entries {
 		if entry.TextFile != "" {
 			needsDisk = true
-			break
+		}
+		if matchesEntry(entry, q) {
+			s.results = append(s.results, history.SearchPreview(entry, q))
 		}
 	}
 	if !needsDisk || store == nil {
-		for _, entry := range entries {
-			if matchesEntry(entry, q) {
-				s.results = append(s.results, entry)
-			}
-		}
 		s.valid = true
 		return s.results
 	}
@@ -94,7 +90,20 @@ func (s *historySearch) filter(root context.Context, store *history.Store, entri
 		}
 		s.jobs <- request
 	}
-	return nil
+	return s.results
+}
+
+// poll takes a finished disk search, whose rows cover the bodies the loaded
+// fields cannot.
+func (s *historySearch) poll() {
+	if s.pending == nil {
+		return
+	}
+	select {
+	case result := <-s.pending:
+		s.results, s.err, s.valid, s.pending = result.entries, result.err, true, nil
+	default:
+	}
 }
 
 func runHistorySearch(root context.Context, store *history.Store, jobs <-chan searchRequest) {
@@ -127,4 +136,13 @@ func (s *historySearch) emptyMessage() string {
 		return "搜索失败：" + s.err.Error()
 	}
 	return "没有匹配的记录。"
+}
+
+// countLabel describes the rows on show: how many matched, or that a disk
+// search for stored bodies is still reading for more.
+func (s *historySearch) countLabel(n int) string {
+	if s.pending != nil {
+		return "搜索中…"
+	}
+	return strconv.Itoa(n) + " 条"
 }
