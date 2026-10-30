@@ -53,6 +53,18 @@ type Entry struct {
 	Folder     bool              `json:"folder,omitempty"`
 	FileTree   []FilePreviewItem `json:"file_tree,omitempty"`
 	FileMore   bool              `json:"file_more,omitempty"`
+	// Search matches are display-only; bodies and persisted records stay intact.
+	MatchText   string       `json:"-"`
+	MatchField  string       `json:"-"`
+	MatchRanges []MatchRange `json:"-"`
+}
+
+// MatchRange is one match of a query inside MatchText, as byte offsets of the
+// snippet MatchText is. Every match in the snippet carries one, so a row can
+// show what matched throughout the text, not only the first one.
+type MatchRange struct {
+	Start int
+	End   int
 }
 
 // Store keeps the newest clipboard items on disk.
