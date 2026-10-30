@@ -51,6 +51,9 @@ func main() {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	mygo.App.SetName("Snapover")
+	// The update plugin must be registered before App.Run, and its window is
+	// the only place a new version is offered.
+	useUpdater()
 	// Forward shell requests before touching the running instance's data or logs.
 	if (runtime.GOOS == "windows" || runtime.GOOS == "darwin") && !*check && !mygo.App.RequestSingleInstanceLock() {
 		return
@@ -195,6 +198,7 @@ func main() {
 		}()
 	}
 	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
+	uiApp.startUpdates()
 	if historyOpenErr != nil {
 		uiApp.status = "历史不可用，其他功能仍可使用"
 	}

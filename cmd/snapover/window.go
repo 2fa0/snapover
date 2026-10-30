@@ -68,6 +68,9 @@ type app struct {
 	syncModeError             string
 	historyMaxText            string
 	historyCapacityError      string
+	updatesEnabled            bool
+	autoUpdate                bool
+	lastCheck                 time.Time
 	historyUsage              history.Usage
 	historyUsageValid         bool
 	historyUsageError         string
@@ -747,6 +750,7 @@ func (a *app) settingsPage(c *ui.Context) {
 			})
 		})
 	})
+	settingsGroup(c, "关于与更新", func() { a.updateSettings(c) })
 }
 
 func (a *app) historyPage(c *ui.Context) {

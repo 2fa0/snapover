@@ -4,3 +4,4 @@ dist/
 .DS_Store
 resources/windows-*/snapover-cli.exe
 resources/darwin-*/snapover-cli
+mygo-update.key
