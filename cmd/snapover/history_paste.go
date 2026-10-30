@@ -17,12 +17,13 @@ type pasteResult struct {
 }
 
 type pasteRequest struct {
-	id     string
-	picker *mygo.Window
-	target paste.Target
-	result chan pasteResult
-	cancel context.CancelFunc
-	ctx    context.Context
+	id       string
+	picker   *mygo.Window
+	target   paste.Target
+	copyOnly bool
+	result   chan pasteResult
+	cancel   context.CancelFunc
+	ctx      context.Context
 }
 
 func (a *app) cancelHistoryPaste() {
@@ -35,6 +36,10 @@ func (a *app) cancelHistoryPaste() {
 }
 
 func (a *app) startHistoryPaste(id string, picker *mygo.Window) {
+	a.startHistoryPasteMode(id, picker, false)
+}
+
+func (a *app) startHistoryPasteMode(id string, picker *mygo.Window, copyOnly bool) {
 	a.pollHistoryStorage()
 	if a.pasteWorker != nil {
 		a.completeHistoryPaste(a.pasteWorker)
@@ -67,11 +72,15 @@ func (a *app) startHistoryPaste(id string, picker *mygo.Window) {
 	}
 	ctx, cancel := context.WithCancel(parent)
 	r := &pasteRequest{id: id, picker: picker, target: a.pasteTo, result: make(chan pasteResult, 1)}
+	r.copyOnly = copyOnly
 	r.cancel, r.ctx = cancel, ctx
 	a.historyPaste = r
 	if picker != nil {
 		a.pickBusy = true
 		a.pickFlash = "正在准备粘贴…"
+		if copyOnly {
+			a.pickFlash = "正在准备复制…"
+		}
 	} else {
 		a.flash = "正在读取历史…"
 	}
@@ -180,6 +189,9 @@ func (a *app) completeHistoryPaste(r *pasteRequest) {
 				return
 			}
 			a.finishPick()
+			if r.copyOnly {
+				return
+			}
 			if !r.target.Valid() {
 				a.notePaste("已复制。没有记住刚才的窗口，请在目标处再按一次粘贴")
 				return

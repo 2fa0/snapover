@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -45,6 +46,8 @@ func (a *app) openPicker(atCaret bool) {
 	}
 	a.pickQuery = ""
 	a.pickFlash = ""
+	a.pickRestore = false
+	a.pickMutationPending = false
 	a.pickSel = -1
 	if len(a.filtered("")) > 0 {
 		a.pickSel = 0
@@ -108,6 +111,8 @@ func (a *app) openPicker(atCaret bool) {
 		a.pickList = ui.ListState{Key: a.pickList.Key, Label: a.pickList.Label, Selected: &a.pickSel}
 		a.picker = nil
 		a.pickBusy = false
+		a.pickRestore = false
+		a.pickMutationPending = false
 	})
 	a.picker.Show()
 	a.picker.Focus()
@@ -359,6 +364,22 @@ func (a *app) pickerView(c *ui.Context) {
 		return
 	}
 	a.pollHistoryPaste(c)
+	for _, shortcut := range []struct {
+		mods ui.Modifiers
+		key  ui.Key
+	}{{ui.Alt, ui.KeyEnter}, {ui.Cmd | ui.Shift, ui.KeyP}, {ui.Cmd | ui.Shift, ui.KeyBackspace}} {
+		if c.Shortcut(shortcut.mods, shortcut.key) {
+			a.pickerActionKey(shortcut.mods, shortcut.key)
+		}
+	}
+	for key := ui.Key1; key <= ui.Key9; key++ {
+		if c.Shortcut(ui.Cmd, key) {
+			a.pickerActionKey(ui.Cmd, key)
+		}
+	}
+	if a.historyCleanupPending != nil {
+		c.After(50 * time.Millisecond)
+	}
 	var hoverID string
 	var hoverBounds ui.Rect
 	shown := a.filtered(a.pickQuery)
@@ -386,30 +407,46 @@ func (a *app) pickerView(c *ui.Context) {
 		box.Background(t.Surface).Radius(10).Border(1, t.Border)
 	}
 	box.Children(func() {
-		field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).Label("搜索快速历史").AutoFocus().Placeholder("搜索内容或来源")
-		if field.Shortcut(0, ui.KeyDown) {
-			a.movePick(1)
-		}
-		if field.Shortcut(0, ui.KeyUp) {
-			a.movePick(-1)
-		}
-		if field.Changed() {
-			a.pickSel = 0
-			if len(a.filtered(a.pickQuery)) == 0 {
-				a.pickSel = -1
+		// The count sits beside the field, where it costs no room until a
+		// query takes the placeholder's place.
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).Label("搜索快速历史").AutoFocus().Placeholder("搜索内容或来源").Grow(1).MinWidth(0).OnTextKey(func(k ui.TextKey) bool {
+				if k.Mods == ui.Alt && k.Key == ui.KeyEnter || k.Mods == ui.Cmd|ui.Shift && (k.Key == ui.KeyP || k.Key == ui.KeyBackspace) || k.Mods == ui.Cmd && k.Key >= ui.Key1 && k.Key <= ui.Key9 {
+					a.pickQuery = k.Text()
+					return a.pickerActionKey(k.Mods, k.Key)
+				}
+				return false
+			})
+			if field.Shortcut(0, ui.KeyDown) {
+				a.movePick(1)
 			}
-			a.pickList.ScrollTo(0, ui.Start)
-		}
-		shown = a.filtered(a.pickQuery)
-		if a.pickerSearch.pending != nil {
-			c.After(50 * time.Millisecond)
-		}
-		if a.pickSel < 0 && len(shown) > 0 {
-			a.pickSel = 0
-		}
-		if field.Submitted() {
-			a.pastePicked()
-		}
+			if field.Shortcut(0, ui.KeyUp) {
+				a.movePick(-1)
+			}
+			if field.Changed() {
+				// A newer search is a new selection intent. A pending mutation
+				// must not restore the old query's selected record afterwards.
+				a.pickRestore = false
+				a.pickSel = 0
+				if len(a.filtered(a.pickQuery)) == 0 {
+					a.pickSel = -1
+				}
+				a.pickList.ScrollTo(0, ui.Start)
+			}
+			shown = a.filtered(a.pickQuery)
+			if a.pickerSearch.pending != nil {
+				c.After(50 * time.Millisecond)
+			}
+			if a.pickSel < 0 && len(shown) > 0 {
+				a.pickSel = 0
+			}
+			if field.Submitted() {
+				a.pastePicked()
+			}
+			if strings.TrimSpace(a.pickQuery) != "" {
+				ui.Text(c, a.pickerSearch.countLabel(len(shown))).FontSize(11).TextColor(t.TextMuted).SingleLine().Shrink(0)
+			}
+		})
 		switch {
 		case len(a.entries) == 0:
 			ui.Text(c, "还没有记录").TextColor(t.TextMuted)
@@ -419,7 +456,11 @@ func (a *app) pickerView(c *ui.Context) {
 			list := ui.List(c, &a.pickList, len(shown), func(i int) {
 				entry := shown[i]
 				sel := i == a.pickSel
-				row := ui.Row(c).Padding(9, 6).Gap(10).AlignItems(ui.Center)
+				row := ui.Row(c.Key("pick-row:"+entry.ID)).Padding(9, 6).Gap(10).AlignItems(ui.Center)
+				row.ContextMenu(func(m *ui.Menu) {
+					a.pickSel = i
+					a.pickerEntryMenu(m, entry)
+				})
 				var title ui.Element
 				titleText := entryTitle(entry)
 				if row.DoubleClicked() {
@@ -431,7 +472,8 @@ func (a *app) pickerView(c *ui.Context) {
 				row.Children(func() {
 					a.pickerThumb(c, entry, t, sel)
 					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-						title = ui.Text(c, titleText).SingleLine()
+						title = historyMatchTitle(c, entry, sel)
+						historyMatchDetail(c, entry, rowMetaColor(t, sel), 11, sel)
 						ui.Row(c).Gap(5).Children(func() {
 							if entry.Pinned {
 								ui.Icon(c, pinIcon).FontSize(11).TextColor(rowMetaColor(t, sel)).Shrink(0)
@@ -440,6 +482,10 @@ func (a *app) pickerView(c *ui.Context) {
 							ui.Text(c, relTime(entry.At)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine().Shrink(0)
 						})
 					})
+					if entry.Pinned && entry.PinKey > 0 && entry.PinKey <= 9 {
+						ui.Text(c, pinShortcutLabel(entry.PinKey)).FontSize(11).TextColor(rowMetaColor(t, sel)).Shrink(0).
+							Tooltip("在快速历史内直接粘贴此条记录")
+					}
 				})
 				if row.Hovered() && rowNeedsPreview(c, entry, titleText, title) {
 					hoverID, hoverBounds = entry.ID, row.Bounds()
@@ -449,11 +495,19 @@ func (a *app) pickerView(c *ui.Context) {
 				a.pastePicked()
 			}
 		}
+		// List first reconciles its old selected key. Restore afterwards so
+		// deleting that key cannot overwrite the adjacent row we selected.
+		if a.pickRestore {
+			a.restorePickSelection(shown)
+			if !a.pickRestore {
+				c.After(time.Millisecond)
+			}
+		}
 		if a.pickFlash != "" {
 			ui.Text(c, a.pickFlash).FontSize(12).TextColor(t.TextMuted)
 		}
 		// Only a state that changes what pasting can do earns a line here; the
-		// everyday key hints live in settings and the README.
+		// everyday actions and their shortcuts live in the context menu.
 		if a.pickNeedsAccess {
 			ui.Text(c, "首次粘贴需要在辅助功能里允许 Snapover").FontSize(11).TextColor(t.TextMuted)
 		}

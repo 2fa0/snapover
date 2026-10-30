@@ -191,6 +191,10 @@ func (a *app) pollHistoryStorage() {
 				}
 				a.flash = a.status
 			}
+			if a.pickMutationPending {
+				a.pickFlash = a.flash
+				a.pickMutationPending = false
+			}
 		default:
 		}
 	}

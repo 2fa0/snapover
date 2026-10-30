@@ -46,6 +46,7 @@ type Entry struct {
 	ImageFile  string            `json:"image,omitempty"`
 	ThumbFile  string            `json:"thumb,omitempty"`
 	Pinned     bool              `json:"pinned,omitempty"`
+	PinKey     int               `json:"pin_key,omitempty"`
 	SourceApp  string            `json:"source_app,omitempty"`
 	FileBundle string            `json:"file_bundle,omitempty"`
 	FileName   string            `json:"file_name,omitempty"`
@@ -153,6 +154,15 @@ func Open(dir string) (*Store, error) {
 	}
 	if err := s.dropFileBundles(); err != nil {
 		return nil, err
+	}
+	// Old snapshots have no pin keys. Journal the assignments using the
+	// existing pin operation, which older versions can still replay.
+	for _, entry := range s.entries {
+		if entry.Pinned && entry.PinKey == 0 && (entry.Kind == string(clip.KindText) || entry.Kind == string(clip.KindImage)) && s.freePinKey() != 0 {
+			if err := s.SetPinned(entry.ID, true); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if migrated {
 		// Publish the new index only after every text body is safely on disk.
@@ -384,16 +394,38 @@ func (s *Store) SetPinned(id string, on bool) error {
 	defer s.publishLocked()
 	for i := range s.entries {
 		if s.entries[i].ID == id {
-			before := s.entries[i].Pinned
+			before, beforeKey := s.entries[i].Pinned, s.entries[i].PinKey
 			s.entries[i].Pinned = on
-			if err := s.persistLocked(historyChange{Op: "pin", ID: id, Pinned: on}); err != nil {
+			if !on {
+				s.entries[i].PinKey = 0
+			} else if beforeKey == 0 && (s.entries[i].Kind == string(clip.KindText) || s.entries[i].Kind == string(clip.KindImage)) {
+				s.entries[i].PinKey = s.freePinKey()
+			}
+			if err := s.persistLocked(historyChange{Op: "pin", ID: id, Pinned: on, PinKey: s.entries[i].PinKey}); err != nil {
 				s.entries[i].Pinned = before
+				s.entries[i].PinKey = beforeKey
 				return err
 			}
 			return nil
 		}
 	}
 	return os.ErrNotExist
+}
+
+// freePinKey is called while mu is held, or before the store is published.
+func (s *Store) freePinKey() int {
+	var used [10]bool
+	for _, entry := range s.entries {
+		if entry.Pinned && entry.PinKey > 0 && entry.PinKey < len(used) {
+			used[entry.PinKey] = true
+		}
+	}
+	for key := 1; key < len(used); key++ {
+		if !used[key] {
+			return key
+		}
+	}
+	return 0
 }
 
 // Delete removes one item and its image files.
