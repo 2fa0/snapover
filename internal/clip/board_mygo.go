@@ -29,6 +29,7 @@ var (
 )
 
 const remoteFormat transfer.Format = "application/x-snapover-remote"
+const localFormat transfer.Format = "application/x-snapover-local"
 
 // PreparedWrite owns temporary native buffers until publication or cancellation.
 type PreparedWrite struct {
@@ -55,7 +56,7 @@ func (MyGoBoard) OwnsSequence(seq uint64) bool {
 	return err == nil && after == seq
 }
 
-func (b MyGoBoard) Snapshot() (Item, error) {
+func (b MyGoBoard) Snapshot() (result Item, resultErr error) {
 	defer crashlog.TrackOperation("读取剪贴板")()
 	crashlog.Breadcrumb("开始读取剪贴板")
 	raw := mygo.Clipboard.AvailableFormats()
@@ -66,6 +67,17 @@ func (b MyGoBoard) Snapshot() (Item, error) {
 	all := make([]string, 0, len(raw)+len(portable))
 	all = append(all, raw...)
 	all = append(all, portable...)
+	for _, format := range all {
+		if format == string(localFormat) {
+			marker, err := readClipboardData(localFormat)
+			if err == nil && strings.TrimRight(string(marker), "\x00") == string(remoteMarker) {
+				// Watch checks the sequence again after Snapshot, so another
+				// process's new copy cannot inherit this classification.
+				defer func() { result.LocalWrite = true }()
+			}
+			break
+		}
+	}
 	crashlog.Breadcrumb("剪贴板格式 " + formatList(all))
 
 	if sens, why := Sensitive(all, readFormat); sens {
@@ -181,6 +193,8 @@ func (MyGoBoard) prepareWrite(item Item, remote bool) (PreparedWrite, error) {
 	}
 	if remote {
 		reps = append(reps, transfer.Bytes(remoteFormat, remoteMarker))
+	} else {
+		reps = append(reps, transfer.Bytes(localFormat, remoteMarker))
 	}
 	data := transfer.New(transfer.NewItem(reps...))
 	return PreparedWrite{Publish: func() error { return publishClipboard(data, item.Kind, item.Size) }}, nil

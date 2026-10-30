@@ -95,6 +95,9 @@ func (a *app) refreshTray() {
 	if a.paused {
 		status = "已暂停"
 	}
+	if a.engine.IgnoreNextCopyPending() {
+		status = "等待忽略下一次复制（不记录、不同步）"
+	}
 	if status == "" {
 		status = "Snapover"
 	}
@@ -112,6 +115,10 @@ func (a *app) trayMenu() *mygo.Menu {
 	if status == "" {
 		status = "Snapover"
 	}
+	ignoreLabel := "忽略下一次复制（不记录、不同步）"
+	if a.engine.IgnoreNextCopyPending() {
+		ignoreLabel = "等待下一次复制 · 点击取消忽略"
+	}
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "Snapover · " + appVersionLabel(), Disabled: true},
 		{Label: status, Disabled: true},
@@ -121,6 +128,7 @@ func (a *app) trayMenu() *mygo.Menu {
 		{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageSettings) }},
 		{Label: "检查更新…", Click: func(*mygo.MenuItem, *mygo.Window) { a.checkForUpdates() }},
 		mygo.Separator(),
+		{Label: ignoreLabel, Click: func(*mygo.MenuItem, *mygo.Window) { a.toggleIgnoreNextCopy() }},
 		{
 			Label:   "暂停同步",
 			Type:    mygo.MenuItemCheckbox,
@@ -141,6 +149,18 @@ func (a *app) trayMenu() *mygo.Menu {
 		mygo.Separator(),
 		{Label: "退出", Role: mygo.RoleQuit},
 	})
+}
+
+func (a *app) toggleIgnoreNextCopy() {
+	on := !a.engine.IgnoreNextCopyPending()
+	if err := a.engine.SetIgnoreNextCopy(on); err != nil {
+		a.status = "无法忽略下一次复制，请稍后重试：" + err.Error()
+	} else if on {
+		a.status = "等待下一次复制，该次内容不记录、不同步"
+	} else {
+		a.status = "已取消忽略下一次复制"
+	}
+	a.refreshTray()
 }
 
 func (a *app) reveal(page string) {

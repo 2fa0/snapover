@@ -127,6 +127,9 @@ func prepareNativeImage(item Item, remote bool) (PreparedWrite, bool, error) {
 	if remote {
 		handles = append(handles, clipboardHandle{format: nativeFormat(string(remoteFormat))})
 		data = append(data, remoteMarker)
+	} else {
+		handles = append(handles, clipboardHandle{format: nativeFormat(string(localFormat))})
+		data = append(data, remoteMarker)
 	}
 	cleanup := func() {
 		for i := range handles {
