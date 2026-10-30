@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 
 	"github.com/2fa0/snapover/resources"
 )
@@ -50,7 +51,38 @@ func (a *app) startTray() {
 }
 
 func (a *app) menuIcon(template bool) ([]byte, error) {
-	return trayIconPNG(loadMenuIcon(), !template && mygo.Theme.IsDark())
+	return trayIconPNG(a.loadMenuIcon(), !template && mygo.Theme.IsDark())
+}
+
+func (a *app) menuBarIconSettings(c *ui.Context) {
+	selected := a.cfg.Values.MenuBarIcon
+	if ui.Segmented(c, &selected, "原图标", "icon1", "icon2", "icon3").Label("菜单栏图标样式").Changed() {
+		a.saveMenuBarIcon(selected)
+	}
+	ui.Text(c, "选择后立即生效，并随系统适配深浅色。").FontSize(12).TextColor(c.Theme().TextMuted)
+	if a.menuBarIconError != "" {
+		ui.Text(c, a.menuBarIconError).FontSize(12).TextColor(c.Theme().Danger)
+	}
+}
+
+func (a *app) saveMenuBarIcon(selected int) {
+	previous := a.cfg.Values.MenuBarIcon
+	a.cfg.Values.MenuBarIcon = selected
+	if err := a.cfg.Save(); err != nil {
+		a.cfg.Values.MenuBarIcon = previous
+		a.menuBarIconError = "保存图标失败，选择未生效，请检查数据目录权限后重试"
+		return
+	}
+	a.menuBarIconError = ""
+	if a.tray != nil {
+		icon, err := a.menuIcon(true)
+		if err == nil {
+			err = a.tray.SetIcon(icon, true)
+		}
+		if err != nil {
+			a.menuBarIconError = "图标已保存，但切换失败，请重启 Snapover 后重试"
+		}
+	}
 }
 
 func (a *app) handleTrayClick() {
@@ -224,7 +256,17 @@ func loginErr(err error) string {
 	}
 }
 
-func loadMenuIcon() []byte {
+func (a *app) loadMenuIcon() []byte {
+	if runtime.GOOS == "darwin" && a.cfg != nil {
+		switch a.cfg.Values.MenuBarIcon {
+		case 1:
+			return resources.Icon1PNG
+		case 2:
+			return resources.Icon2PNG
+		case 3:
+			return resources.Icon3PNG
+		}
+	}
 	// 嵌入程序图标，Windows 上单独拷走 exe 也能显示托盘图标。
 	return resources.IconPNG
 }

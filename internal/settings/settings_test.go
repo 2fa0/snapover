@@ -21,10 +21,11 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if f.Values.MaxFileMB != 200 {
 		t.Fatalf("default file mb = %d", f.Values.MaxFileMB)
 	}
-	if f.Values.HistoryMaxMB != DefaultHistoryMB || f.Values.PickerShortcut != "" || f.Values.ManualSync || f.Values.CopyShortcut != "" || f.Values.KeepAwake || f.Values.AllowTailscale {
+	if f.Values.HistoryMaxMB != DefaultHistoryMB || f.Values.PickerShortcut != "" || f.Values.ManualSync || f.Values.CopyShortcut != "" || f.Values.KeepAwake || f.Values.AllowTailscale || f.Values.MenuBarIcon != 0 {
 		t.Fatalf("unexpected defaults: %+v", f.Values)
 	}
 	f.Values.Paused = true
+	f.Values.MenuBarIcon = 2
 	f.Values.TextOnly = true
 	f.Values.MaxImageMB = 8
 	f.Values.MaxTextMB = 10
@@ -47,7 +48,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !again.Values.Paused || !again.Values.TextOnly || again.Values.MaxImageMB != 8 || again.Values.ReceiveDir != dir || !again.Values.DisableSendTo {
+	if !again.Values.Paused || !again.Values.TextOnly || again.Values.MaxImageMB != 8 || again.Values.ReceiveDir != dir || !again.Values.DisableSendTo || again.Values.MenuBarIcon != 2 {
 		t.Fatalf("%+v", again.Values)
 	}
 	if again.Values.MaxTextMB != 10 {

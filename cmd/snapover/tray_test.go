@@ -5,9 +5,13 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
+	"github.com/egoist/mygo/ui"
+	"github.com/2fa0/snapover/internal/settings"
 	"github.com/2fa0/snapover/resources"
 )
 
@@ -25,7 +29,19 @@ func TestPickerShortcuts(t *testing.T) {
 }
 
 func TestMenuPNGBecomesTrayIcon(t *testing.T) {
-	out, err := trayIconPNG(resources.IconPNG, false)
+	for name, src := range map[string][]byte{
+		"original": resources.IconPNG,
+		"icon1":    resources.Icon1PNG,
+		"icon2":    resources.Icon2PNG,
+		"icon3":    resources.Icon3PNG,
+	} {
+		t.Run(name, func(t *testing.T) { checkMenuPNGBecomesTrayIcon(t, src) })
+	}
+}
+
+func checkMenuPNGBecomesTrayIcon(t *testing.T, src []byte) {
+	t.Helper()
+	out, err := trayIconPNG(src, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,6 +60,55 @@ func TestMenuPNGBecomesTrayIcon(t *testing.T) {
 	}
 	if opaque < 20 || opaque > 700 {
 		t.Fatalf("opaque pixels = %d", opaque)
+	}
+}
+
+func TestMenuBarIconSelectionPersists(t *testing.T) {
+	a := interfaceTestApp(t)
+	tt := ui.NewTester(a.menuBarIconSettings, 600, 180)
+	icons := [][]byte{resources.IconPNG, resources.Icon1PNG, resources.Icon2PNG, resources.Icon3PNG}
+	for _, selected := range []int{1, 2, 3, 0} {
+		label := "原图标"
+		if selected != 0 {
+			label = []string{"", "icon1", "icon2", "icon3"}[selected]
+		}
+		clickInterface(t, tt, label)
+		got, err := settings.Load(filepath.Dir(a.cfg.Path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.menuBarIconError != "" || got.Values.MenuBarIcon != selected {
+			t.Fatalf("selection %d: saved=%d error=%q", selected, got.Values.MenuBarIcon, a.menuBarIconError)
+		}
+		// A new app must load the saved artwork; other platforms keep the original.
+		b := &app{cfg: got}
+		want := resources.IconPNG
+		if runtime.GOOS == "darwin" {
+			want = icons[selected]
+		}
+		if !bytes.Equal(b.loadMenuIcon(), want) {
+			t.Fatalf("selection %d: wrong startup icon", selected)
+		}
+	}
+}
+
+func TestMenuBarIconSaveFailureKeepsPreviousSelection(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.saveMenuBarIcon(1)
+	if a.menuBarIconError != "" {
+		t.Fatal(a.menuBarIconError)
+	}
+	if err := os.Mkdir(a.cfg.Path+".tmp", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tt := ui.NewTester(a.menuBarIconSettings, 600, 180)
+	clickInterface(t, tt, "icon3")
+	got, err := settings.Load(filepath.Dir(a.cfg.Path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.cfg.Values.MenuBarIcon != 1 || got.Values.MenuBarIcon != 1 || !tt.HasText(a.menuBarIconError) || a.menuBarIconError == "" {
+		t.Fatalf("failed save changed selection or hid error: saved=%d active=%d error=%q", got.Values.MenuBarIcon, a.cfg.Values.MenuBarIcon, a.menuBarIconError)
 	}
 }
 

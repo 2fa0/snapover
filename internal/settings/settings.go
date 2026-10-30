@@ -43,6 +43,7 @@ type Values struct {
 	MaxTextMB      int    `json:"max_text_mb"`
 	MaxFileMB      int64  `json:"max_file_mb"`
 	OpenAtLogin    bool   `json:"open_at_login"`
+	MenuBarIcon    int    `json:"menu_bar_icon,omitempty"`
 	KeepAwake      bool   `json:"keep_awake,omitempty"`
 	ReceiveDir     string `json:"receive_dir,omitempty"`
 	DisableSendTo  bool   `json:"disable_send_to,omitempty"`
@@ -93,6 +94,7 @@ func Load(dataDir string) (*File, error) {
 	f.Values.MaxImageMB = clampMB(f.Values.MaxImageMB)
 	f.Values.MaxTextMB = clampTextMB(f.Values.MaxTextMB)
 	f.Values.MaxFileMB = clampFileMB(f.Values.MaxFileMB)
+	f.Values.MenuBarIcon = clampMenuBarIcon(f.Values.MenuBarIcon)
 	f.Values.PickerWidth, f.Values.PickerHeight = clampPickerSize(f.Values.PickerWidth, f.Values.PickerHeight)
 	if f.Values.HistoryMaxMB <= 0 {
 		f.Values.HistoryMaxMB = DefaultHistoryMB
@@ -113,6 +115,7 @@ func (f *File) Save() error {
 	f.Values.MaxImageMB = clampMB(f.Values.MaxImageMB)
 	f.Values.MaxTextMB = clampTextMB(f.Values.MaxTextMB)
 	f.Values.MaxFileMB = clampFileMB(f.Values.MaxFileMB)
+	f.Values.MenuBarIcon = clampMenuBarIcon(f.Values.MenuBarIcon)
 	f.Values.PickerWidth, f.Values.PickerHeight = clampPickerSize(f.Values.PickerWidth, f.Values.PickerHeight)
 	buf, err := json.MarshalIndent(f.Values, "", "  ")
 	if err != nil {
@@ -134,6 +137,13 @@ func clampFileMB(n int64) int64 {
 		return DefaultMaxFileMB
 	}
 	return min(n, MaxFileMB)
+}
+
+func clampMenuBarIcon(n int) int {
+	if n < 0 || n > 3 {
+		return 0
+	}
+	return n
 }
 
 func clampTextMB(n int) int {
