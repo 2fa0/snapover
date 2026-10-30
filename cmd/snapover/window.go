@@ -149,6 +149,7 @@ type app struct {
 	win                 *mygo.Window
 	tray                *mygo.Tray
 	trayMenuOpen        bool
+	menuBarIconError    string
 	picker              *mygo.Window
 	pickPreview         pickerPreview
 	pickLoading         bool
@@ -705,6 +706,9 @@ func (a *app) settingsPage(c *ui.Context) {
 	})
 	settingsGroup(c, "复制并同步快捷键", func() { a.copyShortcutSettings(c) })
 	settingsGroup(c, "快速历史快捷键", func() { a.shortcutSettings(c) })
+	if runtime.GOOS == "darwin" {
+		settingsGroup(c, "菜单栏图标", func() { a.menuBarIconSettings(c) })
+	}
 	settingsGroup(c, "历史存储", func() { a.historyStorageSettings(c) })
 	ui.Column(c.Key("开机启动")).Padding(16).Radius(12).Background(c.Theme().Surface).Children(func() {
 		if settingSwitch(c, &a.openAtLogin, "开机启动", "") {

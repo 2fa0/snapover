@@ -7,3 +7,12 @@ import _ "embed"
 //
 //go:embed icon.png
 var IconPNG []byte
+
+//go:embed icon1.png
+var Icon1PNG []byte
+
+//go:embed icon2.png
+var Icon2PNG []byte
+
+//go:embed icon3.png
+var Icon3PNG []byte
