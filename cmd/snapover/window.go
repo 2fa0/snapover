@@ -142,22 +142,26 @@ type app struct {
 	notificationQueue chan fileNotification
 	pasteSerial       atomic.Uint64
 
-	win              *mygo.Window
-	tray             *mygo.Tray
-	trayMenuOpen     bool
-	picker           *mygo.Window
-	pickPreview      pickerPreview
-	pickLoading      bool
-	pickOriginal     *mygo.Window
-	quitting         bool
-	sendToColdLaunch bool
-	openAtLogin      bool
-	pickQuery        string
-	pickSel          int
-	pickList         ui.ListState
-	pickFlash        string
-	pickBusy         bool
-	pickNeedsAccess  bool
+	win                 *mygo.Window
+	tray                *mygo.Tray
+	trayMenuOpen        bool
+	picker              *mygo.Window
+	pickPreview         pickerPreview
+	pickLoading         bool
+	pickOriginal        *mygo.Window
+	quitting            bool
+	sendToColdLaunch    bool
+	openAtLogin         bool
+	pickQuery           string
+	pickSel             int
+	pickRestore         bool
+	pickRestoreID       string
+	pickRestoreIndex    int
+	pickMutationPending bool
+	pickList            ui.ListState
+	pickFlash           string
+	pickBusy            bool
+	pickNeedsAccess     bool
 	// The picker's own size and place, in DIPs: pickSizeW and pickSizeH are
 	// what the window shows, pickDragW and pickDragH the size the running
 	// resize is heading for, before rounding. pickPlaced says the record was
@@ -799,7 +803,8 @@ func (a *app) historyPage(c *ui.Context) {
 				row.Children(func() {
 					a.historyThumb(c, entry, t, sel, 40)
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						title = ui.Text(c, titleText).SingleLine()
+						title = historyMatchTitle(c, entry, sel)
+						historyMatchDetail(c, entry, rowMetaColor(t, sel), 12, sel)
 						ui.Row(c).Gap(6).Children(func() {
 							if entry.Pinned {
 								ui.Icon(c, pinIcon).FontSize(12).TextColor(rowMetaColor(t, sel)).Shrink(0)

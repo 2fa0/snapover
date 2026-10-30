@@ -52,6 +52,60 @@ func TestPickerKeyboardSelection(t *testing.T) {
 	}
 }
 
+func TestHistoryMatchMarksEveryMatchOfTheSnippet(t *testing.T) {
+	entry := history.SearchPreview(history.Entry{Text: "2024 年 3 月 5 日：2024 的重复 2024"}, "2024")
+	base, mark := ui.RGBA(1, 2, 3, 1), ui.RGBA(10, 20, 30, 1)
+	spans := historyMatchSpans(entry, matchMark{plain: base, match: mark, block: mark})
+	var text string
+	marked := 0
+	for _, span := range spans {
+		text += span.Text
+		if span.Background != mark {
+			continue
+		}
+		marked++
+		if span.Text != "2024" || span.Weight != 700 || span.Radius == 0 || span.Color != mark {
+			t.Fatalf("mark %d = %+v, want the query in bold on a rounded block", marked, span)
+		}
+	}
+	if text != entry.MatchText {
+		t.Fatalf("spans spell %q, want %q", text, entry.MatchText)
+	}
+	if marked != 3 {
+		t.Fatalf("marked %d matches, want every 3 of %q", marked, entry.MatchText)
+	}
+}
+
+func TestHistoryMatchSpansKeepFieldNameAndTolerateStaleRanges(t *testing.T) {
+	entry := history.Entry{
+		MatchField:  "来源应用",
+		MatchText:   "Visual Studio Code",
+		MatchRanges: []history.MatchRange{{Start: 7, End: 13}, {Start: 2, End: 4}, {Start: 14, End: 99}},
+	}
+	spans := historyMatchSpans(entry, matchMark{plain: ui.RGBA(1, 2, 3, 1), match: ui.RGBA(10, 20, 30, 1), block: ui.RGBA(10, 20, 30, 1)})
+	if spans[0].Text != "来源应用：" {
+		t.Fatalf("field prefix = %q", spans[0].Text)
+	}
+	var text string
+	for _, span := range spans {
+		text += span.Text
+	}
+	if text != entry.MatchField+"："+entry.MatchText {
+		t.Fatalf("spans spell %q", text)
+	}
+	// Only the first range is in order and inside the text; the others would
+	// repeat or split it, so they are dropped rather than drawn.
+	marked := 0
+	for _, span := range spans[1:] {
+		if span.Background != (ui.Color{}) {
+			marked++
+		}
+	}
+	if marked != 1 {
+		t.Fatalf("marked %d runs, want 1", marked)
+	}
+}
+
 func TestPickerBounds(t *testing.T) {
 	area := mygo.Rectangle{X: 0, Y: 25, Width: 1440, Height: 850}
 	for _, tc := range []struct {

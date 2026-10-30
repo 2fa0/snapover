@@ -25,6 +25,7 @@ type historyChange struct {
 	Entry    *Entry   `json:"entry,omitempty"`
 	ID       string   `json:"id,omitempty"`
 	Pinned   bool     `json:"pinned,omitempty"`
+	PinKey   int      `json:"pin_key,omitempty"`
 	Drop     []string `json:"drop,omitempty"`
 }
 
@@ -212,6 +213,7 @@ func (s *Store) applyChange(change historyChange) error {
 		for i := range s.entries {
 			if s.entries[i].ID == change.ID {
 				s.entries[i].Pinned = change.Pinned
+				s.entries[i].PinKey = change.PinKey
 				found = true
 				break
 			}
