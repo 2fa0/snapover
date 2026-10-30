@@ -66,6 +66,10 @@ type Engine struct {
 	paused      bool
 	manualSync  bool
 	copyRequest *copyRequest
+	ignoreNext  bool
+	ignoreAfter uint64
+	ignoredSeq  uint64
+	haveIgnored bool
 	textOnly    bool
 	maxImage    int
 	maxText     int
@@ -89,7 +93,7 @@ type Engine struct {
 
 // HandleLocal is called for a clipboard change that happened on this machine.
 func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
-	if e.isOwnEcho(seq, item.Hash) {
+	if e.isOwnEcho(seq, item.Hash) || e.ignoreLocalCopy(seq, item) {
 		return
 	}
 	e.mu.Lock()
@@ -111,6 +115,62 @@ func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
 	if r != nil {
 		r.result <- err
 	}
+}
+
+// SetIgnoreNextCopy arms a single settled local copy, never an event already
+// queued when the user chose the action. The setting does not survive restart.
+func (e *Engine) SetIgnoreNextCopy(on bool) error {
+	var seq uint64
+	if on {
+		if e.Board == nil {
+			return errors.New("剪贴板尚未就绪")
+		}
+		var err error
+		seq, err = e.Board.Sequence()
+		if err != nil {
+			return err
+		}
+	}
+	e.mu.Lock()
+	e.ignoreNext, e.ignoreAfter = on, seq
+	e.mu.Unlock()
+	return nil
+}
+
+func (e *Engine) IgnoreNextCopyPending() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.ignoreNext
+}
+
+// Both capture and direct callers check this before queueing/history work.
+// Queue saturation must not turn a private copy into the next public event.
+func (e *Engine) ignoreLocalCopy(seq uint64, item clip.Item) bool {
+	e.mu.Lock()
+	if e.haveIgnored && seq == e.ignoredSeq {
+		e.mu.Unlock()
+		return true
+	}
+	if !e.ignoreNext || seq <= e.ignoreAfter || item.LocalWrite {
+		e.mu.Unlock()
+		return false
+	}
+	e.ignoreNext, e.haveIgnored, e.ignoredSeq = false, true, seq
+	e.localActive = time.Now()
+	r := e.copyRequest
+	if r != nil && seq > r.after && !r.cancelled && time.Now().Before(r.until) {
+		close(r.claimed)
+		e.copyRequest = nil
+	} else {
+		r = nil
+	}
+	e.mu.Unlock()
+	err := errors.New("已忽略这次复制，未记录或同步")
+	if r != nil {
+		r.result <- err
+	}
+	e.notify(Notice{Kind: NoticeStatus, Message: err.Error()})
+	return true
 }
 
 // isOwnEcho is true only for a generation this process just wrote.

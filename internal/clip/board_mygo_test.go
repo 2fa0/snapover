@@ -83,6 +83,40 @@ func stubClipboardThread(t *testing.T) {
 	prepareClipboardImage = func(Item, bool) (PreparedWrite, bool, error) { return PreparedWrite{}, false, nil }
 }
 
+func TestLocalWritesCarryDistinctMarkerWithoutBecomingRemoteEchoes(t *testing.T) {
+	stubClipboardThread(t)
+	original := writeClipboardData
+	t.Cleanup(func() { writeClipboardData = original })
+	item, err := FromText("history content")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, remote := range []bool{false, true} {
+		writeClipboardData = func(data transfer.Data, _ ...mygo.ClipboardOptions) error {
+			format, other := localFormat, remoteFormat
+			if remote {
+				format, other = remoteFormat, localFormat
+			}
+			marker, err := data.Read(format)
+			if err != nil || !bytes.Equal(marker, remoteMarker) {
+				t.Fatal("missing write-origin marker", err)
+			}
+			if raw, _ := data.Read(other); len(raw) != 0 {
+				t.Fatal("local write was classified as a remote echo")
+			}
+			return nil
+		}
+		prepared, err := (MyGoBoard{}).prepareWrite(item, remote)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := prepared.Publish(); err != nil {
+			t.Fatal(err)
+		}
+		prepared.Close()
+	}
+}
+
 func TestMyGoBoardPersistsWritesBeforeReturning(t *testing.T) {
 	text, err := FromText("persist this text")
 	if err != nil {

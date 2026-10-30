@@ -49,14 +49,15 @@ type Item struct {
 	Files        []string // Absolute local paths; never sent as paths to the peer.
 	CopySequence uint64   // Transient generation used to cancel stale file work.
 	// Thumbnail holds only a small PNG, never the decoded original pixels.
-	Thumbnail []byte
-	Preview   []byte // Bounded PNG for hover previews, not sent to peers.
-	Hash      [32]byte
-	Width     int
-	Height    int
-	Size      int
-	Sensitive bool
-	Skip      string
+	Thumbnail  []byte
+	Preview    []byte // Bounded PNG for hover previews, not sent to peers.
+	Hash       [32]byte
+	Width      int
+	Height     int
+	Size       int
+	Sensitive  bool
+	LocalWrite bool // Snapshot of this process's history write; still records/syncs normally.
+	Skip       string
 	// SourceApp is the foreground app that owned this copy. Empty when unknown.
 	// It is not part of the content hash.
 	SourceApp string

@@ -29,6 +29,9 @@ func (e *Engine) StartLocalQueue(ctx context.Context) {
 // ObserveLocal enqueues a settled local clipboard event. A full queue is
 // reported instead of blocking the watcher.
 func (e *Engine) ObserveLocal(seq uint64, item clip.Item) {
+	if e.isOwnEcho(seq, item.Hash) || e.ignoreLocalCopy(seq, item) {
+		return
+	}
 	// Local history and transport only need encoded bytes. The transient decode
 	// is reserved for a received image's next native clipboard publication.
 	item.ReleaseDecoded()
