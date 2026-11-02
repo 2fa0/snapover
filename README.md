@@ -1,6 +1,6 @@
 # Snapover
 
-当前版本 **0.8.1**，更新内容见 [更新记录](docs/CHANGELOG.md)。
+当前版本 **0.8.3**，更新内容见 [更新记录](docs/CHANGELOG.md)。
 
 局域网同步文字、图片、文件和文件夹剪贴板，也可以主动发送一个或多个文件。支持 Windows 10/11 与 macOS 13 及以上版本。通过局域网自动发现电脑，首次配对需要双方核对校验码并确认，也支持手填地址。两端安装并连接 Tailscale 后，可选择开启跨网络连接。
 
@@ -257,11 +257,11 @@ macOS 目前是 ad-hoc 签名，更新只替换程序本身：更新后如果快
 
 一键生成 Windows 11 x64、Mac M 系列（arm64）和 Intel Mac（amd64）的包，Mac 均要求 macOS 13 及以上版本：
 
-- `dist/Snapover-0.8.1-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
+- `dist/Snapover-0.8.3-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
 - `dist/darwin-arm64/Snapover.app`
-- `dist/darwin-arm64/snapover-0.8.1-arm64.dmg`：打开后拖入 Applications
+- `dist/darwin-arm64/snapover-0.8.3-arm64.dmg`：打开后拖入 Applications
 - `dist/darwin-amd64/Snapover.app`
-- `dist/darwin-amd64/snapover-0.8.1-amd64.dmg`：Intel Mac 安装包，打开后拖入 Applications
+- `dist/darwin-amd64/snapover-0.8.3-amd64.dmg`：Intel Mac 安装包，打开后拖入 Applications
 
 文件名中的版本号自动读取 `mygo.json`。脚本的 Windows 步骤会避开 NSIS，生成 ZIP 包，不生成 Setup 安装器；macOS 沿用当前签名配置。
 
