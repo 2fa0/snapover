@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/settings"
 	"github.com/2fa0/snapover/resources"
 )
@@ -36,6 +37,48 @@ func TestMenuPNGBecomesTrayIcon(t *testing.T) {
 		"icon3":    resources.Icon3PNG,
 	} {
 		t.Run(name, func(t *testing.T) { checkMenuPNGBecomesTrayIcon(t, src) })
+	}
+}
+
+func TestIgnoreNextCopySettingsAndTemporaryTrayCancel(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.engine.Board = &pasteTestBoard{}
+	tt := ui.NewTester(a.settingsPage, 960, 1200)
+	if !tt.HasText("忽略一次") || a.trayMenu().ItemByID("cancel-ignore-next-copy").IsVisible() {
+		t.Fatal("ignore action is missing from settings or cancel is visible while idle")
+	}
+	clickInterface(t, tt, "启用忽略下一次复制")
+	tt.Frame()
+	cancel := a.trayMenu().ItemByID("cancel-ignore-next-copy")
+	if !a.engine.IgnoreNextCopyPending() || !tt.HasText("等待复制…") || !cancel.IsVisible() {
+		t.Fatal("arming ignore did not expose the waiting state and tray cancellation")
+	}
+	item, err := clip.FromText("private test content")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.engine.HandleLocal(1, item)
+	tt.Frame()
+	if a.engine.IgnoreNextCopyPending() || a.trayMenu().ItemByID("cancel-ignore-next-copy").IsVisible() || !tt.HasText("忽略一次") {
+		t.Fatal("settled copy did not remove cancellation and restore the settings action")
+	}
+	// A menu opened before the copy completed must only cancel, never re-arm.
+	cancel.Click(cancel, nil)
+	if a.engine.IgnoreNextCopyPending() {
+		t.Fatal("stale cancellation re-armed ignore")
+	}
+	clickInterface(t, tt, "启用忽略下一次复制")
+	cancel = a.trayMenu().ItemByID("cancel-ignore-next-copy")
+	cancel.Click(cancel, nil)
+	tt.Frame()
+	if a.engine.IgnoreNextCopyPending() || a.trayMenu().ItemByID("cancel-ignore-next-copy").IsVisible() {
+		t.Fatal("tray cancellation left ignore active")
+	}
+	clickInterface(t, tt, "启用忽略下一次复制")
+	tt.Frame()
+	clickInterface(t, tt, "取消忽略下一次复制")
+	if a.engine.IgnoreNextCopyPending() || a.trayMenu().ItemByID("cancel-ignore-next-copy").IsVisible() {
+		t.Fatal("settings cancellation left ignore active")
 	}
 }
 

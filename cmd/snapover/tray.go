@@ -147,10 +147,6 @@ func (a *app) trayMenu() *mygo.Menu {
 	if status == "" {
 		status = "Snapover"
 	}
-	ignoreLabel := "忽略下一次复制（不记录、不同步）"
-	if a.engine.IgnoreNextCopyPending() {
-		ignoreLabel = "等待下一次复制 · 点击取消忽略"
-	}
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "Snapover · " + appVersionLabel(), Disabled: true},
 		{Label: status, Disabled: true},
@@ -160,7 +156,12 @@ func (a *app) trayMenu() *mygo.Menu {
 		{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageSettings) }},
 		{Label: "检查更新…", Click: func(*mygo.MenuItem, *mygo.Window) { a.checkForUpdates() }},
 		mygo.Separator(),
-		{Label: ignoreLabel, Click: func(*mygo.MenuItem, *mygo.Window) { a.toggleIgnoreNextCopy() }},
+		{
+			ID:     "cancel-ignore-next-copy",
+			Label:  "取消忽略下一次复制",
+			Hidden: !a.engine.IgnoreNextCopyPending(),
+			Click:  func(*mygo.MenuItem, *mygo.Window) { a.setIgnoreNextCopy(false) },
+		},
 		{
 			Label:   "暂停同步",
 			Type:    mygo.MenuItemCheckbox,
@@ -183,8 +184,21 @@ func (a *app) trayMenu() *mygo.Menu {
 	})
 }
 
-func (a *app) toggleIgnoreNextCopy() {
-	on := !a.engine.IgnoreNextCopyPending()
+func (a *app) ignoreNextCopySettings(c *ui.Context) {
+	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "忽略下一次复制").Bold().Grow(1).Tooltip("该次复制不记录历史，也不同步")
+		if a.engine.IgnoreNextCopyPending() {
+			ui.Text(c, "等待复制…").FontSize(12).TextColor(c.Theme().TextMuted)
+			if ui.Button(c, "取消").Label("取消忽略下一次复制").Clicked() {
+				a.setIgnoreNextCopy(false)
+			}
+		} else if ui.Button(c, "忽略一次").Label("启用忽略下一次复制").Tooltip("该次复制不记录历史，也不同步").Clicked() {
+			a.setIgnoreNextCopy(true)
+		}
+	})
+}
+
+func (a *app) setIgnoreNextCopy(on bool) {
 	if err := a.engine.SetIgnoreNextCopy(on); err != nil {
 		a.status = "无法忽略下一次复制，请稍后重试：" + err.Error()
 	} else if on {
@@ -193,6 +207,9 @@ func (a *app) toggleIgnoreNextCopy() {
 		a.status = "已取消忽略下一次复制"
 	}
 	a.refreshTray()
+	if a.win != nil {
+		a.win.Invalidate()
+	}
 }
 
 func (a *app) reveal(page string) {

@@ -652,6 +652,8 @@ func (a *app) settingsPage(c *ui.Context) {
 			a.saveSettings()
 		}
 		ui.Divider(c)
+		a.ignoreNextCopySettings(c)
+		ui.Divider(c)
 		ui.Collapsible(c, "大小限制", &a.showSyncLimits, func() {
 			ui.Column(c).Gap(14).Padding(12, 0).Children(func() {
 				ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
