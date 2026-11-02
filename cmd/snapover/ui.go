@@ -49,8 +49,8 @@ func appVersionLabel() string {
 	return "开发版"
 }
 
-func settingsGroup(c *ui.Context, title string, contents func()) {
-	ui.Column(c.Key(title)).Gap(8).Children(func() {
+func settingsGroup(c *ui.Context, title string, contents func()) ui.Element {
+	return ui.Column(c.Key(title)).Gap(8).Children(func() {
 		ui.Text(c, title).FontSize(13).Bold()
 		ui.Column(c).Padding(16).Gap(14).Radius(12).Background(c.Theme().Surface).Children(contents)
 	})

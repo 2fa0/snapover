@@ -709,8 +709,10 @@ func (a *app) settingsPage(c *ui.Context) {
 			})
 		})
 	})
-	settingsGroup(c, "复制并同步快捷键", func() { a.copyShortcutSettings(c) })
-	settingsGroup(c, "快速历史快捷键", func() { a.shortcutSettings(c) })
+	ui.Row(c).Gap(16).AlignItems(ui.Stretch).Children(func() {
+		settingsGroup(c, "复制并同步快捷键", func() { a.copyShortcutSettings(c) }).Grow(1).Basis(0).MinWidth(0)
+		settingsGroup(c, "快速历史快捷键", func() { a.shortcutSettings(c) }).Grow(1).Basis(0).MinWidth(0)
+	})
 	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
 		title := "菜单栏图标"
 		if runtime.GOOS == "windows" {
