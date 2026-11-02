@@ -239,7 +239,7 @@ macOS 目前是 ad-hoc 签名，更新只替换程序本身：更新后如果快
 
 1. 改 `mygo.json` 的 `version`，并在 `docs/CHANGELOG.md` 加上对应的 `## x.y.z` 小节（更新窗口里的版本说明取自这里，缺了会构建失败）。
 2. 运行 `./build.command`。它会检查更新签名私钥（`updates.privateKey`，或环境变量 `MYGO_UPDATER_PRIVATE_KEY`），缺了直接停止；构建出的 `*.tar.gz`、`*.delta`、`update-*.json`、`install.sh` 会集中到 `dist/releases/`，不会混进 Windows ZIP。
-3. 在 `updates.github` 指向的公开仓库创建与版本匹配的草稿 Release，标签为 `v<version>`（例如 `v0.8.1`）。上传 `dist/releases/` 里的文件，以及 `dist/` 下的 Windows ZIP 和 `dist/darwin-arm64/` 下的 DMG，最后再传 `update-*.json`；两个平台的文件齐全后再发布。清单中的下载地址包含这个标签，不能使用其他标签。旧版本的文件要保留：增量更新要从它们生成。
+3. 在 `updates.github` 指向的公开仓库创建与版本匹配的草稿 Release，标签为 `v<version>`（例如 `v0.8.1`）。上传 `dist/releases/` 里的文件，以及 `dist/` 下的 Windows ZIP、`dist/darwin-arm64/` 和 `dist/darwin-amd64/` 下的 DMG，最后再传 `update-*.json`；三个目标的文件齐全后再发布。清单中的下载地址包含这个标签，不能使用其他标签。旧版本的文件要保留：增量更新要从它们生成。
 
 签名私钥已通过 `go tool mygo keygen -o ~/.config/snapover/update-keys` 生成，文件留在本机，不进仓库；首次发布前请确认已备份到密码管理器。私钥丢失后，已安装的用户再也收不到更新；泄漏则相当于交出发布权，只能换新密钥并重新发布一版带新公钥的版本。
 
@@ -255,11 +255,13 @@ macOS 目前是 ad-hoc 签名，更新只替换程序本身：更新后如果快
 ./build.command
 ```
 
-一键生成 Windows 11 x64 和 Mac M 系列（arm64）的包：
+一键生成 Windows 11 x64、Mac M 系列（arm64）和 Intel Mac（amd64）的包，Mac 均要求 macOS 13 及以上版本：
 
 - `dist/Snapover-0.8.1-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
 - `dist/darwin-arm64/Snapover.app`
 - `dist/darwin-arm64/snapover-0.8.1-arm64.dmg`：打开后拖入 Applications
+- `dist/darwin-amd64/Snapover.app`
+- `dist/darwin-amd64/snapover-0.8.1-amd64.dmg`：Intel Mac 安装包，打开后拖入 Applications
 
 文件名中的版本号自动读取 `mygo.json`。脚本的 Windows 步骤会避开 NSIS，生成 ZIP 包，不生成 Setup 安装器；macOS 沿用当前签名配置。
 
