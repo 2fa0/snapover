@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/paste"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 type pasteResult struct {

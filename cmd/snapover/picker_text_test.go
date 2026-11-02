@@ -10,11 +10,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/history"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
-	"github.com/2fa0/snapover/internal/clip"
-	"github.com/2fa0/snapover/internal/history"
 )
 
 func TestPickTextReaderCanCopyFullBodyWithoutEditing(t *testing.T) {

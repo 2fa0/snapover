@@ -10,8 +10,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/charlievieth/strcase"
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/charlievieth/strcase"
 )
 
 // Small text remains inline; long bodies live on disk with only a title in RAM.

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/settings"
+	"github.com/egoist/mygo/ui"
 )
 
 func waitHistoryCleanup(t *testing.T, a *app) {

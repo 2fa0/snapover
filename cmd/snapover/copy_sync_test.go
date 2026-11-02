@@ -5,8 +5,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/settings"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestCopyShortcutDefaultsAndConflicts(t *testing.T) {

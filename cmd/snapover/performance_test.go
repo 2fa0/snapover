@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/history"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestEntryTitleBoundedAndUnicode(t *testing.T) {

@@ -191,3 +191,36 @@ func TestPickerSizeDefaultsAndBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestLanguageDefaultsAndNormalization(t *testing.T) {
+	for _, test := range []struct {
+		json string
+		want string
+	}{
+		{`{}`, LangAuto},
+		{`{"language":""}`, LangAuto},
+		{`{"language":"zh"}`, LangZH},
+		{`{"language":"en"}`, LangEN},
+		{`{"language":"fr"}`, LangAuto},
+		{`{"language":"EN"}`, LangAuto},
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(test.json), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f, err := Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.Values.Language != test.want {
+			t.Fatalf("%s: language = %q, want %q", test.json, f.Values.Language, test.want)
+		}
+		if err := f.Save(); err != nil {
+			t.Fatal(err)
+		}
+		reloaded, err := Load(dir)
+		if err != nil || reloaded.Values.Language != test.want {
+			t.Fatalf("%s: language not preserved across save: %+v, %v", test.json, reloaded, err)
+		}
+	}
+}

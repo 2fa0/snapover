@@ -3,8 +3,8 @@ package main
 import (
 	"time"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/keepawake"
+	"github.com/egoist/mygo/ui"
 )
 
 type keepAwakeSession interface {
@@ -13,7 +13,7 @@ type keepAwakeSession interface {
 }
 
 func (a *app) keepAwakeSettings(c *ui.Context) {
-	if settingSwitch(c, &a.keepAwake, "防止自动锁屏", "") {
+	if settingSwitch(c, &a.keepAwake, a.tr("防止自动锁屏"), "") {
 		a.setKeepAwake(a.keepAwake)
 	}
 	message := a.keepAwakeError
@@ -22,14 +22,14 @@ func (a *app) keepAwakeSettings(c *ui.Context) {
 		if state.Err != nil {
 			message = "防止自动锁屏已停止：" + state.Err.Error() + "。请关闭开关后重新开启。"
 		} else if message == "" && state.Paused {
-			ui.Text(c, "已暂停，返回当前用户桌面后恢复。").FontSize(12).TextColor(c.Theme().TextMuted)
+			ui.Text(c, a.tr("已暂停，返回当前用户桌面后恢复。")).FontSize(12).TextColor(c.Theme().TextMuted)
 		}
 		if state.Err == nil {
 			c.After(time.Second)
 		}
 	}
 	if message != "" {
-		ui.Text(c, message).FontSize(12).TextColor(c.Theme().Danger)
+		ui.Text(c, a.tr(message)).FontSize(12).TextColor(c.Theme().Danger)
 	}
 }
 

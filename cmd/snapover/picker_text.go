@@ -1,14 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/history"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
-	"github.com/2fa0/snapover/internal/clip"
-	"github.com/2fa0/snapover/internal/history"
 )
 
 func newPickTextPreview(text string) *editor.State {
@@ -34,6 +35,14 @@ func newPickTextEditor(text, label string, language *editor.Language) *editor.St
 func pickTextPreview(c *ui.Context, state *editor.State, err error) {
 	if err != nil || state == nil {
 		ui.Text(c, "文本预览加载失败，请重新悬停重试").TextColor(c.Theme().TextMuted)
+		return
+	}
+	editor.View(c.Key("text-preview"), state).Grow(1).FillWidth()
+}
+
+func (a *app) pickTextPreview(c *ui.Context, state *editor.State, err error) {
+	if err != nil || state == nil {
+		ui.Text(c, a.tr("文本预览加载失败，请重新悬停重试")).TextColor(c.Theme().TextMuted)
 		return
 	}
 	editor.View(c.Key("text-preview"), state).Grow(1).FillWidth()
@@ -93,6 +102,7 @@ func (a *app) loadPickText(id string, parent *mygo.Window) {
 }
 
 type pickTextReader struct {
+	app      *app
 	text     string
 	pages    []string
 	page     int
@@ -100,6 +110,13 @@ type pickTextReader struct {
 	prepared bool
 	language *editor.Language
 	editor   *editor.State
+}
+
+func (r *pickTextReader) tr(s string) string {
+	if r != nil && r.app != nil {
+		return r.app.tr(s)
+	}
+	return s
 }
 
 func (r *pickTextReader) view(c *ui.Context) {
@@ -116,20 +133,20 @@ func (r *pickTextReader) view(c *ui.Context) {
 		if len(r.pages) > 0 {
 			text = r.pageText
 		}
-		r.editor = newPickTextEditor(text, "文本全文", r.language)
+		r.editor = newPickTextEditor(text, r.tr("文本全文"), r.language)
 	}
 	ui.Column(c).Fill().Gap(8).Children(func() {
 		editor.View(c.Key("full-text").Key(r.page), r.editor).Fill().AutoFocus()
 		if len(r.pages) > 0 {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				if ui.Button(c, "上一段").Disabled(r.page == 0).Clicked() {
+				if ui.Button(c, r.tr("上一段")).Disabled(r.page == 0).Clicked() {
 					r.setPage(c, r.page-1)
 				}
-				ui.Textf(c, "第 %d / %d 段", r.page+1, len(r.pages)).Grow(1)
-				if ui.Button(c, "下一段").Disabled(r.page == len(r.pages)-1).Clicked() {
+				ui.Text(c, r.tr(fmt.Sprintf("第 %d / %d 段", r.page+1, len(r.pages)))).Grow(1)
+				if ui.Button(c, r.tr("下一段")).Disabled(r.page == len(r.pages)-1).Clicked() {
 					r.setPage(c, r.page+1)
 				}
-				if ui.Button(c, "复制全文").Clicked() {
+				if ui.Button(c, r.tr("复制全文")).Clicked() {
 					c.WriteClipboard(r.text)
 				}
 			})
@@ -178,10 +195,10 @@ func (a *app) openPickText(text string) {
 	if a.pickOriginal != nil {
 		a.pickOriginal.Close()
 	}
-	reader := &pickTextReader{text: text}
+	reader := &pickTextReader{app: a, text: text}
 	var viewer *mygo.Window
 	viewer = mygo.NewWindow(mygo.WindowOptions{
-		Title: "文本全文", Width: 720, Height: 560,
+		Title: a.tr("文本全文"), Width: 720, Height: 560,
 		Hidden: true, UseContentSize: true,
 		Content: ui.View(func(c *ui.Context) {
 			if c.Shortcut(0, ui.KeyEscape) {

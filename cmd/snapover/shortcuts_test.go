@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo"
 	"github.com/2fa0/snapover/internal/settings"
+	"github.com/egoist/mygo"
 )
 
 func TestPickerShortcutValidationAndAliases(t *testing.T) {

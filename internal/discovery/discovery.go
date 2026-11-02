@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/2fa0/snapover/internal/lan"
 	"github.com/grandcat/zeroconf"
 	"github.com/miekg/dns"
-	"github.com/2fa0/snapover/internal/lan"
 	"golang.org/x/net/ipv4"
 )
 

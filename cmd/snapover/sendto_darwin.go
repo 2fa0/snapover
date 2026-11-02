@@ -5,9 +5,9 @@ package main
 import (
 	"errors"
 
+	"github.com/2fa0/snapover/internal/sendto"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/2fa0/snapover/internal/sendto"
 )
 
 const sendToEntryName = "Finder 服务"
@@ -45,11 +45,11 @@ func (a *app) receiveFinderFiles(paths []string, cold bool) error {
 
 func (a *app) sendToSettings(c *ui.Context) {
 	on := !a.cfg.Values.DisableSendTo
-	if ui.Checkbox(c, &on, "允许从 Finder 发送文件").
-		Tooltip("右键文件 → 服务 → Snapover 发送文件。菜单是否显示可在系统设置的「服务」中调整。").Disabled(a.sendToBusy).Changed() {
+	if ui.Checkbox(c, &on, a.tr("允许从 Finder 发送文件")).
+		Tooltip(a.tr("右键文件 → 服务 → Snapover 发送文件。菜单是否显示可在系统设置的「服务」中调整。")).Disabled(a.sendToBusy).Changed() {
 		a.setSendTo(on, true)
 	}
-	if ui.Button(c, "刷新 Finder 服务").Disabled(a.sendToBusy || !on).Clicked() {
+	if ui.Button(c, a.tr("刷新 Finder 服务")).Disabled(a.sendToBusy || !on).Clicked() {
 		a.setSendTo(true, true)
 	}
 }

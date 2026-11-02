@@ -3,8 +3,8 @@
 package main
 
 import (
-	"github.com/egoist/mygo"
 	"github.com/2fa0/snapover/internal/paste"
+	"github.com/egoist/mygo"
 )
 
 func pickerScreenBounds(target paste.Target, width, height int) (mygo.Rectangle, float64) {

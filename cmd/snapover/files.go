@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/filetransfer"
 	"github.com/2fa0/snapover/internal/settings"
 	clipsync "github.com/2fa0/snapover/internal/sync"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 func (a *app) openFiles() {
@@ -23,7 +23,7 @@ func (a *app) openFiles() {
 		return
 	}
 	a.fileWin = mygo.NewWindow(mygo.WindowOptions{
-		Title: "发送文件 · Snapover", Width: 460, Height: 340,
+		Title: a.tr("发送文件 · Snapover"), Width: 460, Height: 340,
 		MinWidth: 420, MinHeight: 300, Content: ui.View(a.filesView),
 	})
 	a.fileWin.OnClosed(func() { a.fileWin = nil })
@@ -40,7 +40,7 @@ func (a *app) filesView(c *ui.Context) {
 		} else if online {
 			title = "发送到 " + displayName(link.Name, link.ID)
 		}
-		ui.Text(c, title).FontSize(20).Bold().MaxLines(2)
+		ui.Text(c, a.tr(title)).FontSize(20).Bold().MaxLines(2)
 		zone := ui.Column(c.Key("file-drop")).FillWidth().Padding(18).Gap(10).Radius(8).Disabled(a.fileBusy || a.fileChoosing)
 		over := float32(0)
 		if zone.FileDragOver() {
@@ -64,9 +64,9 @@ func (a *app) filesView(c *ui.Context) {
 		}
 		zone.Children(func() {
 			if !a.fileSelected() {
-				ui.Text(c, "把文件拖到这里").Bold()
-				ui.Text(c, fmt.Sprintf("可多选文件，每个最大 %d MB", a.engine.FileLimit()>>20)).FontSize(12).TextColor(t.TextMuted)
-				if press(ui.Button(c, "选择文件…").Disabled(a.fileBusy || a.fileChoosing)).Clicked() {
+				ui.Text(c, a.tr("把文件拖到这里")).Bold()
+				ui.Text(c, a.tr(fmt.Sprintf("可多选文件，每个最大 %d MB", a.engine.FileLimit()>>20))).FontSize(12).TextColor(t.TextMuted)
+				if press(ui.Button(c, a.tr("选择文件…")).Disabled(a.fileBusy || a.fileChoosing)).Clicked() {
 					a.chooseFile()
 				}
 			} else {
@@ -74,7 +74,7 @@ func (a *app) filesView(c *ui.Context) {
 				ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, formatSize(int(a.fileSize))).FontSize(12).TextColor(t.TextMuted)
 					ui.Spacer(c)
-					if !a.fileBusy && ui.Button(c, "更换…").Disabled(a.fileChoosing).Clicked() {
+					if !a.fileBusy && ui.Button(c, a.tr("更换…")).Disabled(a.fileChoosing).Clicked() {
 						a.chooseFile()
 					}
 				})
@@ -85,7 +85,7 @@ func (a *app) filesView(c *ui.Context) {
 			if a.fileSize > 0 {
 				value = float64(a.fileDone) / float64(a.fileSize)
 			}
-			ui.Progress(c, value).FillWidth().Label("文件发送进度")
+			ui.Progress(c, value).FillWidth().Label(a.tr("文件发送进度"))
 		}
 		// Show one relevant status instead of stacking connection and transfer hints.
 		message := a.fileMessage
@@ -100,25 +100,25 @@ func (a *app) filesView(c *ui.Context) {
 			message = "对方暂不支持接收文件，请更新对方的 Snapover"
 		}
 		if message != "" {
-			ui.Text(c, message).TextColor(t.TextMuted).MaxLines(4)
+			ui.Text(c, a.tr(message)).TextColor(t.TextMuted).MaxLines(4)
 		}
 		if a.fileBusy {
-			ui.Text(c, "关闭窗口后仍会继续传输").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.tr("关闭窗口后仍会继续传输")).FontSize(12).TextColor(t.TextMuted)
 			return
 		}
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Spacer(c)
 			switch {
 			case a.fileSent:
-				if press(ui.PrimaryButton(c, "完成")).Clicked() && a.fileWin != nil {
+				if press(ui.PrimaryButton(c, a.tr("完成"))).Clicked() && a.fileWin != nil {
 					a.fileWin.Close()
 				}
 			case !online:
-				if ui.Button(c, "连接设备").Clicked() {
+				if ui.Button(c, a.tr("连接设备")).Clicked() {
 					a.show(pageDevices)
 				}
 			case a.fileSelected():
-				if press(ui.PrimaryButton(c, "发送").Disabled(!link.FileTransfer || a.fileChoosing)).Clicked() {
+				if press(ui.PrimaryButton(c, a.tr("发送")).Disabled(!link.FileTransfer || a.fileChoosing)).Clicked() {
 					a.sendSelectedFile(false)
 				}
 			}
@@ -144,9 +144,17 @@ func (a *app) fileTitle() string {
 	for _, path := range a.filePaths[:shown] {
 		names = append(names, filepath.Base(path))
 	}
-	title := fmt.Sprintf("%d 个文件：%s", len(a.filePaths), strings.Join(names, "、"))
+	separator := "、"
+	if a.isEN() {
+		separator = ", "
+	}
+	title := a.trf("%d 个文件：%s", "%d files: %s", len(a.filePaths), strings.Join(names, separator))
 	if len(a.filePaths) > shown {
-		title += " 等"
+		if a.isEN() {
+			title += ", etc."
+		} else {
+			title += " 等"
+		}
 	}
 	return title
 }
@@ -176,8 +184,9 @@ func (a *app) selectFile(paths []string) {
 func (a *app) chooseFile() {
 	a.fileChoosing = true
 	parent := a.fileWin
+	title := a.tr("选择要发送的文件")
 	go func() {
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: parent, Title: "选择要发送的文件", Multiple: true})
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: parent, Title: title, Multiple: true})
 		a.updateFiles(func() {
 			a.fileChoosing = false
 			if err != nil {
@@ -285,10 +294,11 @@ func (a *app) shellResult(err error) {
 func (a *app) receiveSettings(c *ui.Context) {
 	ui.Text(c, a.engine.ReceiveDir()).Selectable().TextColor(c.Theme().TextMuted).MaxLines(2)
 	ui.Row(c).Gap(8).Children(func() {
-		if ui.Button(c, "更改接收文件夹…").Clicked() {
+		if ui.Button(c, a.tr("更改接收文件夹…")).Clicked() {
 			parent := a.win
+			title := a.tr("选择接收文件夹")
 			go func() {
-				paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: parent, Title: "选择接收文件夹", Directory: true})
+				paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: parent, Title: title, Directory: true})
 				if err == nil && len(paths) > 0 {
 					err = filetransfer.CheckReceiveDir(paths[0])
 				}
@@ -312,7 +322,7 @@ func (a *app) receiveSettings(c *ui.Context) {
 				})
 			}()
 		}
-		if ui.Button(c, "打开文件夹").Clicked() {
+		if ui.Button(c, a.tr("打开文件夹")).Clicked() {
 			a.openReceiveFolder()
 		}
 	})

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestThumbnailTrimRejectsCallbackFromClosedWindow(t *testing.T) {

@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"unsafe"
 
+	"github.com/2fa0/snapover/internal/crashlog"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
-	"github.com/2fa0/snapover/internal/crashlog"
 	"golang.org/x/sys/windows"
 )
 

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grandcat/zeroconf"
 	"github.com/2fa0/snapover/internal/lan"
+	"github.com/grandcat/zeroconf"
 )
 
 func TestOnlyPhysicalLANAddressesBecomeCandidates(t *testing.T) {

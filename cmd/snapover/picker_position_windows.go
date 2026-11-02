@@ -6,8 +6,8 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/egoist/mygo"
 	"github.com/2fa0/snapover/internal/paste"
+	"github.com/egoist/mygo"
 	"golang.org/x/sys/windows"
 )
 

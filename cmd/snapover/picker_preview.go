@@ -7,11 +7,11 @@ import (
 	"math"
 	"time"
 
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/history"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
-	"github.com/2fa0/snapover/internal/clip"
-	"github.com/2fa0/snapover/internal/history"
 )
 
 const (
@@ -198,7 +198,7 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 			winW, winH := previewFlyoutSize(w, h, workW, workH)
 			var textPreview *editor.State
 			if isText && err == nil {
-				textPreview = newPickTextPreview(text)
+				textPreview = newPickTextEditor(text, a.tr("文本预览"), pickTextLanguage(text))
 			}
 			var p *mygo.Window
 			p = mygo.NewFlyout(mygo.FlyoutOptions{
@@ -214,11 +214,11 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 					}
 					box.Children(func() {
 						if isFiles {
-							pickFilePreview(c, files, err)
+							a.pickFilePreview(c, files, err)
 						} else if isText {
-							pickTextPreview(c, textPreview, err)
+							a.pickTextPreview(c, textPreview, err)
 						} else if bmp == nil {
-							ui.Text(c, "图片预览加载失败，请重新悬停重试").TextColor(t.TextMuted)
+							ui.Text(c, a.tr("图片预览加载失败，请重新悬停重试")).TextColor(t.TextMuted)
 						} else {
 							// Fit the whole picture. A long screenshot becomes a strip;
 							// reading it is the system viewer's job, not this card's.
@@ -230,16 +230,16 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 						}
 						ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
 							meta := fmt.Sprintf("%d × %d", entry.Width, entry.Height)
-							label := "查看原图"
+							label := a.tr("查看原图")
 							if isText {
-								label, meta = "查看全文", formatSize(entry.Size)
+								label, meta = a.tr("查看全文"), formatSize(entry.Size)
 								if more {
-									meta += " · 还有更多内容"
+									meta = a.tr(meta + " · 还有更多内容")
 								}
 							}
 							ui.Text(c, meta).FontSize(11).TextColor(t.TextMuted).Grow(1)
 							if a.pickLoading {
-								label = "正在加载…"
+								label = a.tr("正在加载…")
 							}
 							if ui.Button(c, label).Disabled(a.pickLoading).Clicked() {
 								parent.Update(func() {

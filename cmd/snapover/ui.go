@@ -4,11 +4,11 @@ import (
 	"embed"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
-	"github.com/2fa0/snapover/resources"
+	"github.com/2fa0/snapover/internal/resources"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 // Heroicons, MIT licensed; see icons/LICENSE.
@@ -58,6 +58,10 @@ func settingsGroup(c *ui.Context, title string, contents func()) ui.Element {
 
 func settingSwitch(c *ui.Context, value *bool, title, description string) bool {
 	changed := false
+	switchLabel := title + "开关"
+	if title != "" && title[0] < 0x80 {
+		switchLabel = title + " switch"
+	}
 	ui.Row(c.Key(title)).Gap(20).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Gap(4).Children(func() {
 			ui.Text(c, title).Bold()
@@ -65,7 +69,7 @@ func settingSwitch(c *ui.Context, value *bool, title, description string) bool {
 				ui.Text(c, description).FontSize(12).TextColor(c.Theme().TextMuted)
 			}
 		})
-		changed = ui.Switch(c, value).Label(title + "开关").Changed()
+		changed = ui.Switch(c, value).Label(switchLabel).Changed()
 	})
 	return changed
 }
@@ -148,15 +152,15 @@ func historyKindIcon(entry history.Entry) *ui.SVG {
 	}
 }
 
-func historySource(c *ui.Context, e history.Entry, color ui.Color, fontSize float32) {
+func (a *app) historySource(c *ui.Context, e history.Entry, color ui.Color, fontSize float32) {
 	ui.Row(c).Grow(1).MinWidth(0).Gap(5).AlignItems(ui.Center).Children(func() {
-		label := "本机"
+		label := a.tr("本机")
 		if e.Dir == history.DirRemote {
-			label = "同步"
+			label = a.tr("同步")
 		}
 		ui.Text(c, label).FontSize(fontSize).TextColor(color).SingleLine().Shrink(0)
 		if e.Dir == history.DirRemote {
-			peer := displayName(e.Peer, "对端")
+			peer := a.displayName(e.Peer, a.tr("对端"))
 			ui.Text(c, peer).FontSize(fontSize).TextColor(color).SingleLine().MinWidth(fontSize * 2).Tooltip(peer)
 			if e.SourceApp != "" {
 				ui.Text(c, "·").FontSize(fontSize).TextColor(color).Shrink(0)

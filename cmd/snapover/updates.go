@@ -60,10 +60,10 @@ func (a *app) updateSettings(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Gap(4).Children(func() {
-			ui.Text(c, fmt.Sprintf("当前版本 %s", appVersionLabel())).Bold()
-			ui.Text(c, a.updateStateText()).FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.tr(fmt.Sprintf("当前版本 %s", appVersionLabel()))).Bold()
+			ui.Text(c, a.tr(a.updateStateText())).FontSize(12).TextColor(t.TextMuted)
 		})
-		if ui.Button(c, "检查更新").Clicked() {
+		if ui.Button(c, a.tr("检查更新")).Clicked() {
 			a.checkForUpdates()
 		}
 	})
@@ -71,7 +71,7 @@ func (a *app) updateSettings(c *ui.Context) {
 		return
 	}
 	ui.Divider(c)
-	if settingSwitch(c, &a.autoUpdate, "自动检查更新", "每 24 小时在后台检查一次，有新版本时提示。") {
+	if settingSwitch(c, &a.autoUpdate, a.tr("自动检查更新"), a.tr("每 24 小时在后台检查一次，有新版本时提示。")) {
 		updater.SetAutomaticChecks(a.autoUpdate)
 	}
 }

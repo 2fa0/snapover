@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/2fa0/snapover/internal/settings"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/2fa0/snapover/internal/settings"
 )
 
 type networkGuideKind uint8
@@ -66,17 +66,17 @@ func (a *app) networkSetupHint(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Gap(8).Padding(14).Background(t.Surface).Radius(8).Children(func() {
 		if kind == guideWindows {
-			ui.Text(c, "允许 Snapover 连接另一台电脑").Bold()
-			ui.Text(c, "出现防火墙提示时，允许 Snapover 在可信的专用网络上通信。").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.tr("允许 Snapover 连接另一台电脑")).Bold()
+			ui.Text(c, a.tr("出现防火墙提示时，允许 Snapover 在可信的专用网络上通信。")).FontSize(12).TextColor(t.TextMuted)
 		} else {
-			ui.Text(c, "允许 Snapover 查找另一台电脑").Bold()
-			ui.Text(c, "系统询问本地网络权限时，选择「允许」。").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.tr("允许 Snapover 查找另一台电脑")).Bold()
+			ui.Text(c, a.tr("系统询问本地网络权限时，选择「允许」。")).FontSize(12).TextColor(t.TextMuted)
 		}
 		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, "查看连接指引").Clicked() {
+			if ui.Button(c, a.tr("查看连接指引")).Clicked() {
 				a.openNetworkGuide()
 			}
-			if ui.Button(c, "不再提示").Clicked() {
+			if ui.Button(c, a.tr("不再提示")).Clicked() {
 				a.dismissNetworkGuide(kind)
 			}
 		})
@@ -84,7 +84,7 @@ func (a *app) networkSetupHint(c *ui.Context) {
 }
 
 func (a *app) networkHelp(c *ui.Context) {
-	if currentNetworkGuideKind != guideUnsupported && ui.Button(c, "连接帮助").Clicked() {
+	if currentNetworkGuideKind != guideUnsupported && ui.Button(c, a.tr("连接帮助")).Clicked() {
 		a.openNetworkGuide()
 	}
 }
@@ -120,7 +120,7 @@ func (a *app) openNetworkGuide() {
 	kind := currentNetworkGuideKind
 	g := &networkGuide{app: a, kind: kind, ctx: ctx, cancel: cancel, searchStarted: time.Now()}
 	win := mygo.NewWindow(mygo.WindowOptions{
-		Title: "连接指引 · Snapover", Width: 600, Height: 620,
+		Title: a.tr("连接指引 · Snapover"), Width: 600, Height: 620,
 		MinWidth: 500, MinHeight: 480, Content: ui.View(g.view),
 	})
 	g.win, a.networkGuide = win, g
@@ -173,26 +173,26 @@ func (g *networkGuide) view(c *ui.Context) {
 	}
 	a, t := g.app, c.Theme()
 	ui.Scroll(c).Fill().Padding(24).Gap(16).Background(t.Background).Children(func() {
-		ui.Text(c, "连接另一台电脑").FontSize(22).Bold()
+		ui.Text(c, a.tr("连接另一台电脑")).FontSize(22).Bold()
 		if count := len(a.discovered); count > 0 {
-			ui.Textf(c, "已发现 %d 台电脑", count).Bold()
+			ui.Text(c, a.tr(fmt.Sprintf("已发现 %d 台电脑", count))).Bold()
 		} else if remaining := networkGuideSearchDelay - time.Since(g.searchStarted); remaining > 0 && a.discoveryMessage == "" {
-			ui.Text(c, "正在搜索同一网络内的电脑…").Bold()
+			ui.Text(c, a.tr("正在搜索同一网络内的电脑…")).Bold()
 			c.After(remaining)
 		} else {
-			ui.Text(c, "暂未发现其他电脑").Bold()
+			ui.Text(c, a.tr("暂未发现其他电脑")).Bold()
 			if !g.autoExpanded {
 				g.showSettings, g.autoExpanded = true, true
 			}
 		}
 		if a.discoveryMessage != "" {
-			ui.Text(c, a.discoveryMessage).FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.tr(a.discoveryMessage)).FontSize(12).TextColor(t.TextMuted)
 		}
 		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, "重新搜索").Clicked() {
+			if ui.Button(c, a.tr("重新搜索")).Clicked() {
 				g.retry()
 			}
-			if ui.Button(c, "返回连接设备").Clicked() {
+			if ui.Button(c, a.tr("返回连接设备")).Clicked() {
 				a.reveal(pageDevices)
 			}
 		})
@@ -201,58 +201,58 @@ func (g *networkGuide) view(c *ui.Context) {
 		} else if g.kind == guideMacLocalNetwork {
 			g.macSettings(c)
 		}
-		ui.Collapsible(c, "仍然无法连接？", &g.showDiagnostics, func() {
+		ui.Collapsible(c, a.tr("仍然无法连接？"), &g.showDiagnostics, func() {
 			ui.Column(c).Gap(8).Padding(0, 10).Children(func() {
-				ui.Text(c, "请在两台电脑上分别检查。访客 Wi-Fi 或网络隔离可能阻止电脑互相连接。")
+				ui.Text(c, a.tr("请在两台电脑上分别检查。访客 Wi-Fi 或网络隔离可能阻止电脑互相连接。"))
 				if g.kind == guideMacLocalNetwork {
-					ui.Text(c, "可以在「连接设备」中手填对端地址，绕过自动发现；仍需允许本地网络访问和防火墙连接。")
+					ui.Text(c, a.tr("可以在「连接设备」中手填对端地址，绕过自动发现；仍需允许本地网络访问和防火墙连接。"))
 				} else {
-					ui.Text(c, "可以在「连接设备」中手填对端地址，绕过自动发现；仍需防火墙允许连接。")
+					ui.Text(c, a.tr("可以在「连接设备」中手填对端地址，绕过自动发现；仍需防火墙允许连接。"))
 				}
-				ui.Text(c, fmt.Sprintf("本机连接端口为 TCP %s，自动发现使用 UDP 5353。", portOf(a.listen))).FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, a.tr(fmt.Sprintf("本机连接端口为 TCP %s，自动发现使用 UDP 5353。", portOf(a.listen)))).FontSize(12).TextColor(t.TextMuted)
 			})
 		})
 		if g.message != "" {
-			ui.Text(c, g.message).TextColor(t.TextMuted)
+			ui.Text(c, a.tr(g.message)).TextColor(t.TextMuted)
 		}
-		if ui.PrimaryButton(c, "关闭指引").Clicked() && g.win != nil {
+		if ui.PrimaryButton(c, a.tr("关闭指引")).Clicked() && g.win != nil {
 			g.win.Close()
 		}
 	})
 }
 
 func (g *networkGuide) windowsSettings(c *ui.Context) {
-	t := c.Theme()
-	ui.Collapsible(c, "查看防火墙设置方法", &g.showSettings, func() {
+	a, t := g.app, c.Theme()
+	ui.Collapsible(c, a.tr("查看防火墙设置方法"), &g.showSettings, func() {
 		ui.Column(c).Gap(10).Padding(0, 10).Children(func() {
-			ui.Text(c, "1. 打开防火墙设置，选择「允许应用或功能通过 Windows Defender 防火墙」。")
-			ui.Text(c, "2. 点击「更改设置」，找到 Snapover，勾选应用及「专用」网络。")
-			ui.Text(c, "3. 如果列表中没有 Snapover，点击「允许其他应用」，选择正在使用的 Snapover.exe。")
+			ui.Text(c, a.tr("1. 打开防火墙设置，选择「允许应用或功能通过 Windows Defender 防火墙」。"))
+			ui.Text(c, a.tr("2. 点击「更改设置」，找到 Snapover，勾选应用及「专用」网络。"))
+			ui.Text(c, a.tr("3. 如果列表中没有 Snapover，点击「允许其他应用」，选择正在使用的 Snapover.exe。"))
 			if path, err := os.Executable(); err == nil {
-				ui.Text(c, "当前程序："+path).FontSize(12).TextColor(t.TextMuted).Selectable()
+				ui.Text(c, a.tr("当前程序："+path)).FontSize(12).TextColor(t.TextMuted).Selectable()
 			}
-			ui.Text(c, "更改设置可能需要管理员权限。设置后返回此窗口，会立即重新搜索。").FontSize(12).TextColor(t.TextMuted)
-			if ui.Button(c, "打开防火墙设置").Disabled(g.openingSettings).Clicked() {
+			ui.Text(c, a.tr("更改设置可能需要管理员权限。设置后返回此窗口，会立即重新搜索。")).FontSize(12).TextColor(t.TextMuted)
+			if ui.Button(c, a.tr("打开防火墙设置")).Disabled(g.openingSettings).Clicked() {
 				g.openSettings(true)
 			}
 		})
 	})
-	ui.Text(c, "如果当前网络是「公用」，请先确认它是否可信。信任的家庭或办公网络可以改为「专用」，让放行规则与当前网络类型匹配。").FontSize(12).TextColor(t.TextMuted)
-	if ui.Button(c, "打开网络设置").Disabled(g.openingSettings).Clicked() {
+	ui.Text(c, a.tr("如果当前网络是「公用」，请先确认它是否可信。信任的家庭或办公网络可以改为「专用」，让放行规则与当前网络类型匹配。")).FontSize(12).TextColor(t.TextMuted)
+	if ui.Button(c, a.tr("打开网络设置")).Disabled(g.openingSettings).Clicked() {
 		g.openSettings(false)
 	}
 }
 
 func (g *networkGuide) macSettings(c *ui.Context) {
-	t := c.Theme()
-	ui.Collapsible(c, "查看本地网络权限设置方法", &g.showSettings, func() {
+	a, t := g.app, c.Theme()
+	ui.Collapsible(c, a.tr("查看本地网络权限设置方法"), &g.showSettings, func() {
 		ui.Column(c).Gap(10).Padding(0, 10).Children(func() {
-			ui.Text(c, "1. 打开「系统设置 → 隐私与安全性 → 本地网络」。")
-			ui.Text(c, "2. 找到 Snapover，开启它的本地网络访问。")
-			ui.Text(c, "3. 返回这个指引窗口，会立即重新搜索；也可以点击「重新搜索」。")
-			ui.Text(c, "如果列表中没有 Snapover，请先点击「重新搜索」，并留意系统的授权弹窗。").FontSize(12).TextColor(t.TextMuted)
-			ui.Text(c, "若按钮只打开了「隐私与安全性」，请手动选择「本地网络」。").FontSize(12).TextColor(t.TextMuted)
-			if ui.Button(c, "打开本地网络设置").Disabled(g.openingSettings).Clicked() {
+			ui.Text(c, a.tr("1. 打开「系统设置 → 隐私与安全性 → 本地网络」。"))
+			ui.Text(c, a.tr("2. 找到 Snapover，开启它的本地网络访问。"))
+			ui.Text(c, a.tr("3. 返回这个指引窗口，会立即重新搜索；也可以点击「重新搜索」。"))
+			ui.Text(c, a.tr("如果列表中没有 Snapover，请先点击「重新搜索」，并留意系统的授权弹窗。")).FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.tr("若按钮只打开了「隐私与安全性」，请手动选择「本地网络」。")).FontSize(12).TextColor(t.TextMuted)
+			if ui.Button(c, a.tr("打开本地网络设置")).Disabled(g.openingSettings).Clicked() {
 				g.openSettings(true)
 			}
 		})
