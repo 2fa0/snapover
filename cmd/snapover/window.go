@@ -598,20 +598,27 @@ func (a *app) view(c *ui.Context) {
 			}).Grow(1).Changed() {
 				a.confirm = false
 			}
-			ui.Column(c).Padding(12).Gap(8).Children(func() {
+			ui.Column(c).Padding(12).Gap(8).Shrink(0).Children(func() {
 				label := "未连接设备"
 				link, up := a.engine.Link()
 				if up {
-					label = "已连接 · " + displayName(link.Name, link.ID)
+					label = "已连接 · " + link.Route.Label()
 				}
 				if a.paused {
 					label = "同步已暂停"
 				}
 				ui.Text(c, label).FontSize(12).Bold().SingleLine().ContentTransition(ui.ContentTransition{})
+				if up {
+					name := displayName(link.Name, link.ID)
+					ui.Text(c, name).FontSize(12).MaxLines(3).Tooltip(name).ContentTransition(ui.ContentTransition{})
+				}
 				status := a.displayStatus()
+				if up && status == "已通过"+link.Route.Label()+"连接 "+link.Name {
+					status = ""
+				}
 				// Pairing copy is already on the devices page; don't repeat it under the sidebar.
 				if status != "" && status != "未连接" && status != "已连接" && status != "已连接 "+link.Name && !(a.page == pageDevices && repeatsDevicesPage(status)) {
-					ui.Text(c, status).FontSize(11).TextColor(t.TextMuted).MaxLines(3).ContentTransition(ui.ContentTransition{})
+					ui.Text(c, status).FontSize(11).TextColor(t.TextMuted).MaxLines(3).Tooltip(status).ContentTransition(ui.ContentTransition{})
 				}
 			})
 		})
