@@ -4,25 +4,25 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
+	"github.com/egoist/mygo/ui"
 )
 
-func historyMatchTitle(c *ui.Context, entry history.Entry, selected bool) ui.Element {
+func (a *app) historyMatchTitle(c *ui.Context, entry history.Entry, selected bool) ui.Element {
 	if entry.MatchField != "" {
-		return ui.Text(c, entryTitle(entry)).SingleLine()
+		return ui.Text(c, a.entryTitle(entry)).SingleLine()
 	}
 	base := c.Theme().Text
 	if selected {
 		base = c.Theme().AccentText
 	}
-	return historyMatchSnippet(c, entry, base, selected)
+	return a.historyMatchSnippet(c, entry, base, selected)
 }
 
-func historyMatchDetail(c *ui.Context, entry history.Entry, color ui.Color, size float32, selected bool) {
+func (a *app) historyMatchDetail(c *ui.Context, entry history.Entry, color ui.Color, size float32, selected bool) {
 	if entry.MatchField != "" && entry.MatchText != "" {
-		historyMatchSnippet(c, entry, color, selected).FontSize(size)
+		a.historyMatchSnippet(c, entry, color, selected).FontSize(size)
 	}
 }
 
@@ -34,15 +34,19 @@ func historyMatchDetail(c *ui.Context, entry history.Entry, color ui.Color, size
 // block of the accent or its text shows, so there the mark turns the row's own
 // contrast around instead: the matches stay at full strength while the text
 // around them fades.
-func historyMatchSnippet(c *ui.Context, entry history.Entry, base ui.Color, selected bool) ui.Element {
+func (a *app) historyMatchSnippet(c *ui.Context, entry history.Entry, base ui.Color, selected bool) ui.Element {
 	if entry.MatchText == "" || len(entry.MatchRanges) == 0 {
-		return ui.Text(c, entryTitle(entry)).SingleLine()
+		return ui.Text(c, a.entryTitle(entry)).SingleLine()
 	}
 	mark := matchMark{plain: base, match: base, block: c.Theme().Selection}
 	if selected {
 		mark = matchMark{plain: base.Alpha(0.78), match: base, block: base.Alpha(0.32)}
 	}
-	return ui.RichText(c, historyMatchSpans(entry, mark)...).MaxLines(2)
+	spans := historyMatchSpans(entry, mark)
+	if a.isEN() && entry.MatchField != "" && len(spans) > 0 {
+		spans[0].Text = a.tr(entry.MatchField) + ": "
+	}
+	return ui.RichText(c, spans...).MaxLines(2)
 }
 
 // matchMark is how a row draws the runs of a snippet it matched and those it
@@ -153,27 +157,27 @@ func (a *app) performPickerAction(id, action string) {
 func (a *app) pickerEntryMenu(m *ui.Menu, entry history.Entry) {
 	busy := a.pickBusy || a.historyCleanupPending != nil
 	files := entry.Kind == string(clip.KindFiles)
-	if m.Item("粘贴").Shortcut(0, ui.KeyEnter).Disabled(busy || files).Chosen() {
+	if m.Item(a.tr("粘贴")).Shortcut(0, ui.KeyEnter).Disabled(busy || files).Chosen() {
 		a.performPickerAction(entry.ID, "paste")
 	}
-	if m.Item("只复制").Shortcut(ui.Alt, ui.KeyEnter).Disabled(busy || files).Chosen() {
+	if m.Item(a.tr("只复制")).Shortcut(ui.Alt, ui.KeyEnter).Disabled(busy || files).Chosen() {
 		a.performPickerAction(entry.ID, "copy")
 	}
 	if files {
-		m.Item("文件正文未保存在历史中，请重新复制").Disabled(true)
+		m.Item(a.tr("文件正文未保存在历史中，请重新复制")).Disabled(true)
 	}
 	m.Separator()
-	label := "置顶"
+	label := a.tr("置顶")
 	if entry.Pinned {
-		label = "取消置顶"
+		label = a.tr("取消置顶")
 	}
 	if m.Item(label).Shortcut(ui.Cmd|ui.Shift, ui.KeyP).Disabled(busy).Chosen() {
 		a.performPickerAction(entry.ID, "pin")
 	}
 	if entry.Pinned && entry.PinKey > 0 && entry.PinKey <= 9 {
-		m.Item("快捷粘贴：" + pinShortcutLabel(entry.PinKey) + "（快速历史内）").Disabled(true)
+		m.Item(a.tr("快捷粘贴：" + pinShortcutLabel(entry.PinKey) + "（快速历史内）")).Disabled(true)
 	}
-	if m.Item("删除").Shortcut(ui.Cmd|ui.Shift, ui.KeyBackspace).Disabled(busy).Chosen() {
+	if m.Item(a.tr("删除")).Shortcut(ui.Cmd|ui.Shift, ui.KeyBackspace).Disabled(busy).Chosen() {
 		a.performPickerAction(entry.ID, "delete")
 	}
 }

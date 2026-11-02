@@ -158,13 +158,13 @@ func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failu
 		active := r != nil && r.kind == kind
 		label := current
 		if active {
-			label = "请按下快捷键…"
+			label = a.tr("请按下快捷键…")
 			if r.key != "" {
 				label = displayPickerShortcut(r.key)
 			}
 		}
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			button := ui.Button(c.Key("record"), label).Label("设置" + title).Grow(1).MinWidth(0)
+			button := ui.Button(c.Key("record"), label).Label(a.tr("设置" + title)).Grow(1).MinWidth(0)
 			if button.Clicked() {
 				a.beginShortcutRecording(kind)
 				button.Focus()
@@ -173,13 +173,13 @@ func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failu
 			hasFocus = button.Focused()
 			if active {
 				button.HandleInput(a.shortcutRecorderInput)
-			} else if ui.Button(c, "恢复默认").Label("恢复默认" + title).Clicked() {
+			} else if ui.Button(c, a.tr("恢复默认")).Label(a.tr("恢复默认" + title)).Clicked() {
 				save("")
 			}
 		})
 		if active {
 			ui.Row(c).Gap(8).Children(func() {
-				saveButton := ui.Button(c, "保存").Label("保存" + title).Disabled(r.key == "")
+				saveButton := ui.Button(c, a.tr("保存")).Label(a.tr("保存" + title)).Disabled(r.key == "")
 				hasFocus = hasFocus || saveButton.Focused()
 				if saveButton.Clicked() {
 					save(r.key)
@@ -187,7 +187,7 @@ func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failu
 						a.cancelShortcutRecording()
 					}
 				}
-				cancelButton := ui.Button(c, "取消").Label("取消设置" + title)
+				cancelButton := ui.Button(c, a.tr("取消")).Label(a.tr("取消设置" + title))
 				hasFocus = hasFocus || cancelButton.Focused()
 				if cancelButton.Clicked() {
 					a.cancelShortcutRecording()
@@ -201,6 +201,6 @@ func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failu
 		}
 	}
 	if *failure != "" {
-		ui.Text(c, *failure).FontSize(12).TextColor(c.Theme().Danger)
+		ui.Text(c, a.tr(*failure)).FontSize(12).TextColor(c.Theme().Danger)
 	}
 }

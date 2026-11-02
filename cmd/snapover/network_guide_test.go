@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/discovery"
 	"github.com/2fa0/snapover/internal/settings"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestNetworkGuideShowsHelpAfterEmptySearchWithoutClaimingFirewallFailure(t *testing.T) {

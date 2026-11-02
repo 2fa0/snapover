@@ -11,8 +11,8 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"github.com/2fa0/snapover/internal/resources"
 	"github.com/2fa0/snapover/internal/settings"
-	"github.com/2fa0/snapover/resources"
 )
 
 func (a *app) startTray() {
@@ -71,8 +71,8 @@ func (a *app) menuBarIconSettings(c *ui.Context) {
 		}
 	}
 	parts := ui.SegmentedBase(c, &selected, len(ids))
-	parts.Track.Label("图标样式").Gap(12).FillWidth().MaxWidth(360).Children(func() {
-		for i, label := range []string{"邮筒", "小鸟", "信封"} {
+	parts.Track.Label(a.tr("图标样式")).Gap(12).FillWidth().MaxWidth(360).Children(func() {
+		for i, label := range []string{a.tr("邮筒"), a.tr("小鸟"), a.tr("信封")} {
 			option := parts.Segment(i).Label(label).Grow(1).Basis(0).MinWidth(0).
 				Padding(12, 8).Radius(8).Border(1, t.Border).Background(t.Background)
 			if option.Hovered() {
@@ -98,7 +98,7 @@ func (a *app) menuBarIconSettings(c *ui.Context) {
 		a.saveMenuBarIcon(ids[selected])
 	}
 	if a.menuBarIconError != "" {
-		ui.Text(c, a.menuBarIconError).FontSize(12).TextColor(c.Theme().Danger)
+		ui.Text(c, a.tr(a.menuBarIconError)).FontSize(12).TextColor(c.Theme().Danger)
 	}
 }
 
@@ -191,37 +191,27 @@ func (a *app) refreshTray() {
 	if status == "" {
 		status = "Snapover"
 	}
-	a.tray.SetToolTip(status)
+	a.tray.SetToolTip(a.tr(status))
 	if runtime.GOOS == "linux" {
 		a.tray.SetMenu(a.trayMenu())
 	}
 }
 
 func (a *app) trayMenu() *mygo.Menu {
-	status := a.displayStatus()
-	if a.paused {
-		status = "已暂停"
-	}
-	if status == "" {
-		status = "Snapover"
-	}
+	// 菜单只放动作，不放版本号和连接状态：状态在托盘提示里，页面切换在窗口侧栏里。
 	return mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "Snapover · " + appVersionLabel(), Disabled: true},
-		{Label: status, Disabled: true},
-		{Label: "快速历史", Click: func(*mygo.MenuItem, *mygo.Window) { a.togglePicker() }},
-		{Label: "打开窗口", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(a.page) }},
-		{Label: "连接设备", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageDevices) }},
-		{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageSettings) }},
-		{Label: "检查更新…", Click: func(*mygo.MenuItem, *mygo.Window) { a.checkForUpdates() }},
+		{Label: a.tr("快速历史"), Click: func(*mygo.MenuItem, *mygo.Window) { a.togglePicker() }},
+		{Label: a.tr("设置"), Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageSettings) }},
+		{Label: a.tr("检查更新…"), Click: func(*mygo.MenuItem, *mygo.Window) { a.checkForUpdates() }},
 		mygo.Separator(),
 		{
 			ID:     "cancel-ignore-next-copy",
-			Label:  "取消忽略下一次复制",
+			Label:  a.tr("取消忽略下一次复制"),
 			Hidden: !a.engine.IgnoreNextCopyPending(),
 			Click:  func(*mygo.MenuItem, *mygo.Window) { a.setIgnoreNextCopy(false) },
 		},
 		{
-			Label:   "暂停同步",
+			Label:   a.tr("暂停同步"),
 			Type:    mygo.MenuItemCheckbox,
 			Checked: a.paused,
 			Click: func(item *mygo.MenuItem, _ *mygo.Window) {
@@ -230,7 +220,7 @@ func (a *app) trayMenu() *mygo.Menu {
 			},
 		},
 		{
-			Label:   "开机启动",
+			Label:   a.tr("开机启动"),
 			Type:    mygo.MenuItemCheckbox,
 			Checked: a.openAtLogin,
 			Click: func(item *mygo.MenuItem, _ *mygo.Window) {
@@ -238,19 +228,19 @@ func (a *app) trayMenu() *mygo.Menu {
 			},
 		},
 		mygo.Separator(),
-		{Label: "退出", Role: mygo.RoleQuit},
+		{Label: a.tr("退出"), Role: mygo.RoleQuit},
 	})
 }
 
 func (a *app) ignoreNextCopySettings(c *ui.Context) {
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "忽略下一次复制").Bold().Grow(1).Tooltip("该次复制不记录历史，也不同步")
+		ui.Text(c, a.tr("忽略下一次复制")).Bold().Grow(1).Tooltip(a.tr("该次复制不记录历史，也不同步"))
 		if a.engine.IgnoreNextCopyPending() {
-			ui.Text(c, "等待复制…").FontSize(12).TextColor(c.Theme().TextMuted)
-			if ui.Button(c, "取消").Label("取消忽略下一次复制").Clicked() {
+			ui.Text(c, a.tr("等待复制…")).FontSize(12).TextColor(c.Theme().TextMuted)
+			if ui.Button(c, a.tr("取消")).Label(a.tr("取消忽略下一次复制")).Clicked() {
 				a.setIgnoreNextCopy(false)
 			}
-		} else if ui.Button(c, "忽略一次").Label("启用忽略下一次复制").Tooltip("该次复制不记录历史，也不同步").Clicked() {
+		} else if ui.Button(c, a.tr("忽略一次")).Label(a.tr("启用忽略下一次复制")).Tooltip(a.tr("该次复制不记录历史，也不同步")).Clicked() {
 			a.setIgnoreNextCopy(true)
 		}
 	})

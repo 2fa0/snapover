@@ -15,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/egoist/mygo"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/control"
 	"github.com/2fa0/snapover/internal/crashlog"
@@ -26,6 +25,7 @@ import (
 	"github.com/2fa0/snapover/internal/lan"
 	"github.com/2fa0/snapover/internal/settings"
 	clipsync "github.com/2fa0/snapover/internal/sync"
+	"github.com/egoist/mygo"
 )
 
 const defaultPort = "47821"
@@ -165,6 +165,7 @@ func main() {
 		log.Error("加载设置失败", "err", err)
 		die(1)
 	}
+	configureLanguage(cfg.Values.Language)
 	historyCapacityErr := hist.SetCapacity(int64(cfg.Values.HistoryMaxMB) << 20)
 	if historyCapacityErr != nil {
 		log.Warn("应用历史容量上限失败", "err", historyCapacityErr)

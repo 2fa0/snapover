@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/paste"
 	"github.com/2fa0/snapover/internal/settings"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 func pickerShortcuts() []string {
@@ -410,7 +410,7 @@ func (a *app) pickerView(c *ui.Context) {
 		// The count sits beside the field, where it costs no room until a
 		// query takes the placeholder's place.
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).Label("搜索快速历史").AutoFocus().Placeholder("搜索内容或来源").Grow(1).MinWidth(0).OnTextKey(func(k ui.TextKey) bool {
+			field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).Label(a.tr("搜索快速历史")).AutoFocus().Placeholder(a.tr("搜索内容或来源")).Grow(1).MinWidth(0).OnTextKey(func(k ui.TextKey) bool {
 				if k.Mods == ui.Alt && k.Key == ui.KeyEnter || k.Mods == ui.Cmd|ui.Shift && (k.Key == ui.KeyP || k.Key == ui.KeyBackspace) || k.Mods == ui.Cmd && k.Key >= ui.Key1 && k.Key <= ui.Key9 {
 					a.pickQuery = k.Text()
 					return a.pickerActionKey(k.Mods, k.Key)
@@ -444,14 +444,14 @@ func (a *app) pickerView(c *ui.Context) {
 				a.pastePicked()
 			}
 			if strings.TrimSpace(a.pickQuery) != "" {
-				ui.Text(c, a.pickerSearch.countLabel(len(shown))).FontSize(11).TextColor(t.TextMuted).SingleLine().Shrink(0)
+				ui.Text(c, a.tr(a.pickerSearch.countLabel(len(shown)))).FontSize(11).TextColor(t.TextMuted).SingleLine().Shrink(0)
 			}
 		})
 		switch {
 		case len(a.entries) == 0:
-			ui.Text(c, "还没有记录").TextColor(t.TextMuted)
+			ui.Text(c, a.tr("还没有记录")).TextColor(t.TextMuted)
 		case len(shown) == 0:
-			ui.Text(c, a.pickerSearch.emptyMessage()).TextColor(t.TextMuted)
+			ui.Text(c, a.tr(a.pickerSearch.emptyMessage())).TextColor(t.TextMuted)
 		default:
 			list := ui.List(c, &a.pickList, len(shown), func(i int) {
 				entry := shown[i]
@@ -462,7 +462,7 @@ func (a *app) pickerView(c *ui.Context) {
 					a.pickerEntryMenu(m, entry)
 				})
 				var title ui.Element
-				titleText := entryTitle(entry)
+				titleText := a.entryTitle(entry)
 				if row.DoubleClicked() {
 					a.pickSel = i
 					a.pastePicked()
@@ -472,19 +472,19 @@ func (a *app) pickerView(c *ui.Context) {
 				row.Children(func() {
 					a.pickerThumb(c, entry, t, sel)
 					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-						title = historyMatchTitle(c, entry, sel)
-						historyMatchDetail(c, entry, rowMetaColor(t, sel), 11, sel)
+						title = a.historyMatchTitle(c, entry, sel)
+						a.historyMatchDetail(c, entry, rowMetaColor(t, sel), 11, sel)
 						ui.Row(c).Gap(5).Children(func() {
 							if entry.Pinned {
 								ui.Icon(c, pinIcon).FontSize(11).TextColor(rowMetaColor(t, sel)).Shrink(0)
 							}
-							historySource(c, entry, rowMetaColor(t, sel), 11)
-							ui.Text(c, relTime(entry.At)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine().Shrink(0)
+							a.historySource(c, entry, rowMetaColor(t, sel), 11)
+							ui.Text(c, a.tr(relTime(entry.At))).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine().Shrink(0)
 						})
 					})
 					if entry.Pinned && entry.PinKey > 0 && entry.PinKey <= 9 {
 						ui.Text(c, pinShortcutLabel(entry.PinKey)).FontSize(11).TextColor(rowMetaColor(t, sel)).Shrink(0).
-							Tooltip("在快速历史内直接粘贴此条记录")
+							Tooltip(a.tr("在快速历史内直接粘贴此条记录"))
 					}
 				})
 				if row.Hovered() && rowNeedsPreview(c, entry, titleText, title) {
@@ -504,12 +504,12 @@ func (a *app) pickerView(c *ui.Context) {
 			}
 		}
 		if a.pickFlash != "" {
-			ui.Text(c, a.pickFlash).FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.tr(a.pickFlash)).FontSize(12).TextColor(t.TextMuted)
 		}
 		// Only a state that changes what pasting can do earns a line here; the
 		// everyday actions and their shortcuts live in the context menu.
 		if a.pickNeedsAccess {
-			ui.Text(c, "首次粘贴需要在辅助功能里允许 Snapover").FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, a.tr("首次粘贴需要在辅助功能里允许 Snapover")).FontSize(11).TextColor(t.TextMuted)
 		}
 	})
 	a.dragPickerMove(box)

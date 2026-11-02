@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
+	"github.com/egoist/mygo"
 )
 
 func imageOpenTestApp(t *testing.T) (*app, string, *mygo.Window) {

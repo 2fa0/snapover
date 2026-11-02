@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/discovery"
 	clipsync "github.com/2fa0/snapover/internal/sync"
+	"github.com/egoist/mygo"
 )
 
 // SNAPOVER_TEST_UI=1 go test ./cmd/snapover -run TestMainWindow -count=1

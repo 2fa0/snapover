@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/2fa0/snapover/internal/clip"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/2fa0/snapover/internal/clip"
 )
 
 type pasteTestBoard struct {

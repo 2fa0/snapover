@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/identity"
 	"github.com/2fa0/snapover/internal/settings"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestFilesViewFollowsTransferState(t *testing.T) {

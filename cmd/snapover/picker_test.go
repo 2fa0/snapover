@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestPickerKeyboardSelection(t *testing.T) {

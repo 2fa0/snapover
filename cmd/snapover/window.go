@@ -11,9 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
-	"github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/discovery"
 	"github.com/2fa0/snapover/internal/history"
@@ -23,6 +20,9 @@ import (
 	"github.com/2fa0/snapover/internal/paste"
 	"github.com/2fa0/snapover/internal/settings"
 	clipsync "github.com/2fa0/snapover/internal/sync"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
+	"github.com/hashicorp/golang-lru/v2/simplelru"
 )
 
 const (
@@ -44,6 +44,8 @@ type app struct {
 	addrs       []string
 
 	cfg                       *settings.File
+	systemLang                string
+	languageError             string
 	paused                    bool
 	textOnly                  bool
 	maxImageText              string
@@ -237,6 +239,7 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		engine:              engine,
 		hist:                hist,
 		cfg:                 cfg,
+		systemLang:          settings.LangZH,
 		board:               engine.Board,
 		deviceID:            id.DeviceID,
 		fingerprint:         identity.FormatFingerprint(id.Fingerprint),
@@ -293,7 +296,7 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		if i < 0 || i >= len(shown) {
 			return ""
 		}
-		return entryTitle(shown[i])
+		return a.entryTitle(shown[i])
 	}
 	a.histList.Selected = &a.histSel
 	a.pickList.Key = func(i int) any {
@@ -308,24 +311,41 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		if i < 0 || i >= len(shown) {
 			return ""
 		}
-		return entryTitle(shown[i])
+		return a.entryTitle(shown[i])
 	}
 	a.pickList.Selected = &a.pickSel
 	return a
 }
 
+// windowAppMenu 是 macOS 的窗口菜单栏：应用菜单里放系统惯用的「设置…」，页面切换留给侧栏，
+// 不在菜单栏里重复一份。
+func (a *app) windowAppMenu() *mygo.Menu {
+	return mygo.NewMenu([]*mygo.MenuItem{
+		{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
+			{Role: mygo.RoleAbout},
+			mygo.Separator(),
+			{Label: a.tr("设置…"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageSettings) }},
+			mygo.Separator(),
+			{Role: mygo.RoleServices},
+			mygo.Separator(),
+			{Role: mygo.RoleHide},
+			{Role: mygo.RoleHideOthers},
+			{Role: mygo.RoleUnhide},
+			mygo.Separator(),
+			{Role: mygo.RoleQuit},
+		}},
+		{Role: mygo.RoleEditMenu},
+	})
+}
+
 func (a *app) open(ctx context.Context) {
 	a.root = ctx
+	a.systemLang = languageFromTags([]string{mygo.App.Locale()})
+	mygo.App.OnLocaleChanged(a.localeChanged)
 	// Windows inherits the application menu in every ordinary window.
 	mygo.App.SetMenu(nil)
 	if runtime.GOOS == "darwin" {
-		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-			{Role: mygo.RoleAppMenu},
-			{Label: "设置", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageSettings) }},
-			{Label: "连接设备", Accelerator: "CmdOrCtrl+2", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageDevices) }},
-			{Label: "复制历史", Accelerator: "CmdOrCtrl+3", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageHistory) }},
-			{Role: mygo.RoleEditMenu},
-		}))
+		mygo.App.SetMenu(a.windowAppMenu())
 	}
 	a.restoreLogin()
 	a.restoreKeepAwake()
@@ -563,7 +583,7 @@ func (a *app) view(c *ui.Context) {
 		a.cancelShortcutRecording()
 	}
 	if a.pendingToast != "" {
-		c.Toast(a.pendingToast)
+		c.Toast(a.tr(a.pendingToast))
 		a.pendingToast = ""
 	}
 	a.windowShortcuts(c)
@@ -592,9 +612,9 @@ func (a *app) view(c *ui.Context) {
 				})
 			})
 			if ui.Sidebar(c, &a.page, func() {
-				sidebarNavItem(c, pageSettings, settingsIcon, "设置")
-				sidebarNavItem(c, pageDevices, deviceIcon, "连接设备")
-				sidebarNavItem(c, pageHistory, historyIcon, "复制历史")
+				sidebarNavItem(c, pageSettings, settingsIcon, a.tr("设置"))
+				sidebarNavItem(c, pageDevices, deviceIcon, a.tr("连接设备"))
+				sidebarNavItem(c, pageHistory, historyIcon, a.tr("复制历史"))
 			}).Grow(1).Changed() {
 				a.confirm = false
 			}
@@ -607,9 +627,9 @@ func (a *app) view(c *ui.Context) {
 				if a.paused {
 					label = "同步已暂停"
 				}
-				ui.Text(c, label).FontSize(12).Bold().SingleLine().ContentTransition(ui.ContentTransition{})
+				ui.Text(c, a.tr(label)).FontSize(12).Bold().SingleLine().ContentTransition(ui.ContentTransition{})
 				if up {
-					name := displayName(link.Name, link.ID)
+					name := a.displayName(link.Name, link.ID)
 					ui.Text(c, name).FontSize(12).MaxLines(3).Tooltip(name).ContentTransition(ui.ContentTransition{})
 				}
 				status := a.displayStatus()
@@ -618,7 +638,8 @@ func (a *app) view(c *ui.Context) {
 				}
 				// Pairing copy is already on the devices page; don't repeat it under the sidebar.
 				if status != "" && status != "未连接" && status != "已连接" && status != "已连接 "+link.Name && !(a.page == pageDevices && repeatsDevicesPage(status)) {
-					ui.Text(c, status).FontSize(11).TextColor(t.TextMuted).MaxLines(3).Tooltip(status).ContentTransition(ui.ContentTransition{})
+					shownStatus := a.tr(status)
+					ui.Text(c, shownStatus).FontSize(11).TextColor(t.TextMuted).MaxLines(3).Tooltip(shownStatus).ContentTransition(ui.ContentTransition{})
 				}
 			})
 		})
@@ -651,85 +672,85 @@ func (a *app) view(c *ui.Context) {
 
 func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
-	settingsGroup(c, "剪贴板同步", func() {
+	settingsGroup(c, a.tr("剪贴板同步"), func() {
 		a.syncModeSettings(c)
 		ui.Divider(c)
-		if settingSwitch(c, &a.paused, "暂停同步", "") {
+		if settingSwitch(c, &a.paused, a.tr("暂停同步"), "") {
 			a.saveSettings()
 		}
 		ui.Divider(c)
-		if settingSwitch(c, &a.textOnly, "只同步文本", "") {
+		if settingSwitch(c, &a.textOnly, a.tr("只同步文本"), "") {
 			a.saveSettings()
 		}
 		ui.Divider(c)
 		a.ignoreNextCopySettings(c)
 		ui.Divider(c)
-		ui.Collapsible(c, "大小限制", &a.showSyncLimits, func() {
+		ui.Collapsible(c, a.tr("大小限制"), &a.showSyncLimits, func() {
 			ui.Column(c).Gap(14).Padding(12, 0).Children(func() {
 				ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
 					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "文本大小上限").Bold()
-						ui.Text(c, "1–20 MB，超限不保存、不收发。").FontSize(12).TextColor(t.TextMuted)
+						ui.Text(c, a.tr("文本大小上限")).Bold()
+						ui.Text(c, a.tr("1–20 MB，超限不保存、不收发。")).FontSize(12).TextColor(t.TextMuted)
 					})
-					if ui.TextInput(c.Key("maxtextmb"), &a.maxTextText).Label("文本大小上限，MB").Width(56).Submitted() {
+					if ui.TextInput(c.Key("maxtextmb"), &a.maxTextText).Label(a.tr("文本大小上限，MB")).Width(56).Submitted() {
 						a.saveTextLimit()
 					}
 					ui.Text(c, "MB").TextColor(t.TextMuted)
-					if ui.Button(c, "应用").Label("应用文本上限").Clicked() {
+					if ui.Button(c, a.tr("应用")).Label(a.tr("应用文本上限")).Clicked() {
 						a.saveTextLimit()
 					}
 				})
 				if a.maxTextError != "" {
-					ui.Text(c, a.maxTextError).FontSize(12).TextColor(t.Danger)
+					ui.Text(c, a.tr(a.maxTextError)).FontSize(12).TextColor(t.Danger)
 				}
 				ui.Divider(c)
 				ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
 					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "图片大小上限").Bold()
-						ui.Text(c, "最多 20 MB，超限仅保留本机历史。").FontSize(12).TextColor(t.TextMuted)
+						ui.Text(c, a.tr("图片大小上限")).Bold()
+						ui.Text(c, a.tr("最多 20 MB，超限仅保留本机历史。")).FontSize(12).TextColor(t.TextMuted)
 					})
-					if ui.TextInput(c.Key("maxmb"), &a.maxImageText).Label("图片大小上限，MB").Width(56).Submitted() {
+					if ui.TextInput(c.Key("maxmb"), &a.maxImageText).Label(a.tr("图片大小上限，MB")).Width(56).Submitted() {
 						a.saveSettings()
 					}
 					ui.Text(c, "MB").TextColor(t.TextMuted)
-					if ui.Button(c, "应用").Clicked() {
+					if ui.Button(c, a.tr("应用")).Clicked() {
 						a.saveSettings()
 					}
 				})
 				ui.Divider(c)
 				ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
 					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "文件大小上限").Bold()
-						ui.Text(c, "默认 200 MB，整批内容合计，双方分别校验。").FontSize(12).TextColor(t.TextMuted)
+						ui.Text(c, a.tr("文件大小上限")).Bold()
+						ui.Text(c, a.tr("默认 200 MB，整批内容合计，双方分别校验。")).FontSize(12).TextColor(t.TextMuted)
 					})
-					if ui.TextInput(c.Key("maxfilemb"), &a.maxFileText).Label("文件大小上限，MB").Width(88).Submitted() {
+					if ui.TextInput(c.Key("maxfilemb"), &a.maxFileText).Label(a.tr("文件大小上限，MB")).Width(88).Submitted() {
 						a.saveFileLimit()
 					}
 					ui.Text(c, "MB").TextColor(t.TextMuted)
-					if ui.Button(c, "应用").Label("应用文件上限").Clicked() {
+					if ui.Button(c, a.tr("应用")).Label(a.tr("应用文件上限")).Clicked() {
 						a.saveFileLimit()
 					}
 				})
 				if a.maxFileError != "" {
-					ui.Text(c, a.maxFileError).FontSize(12).TextColor(t.Danger)
+					ui.Text(c, a.tr(a.maxFileError)).FontSize(12).TextColor(t.Danger)
 				}
 			})
 		})
 	})
 	ui.Row(c).Gap(16).AlignItems(ui.Stretch).Children(func() {
-		settingsGroup(c, "复制并同步快捷键", func() { a.copyShortcutSettings(c) }).Grow(1).Basis(0).MinWidth(0)
-		settingsGroup(c, "快速历史快捷键", func() { a.shortcutSettings(c) }).Grow(1).Basis(0).MinWidth(0)
+		settingsGroup(c, a.tr("复制并同步快捷键"), func() { a.copyShortcutSettings(c) }).Grow(1).Basis(0).MinWidth(0)
+		settingsGroup(c, a.tr("快速历史快捷键"), func() { a.shortcutSettings(c) }).Grow(1).Basis(0).MinWidth(0)
 	})
 	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
 		title := "菜单栏图标"
 		if runtime.GOOS == "windows" {
 			title = "托盘图标"
 		}
-		settingsGroup(c, title, func() { a.menuBarIconSettings(c) })
+		settingsGroup(c, a.tr(title), func() { a.menuBarIconSettings(c) })
 	}
-	settingsGroup(c, "历史存储", func() { a.historyStorageSettings(c) })
+	settingsGroup(c, a.tr("历史存储"), func() { a.historyStorageSettings(c) })
 	ui.Column(c.Key("开机启动")).Padding(16).Radius(12).Background(c.Theme().Surface).Children(func() {
-		if settingSwitch(c, &a.openAtLogin, "开机启动", "") {
+		if settingSwitch(c, &a.openAtLogin, a.tr("开机启动"), "") {
 			a.setOpenAtLogin(a.openAtLogin)
 		}
 	})
@@ -738,24 +759,25 @@ func (a *app) settingsPage(c *ui.Context) {
 			a.keepAwakeSettings(c)
 		})
 	}
-	settingsGroup(c, "跨网络连接", func() { a.tailscaleSettings(c) })
-	settingsGroup(c, "文件同步", func() {
-		ui.Collapsible(c, "接收文件夹", &a.showReceiveFolder, func() {
+	settingsGroup(c, a.tr("语言"), func() { a.languageSettings(c) })
+	settingsGroup(c, a.tr("跨网络连接"), func() { a.tailscaleSettings(c) })
+	settingsGroup(c, a.tr("文件同步"), func() {
+		ui.Collapsible(c, a.tr("接收文件夹"), &a.showReceiveFolder, func() {
 			ui.Column(c).Padding(12, 0).Gap(10).Children(func() { a.receiveSettings(c) })
 		})
 	})
-	settingsGroup(c, "本机与诊断", func() {
-		ui.Collapsible(c, "设备信息", &a.showIdentity, func() {
+	settingsGroup(c, a.tr("本机与诊断"), func() {
+		ui.Collapsible(c, a.tr("设备信息"), &a.showIdentity, func() {
 			ui.Column(c).Padding(12, 0).Gap(10).Children(func() {
-				kv(c, "名称", a.name)
-				kv(c, "设备 ID", a.deviceID)
-				ui.Text(c, "证书指纹").FontSize(12).TextColor(t.TextMuted)
+				kv(c, a.tr("名称"), a.name)
+				kv(c, a.tr("设备 ID"), a.deviceID)
+				ui.Text(c, a.tr("证书指纹")).FontSize(12).TextColor(t.TextMuted)
 				ui.Text(c, a.fingerprint).Selectable().FontSize(12).FontFeatures("tnum")
 				if len(a.addrs) == 0 {
-					kv(c, "地址", "没有可用的局域网 IPv4")
+					kv(c, a.tr("地址"), a.tr("没有可用的局域网 IPv4"))
 				}
 				for _, addr := range a.addrs {
-					kv(c, "地址", addr)
+					kv(c, a.tr("地址"), addr)
 				}
 				for _, addr := range lan.IPv4() {
 					if lan.TailscaleInterface(addr) {
@@ -764,15 +786,15 @@ func (a *app) settingsPage(c *ui.Context) {
 				}
 			})
 		})
-		ui.Collapsible(c, "连接诊断", &a.showDiagnostics, func() {
+		ui.Collapsible(c, a.tr("连接诊断"), &a.showDiagnostics, func() {
 			ui.Column(c).Padding(12, 0).Children(func() {
-				if ui.Button(c, "测试连接").Clicked() {
+				if ui.Button(c, a.tr("测试连接")).Clicked() {
 					a.probe()
 				}
 			})
 		})
 	})
-	settingsGroup(c, "关于与更新", func() { a.updateSettings(c) })
+	settingsGroup(c, a.tr("关于与更新"), func() { a.updateSettings(c) })
 }
 
 func (a *app) historyPage(c *ui.Context) {
@@ -784,30 +806,30 @@ func (a *app) historyPage(c *ui.Context) {
 		return
 	}
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		if ui.TextInput(c.Key("query"), &a.query).Label("搜索复制历史").Placeholder("搜索内容或来源").Grow(1).Changed() {
+		if ui.TextInput(c.Key("query"), &a.query).Label(a.tr("搜索复制历史")).Placeholder(a.tr("搜索内容或来源")).Grow(1).Changed() {
 			a.closePickPreview()
 			a.histSel = -1
 			a.histList.ScrollTo(0, ui.Start)
 		}
-		label := "清空未置顶"
+		label := a.tr("清空未置顶")
 		if a.confirmClear {
-			label = "确认清空"
+			label = a.tr("确认清空")
 		}
 		if press(ui.Button(c, label).Disabled(len(a.entries) == 0)).Clicked() {
 			a.clearHistory()
 		}
-		if a.confirmClear && ui.Button(c, "取消").Clicked() {
+		if a.confirmClear && ui.Button(c, a.tr("取消")).Clicked() {
 			a.confirmClear = false
 		}
 	})
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		if ui.Segmented(c, &a.historyKind, "全部", "置顶", "文本", "图片", "文件").Label("历史类型").Changed() {
+		if ui.Segmented(c, &a.historyKind, a.tr("全部"), a.tr("置顶"), a.tr("文本"), a.tr("图片"), a.tr("文件")).Label(a.tr("历史类型")).Changed() {
 			a.closePickPreview()
 			a.histSel = -1
 			a.histList.ScrollTo(0, ui.Start)
 		}
 		ui.Spacer(c)
-		ui.Textf(c, "%d 条记录", len(a.shown())).FontSize(12).TextColor(t.TextMuted).
+		ui.Text(c, a.trf("%d 条记录", "%d items", len(a.shown()))).FontSize(12).TextColor(t.TextMuted).
 			ContentTransition(ui.ContentTransition{Numeric: true})
 	})
 	shown := a.shown()
@@ -820,7 +842,7 @@ func (a *app) historyPage(c *ui.Context) {
 	ui.Column(c).Grow(1).Radius(10).Border(1, t.Border).Clip().Children(func() {
 		switch {
 		case len(a.entries) == 0:
-			emptyState(c, historyIcon, "还没有复制历史", "复制文字、图片、文件或文件夹后会出现在这里")
+			emptyState(c, historyIcon, a.tr("还没有复制历史"), a.tr("复制文字、图片、文件或文件夹后会出现在这里"))
 		case len(shown) == 0:
 			message := ""
 			if a.query != "" {
@@ -829,28 +851,28 @@ func (a *app) historyPage(c *ui.Context) {
 					message = ""
 				}
 			}
-			emptyState(c, searchIcon, "没有匹配的记录", message)
+			emptyState(c, searchIcon, a.tr("没有匹配的记录"), a.tr(message))
 		default:
 			if ui.List(c, &a.histList, len(shown), func(i int) {
 				entry := shown[i]
 				sel := i == a.histSel
 				row := ui.Row(c).Padding(12, 10).Gap(12).AlignItems(ui.Center)
 				var title ui.Element
-				titleText := entryTitle(entry)
+				titleText := a.entryTitle(entry)
 				row.Children(func() {
 					a.historyThumb(c, entry, t, sel, 40)
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						title = historyMatchTitle(c, entry, sel)
-						historyMatchDetail(c, entry, rowMetaColor(t, sel), 12, sel)
+						title = a.historyMatchTitle(c, entry, sel)
+						a.historyMatchDetail(c, entry, rowMetaColor(t, sel), 12, sel)
 						ui.Row(c).Gap(6).Children(func() {
 							if entry.Pinned {
 								ui.Icon(c, pinIcon).FontSize(12).TextColor(rowMetaColor(t, sel)).Shrink(0)
 							}
-							historySource(c, entry, rowMetaColor(t, sel), 12)
+							a.historySource(c, entry, rowMetaColor(t, sel), 12)
 						})
 					})
 					ui.Column(c).Gap(5).AlignItems(ui.End).Shrink(0).Children(func() {
-						ui.Text(c, relTime(entry.At)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
+						ui.Text(c, a.tr(relTime(entry.At))).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
 						ui.Text(c, formatSize(entry.Size)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
 					})
 				})
@@ -863,7 +885,7 @@ func (a *app) historyPage(c *ui.Context) {
 		}
 	})
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		if press(ui.PrimaryButton(c, "复制").Disabled(a.histSel < 0 || a.historyPaste != nil || a.pasteWorker != nil || a.historyCleanupPending != nil)).Clicked() {
+		if press(ui.PrimaryButton(c, a.tr("复制")).Disabled(a.histSel < 0 || a.historyPaste != nil || a.pasteWorker != nil || a.historyCleanupPending != nil)).Clicked() {
 			a.pasteHistory()
 		}
 		ui.Toolbar(c, func() {
@@ -871,16 +893,16 @@ func (a *app) historyPage(c *ui.Context) {
 			if entry, ok := a.selected(); ok && entry.Pinned {
 				label = "取消置顶"
 			}
-			if press(ui.Button(c, label).Label(label + "当前记录").Disabled(a.histSel < 0 || a.historyCleanupPending != nil)).Clicked() {
+			if press(ui.Button(c, a.tr(label)).Label(a.tr(label + "当前记录")).Disabled(a.histSel < 0 || a.historyCleanupPending != nil)).Clicked() {
 				a.pinSelected()
 			}
-			if press(ui.Button(c, "删除").Disabled(a.histSel < 0 || a.historyCleanupPending != nil)).Clicked() {
+			if press(ui.Button(c, a.tr("删除")).Disabled(a.histSel < 0 || a.historyCleanupPending != nil)).Clicked() {
 				a.deleteSelected()
 			}
-		}).Label("记录操作")
+		}).Label(a.tr("记录操作"))
 		ui.Spacer(c)
 		if a.flash != "" {
-			ui.Text(c, a.flash).FontSize(12).TextColor(t.TextMuted).SingleLine()
+			ui.Text(c, a.tr(a.flash)).FontSize(12).TextColor(t.TextMuted).SingleLine()
 		}
 	})
 	a.updatePickPreview(c, a.win, hoverID, hoverBounds)
@@ -1103,7 +1125,7 @@ func (a *app) toast(msg string) {
 func kv(c *ui.Context, k, v string) {
 	t := c.Theme()
 	ui.Row(c).Gap(12).Children(func() {
-		ui.Text(c, k).Width(48).TextColor(t.TextMuted)
+		ui.Text(c, k).MinWidth(48).TextColor(t.TextMuted).SingleLine()
 		ui.Text(c, v).Selectable().SingleLine()
 	})
 }

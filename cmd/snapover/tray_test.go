@@ -8,12 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/resources"
 	"github.com/2fa0/snapover/internal/settings"
-	"github.com/2fa0/snapover/resources"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestPickerShortcuts(t *testing.T) {
@@ -55,6 +56,22 @@ func TestDefaultTrayIconUsesMailbox(t *testing.T) {
 	}
 	if !bytes.Equal(actual, want) {
 		t.Fatal("default tray icon is not the mailbox")
+	}
+}
+
+func TestTrayMenuKeepsOnlyActions(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.status = "已通过局域网连接 2fa0-hp"
+	var labels []string
+	for _, item := range a.trayMenu().Items() {
+		if item.Label == "" || !item.IsVisible() {
+			continue
+		}
+		labels = append(labels, item.Label)
+	}
+	want := []string{"快速历史", "设置", "检查更新…", "暂停同步", "开机启动", "退出"}
+	if strings.Join(labels, "|") != strings.Join(want, "|") {
+		t.Fatalf("tray menu = %v, want %v", labels, want)
 	}
 }
 

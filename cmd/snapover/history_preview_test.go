@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestMainHistoryHoverUsesRowBoundsAndSkipsShortText(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/lan"
 	clipsync "github.com/2fa0/snapover/internal/sync"
+	"github.com/egoist/mygo/ui"
 )
 
 func (a *app) endpointForAddress(addr string) lan.Endpoint {
@@ -148,11 +148,11 @@ func (a *app) startConnection(ep lan.Endpoint, peerID string, explicit bool) {
 }
 
 func (a *app) tailscaleSettings(c *ui.Context) {
-	if settingSwitch(c, &a.allowTailscale, "允许通过 Tailscale 连接", "两台电脑需自行安装并连接 Tailscale，并在此开启。") {
+	if settingSwitch(c, &a.allowTailscale, a.tr("允许通过 Tailscale 连接"), a.tr("两台电脑需自行安装并连接 Tailscale，并在此开启。")) {
 		a.saveTailscaleSetting()
 	}
 	if a.tailscaleError != "" {
-		ui.Text(c, a.tailscaleError).FontSize(12).TextColor(c.Theme().Danger)
+		ui.Text(c, a.tr(a.tailscaleError)).FontSize(12).TextColor(c.Theme().Danger)
 	}
 }
 
@@ -194,41 +194,41 @@ func (a *app) saveTailscaleSetting() {
 
 func (a *app) tailscaleDeviceAddress(c *ui.Context, dev clipsync.Device, waiting bool) {
 	if addr := dev.Peer.LANAddress(); addr != "" {
-		kv(c, "局域网地址", addr)
+		kv(c, a.tr("局域网地址"), addr)
 	}
 	if addr := dev.Peer.TailscaleAddr; addr != "" {
-		kv(c, "Tailscale 地址", addr)
+		kv(c, a.tr("Tailscale 地址"), addr)
 	}
 	if link, up := a.engine.Link(); up && link.ID == dev.ID {
-		kv(c, "当前连接", link.Route.Label())
+		kv(c, a.tr("当前连接"), a.tr(link.Route.Label()))
 	}
 	if a.editTailscaleID == dev.ID {
-		ui.Text(c, "填写该设备的 Tailscale IPv4，验证设备身份后保存。").FontSize(12).TextColor(c.Theme().TextMuted)
-		submit := ui.TextInput(c.Key("tailscale-address"), &a.editTailscaleAddr).Label("Tailscale IPv4 地址").Placeholder("100.x.y.z，端口可省略").Submitted()
+		ui.Text(c, a.tr("填写该设备的 Tailscale IPv4，验证设备身份后保存。")).FontSize(12).TextColor(c.Theme().TextMuted)
+		submit := ui.TextInput(c.Key("tailscale-address"), &a.editTailscaleAddr).Label(a.tr("Tailscale IPv4 地址")).Placeholder(a.tr("100.x.y.z，端口可省略")).Submitted()
 		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, "验证并连接").Disabled(waiting || !a.allowTailscale).Clicked() || (submit && !waiting && a.allowTailscale) {
+			if ui.Button(c, a.tr("验证并连接")).Disabled(waiting || !a.allowTailscale).Clicked() || (submit && !waiting && a.allowTailscale) {
 				a.connectTailscaleAddress(dev.ID)
 			}
-			if ui.Button(c, "取消编辑").Clicked() {
+			if ui.Button(c, a.tr("取消编辑")).Clicked() {
 				a.editTailscaleID, a.editTailscaleAddr = "", ""
 			}
 		})
 	} else {
 		ui.Row(c).Gap(8).Children(func() {
-			label := "添加 Tailscale 地址"
+			label := a.tr("添加 Tailscale 地址")
 			if dev.Peer.TailscaleAddr != "" {
-				label = "修改 Tailscale 地址"
+				label = a.tr("修改 Tailscale 地址")
 			}
 			if ui.Button(c, label).Disabled(waiting || !a.allowTailscale).Clicked() {
 				a.editTailscaleID, a.editTailscaleAddr = dev.ID, dev.Peer.TailscaleAddr
 			}
-			if dev.Peer.TailscaleAddr != "" && ui.Button(c, "删除 Tailscale 地址").Disabled(waiting).Clicked() {
+			if dev.Peer.TailscaleAddr != "" && ui.Button(c, a.tr("删除 Tailscale 地址")).Disabled(waiting).Clicked() {
 				a.removeTailscaleAddress(dev.ID)
 			}
 		})
 	}
 	if !a.allowTailscale {
-		ui.Text(c, "在设置中开启 Tailscale 连接后，可添加或使用此地址。").FontSize(12).TextColor(c.Theme().TextMuted)
+		ui.Text(c, a.tr("在设置中开启 Tailscale 连接后，可添加或使用此地址。")).FontSize(12).TextColor(c.Theme().TextMuted)
 	}
 }
 

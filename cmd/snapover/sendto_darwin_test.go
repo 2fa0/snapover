@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
 	"github.com/2fa0/snapover/internal/sendto"
+	"github.com/egoist/mygo"
 )
 
 func TestMacFileRequestReachesRunningInstanceWithoutOpeningMainWindow(t *testing.T) {

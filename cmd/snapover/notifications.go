@@ -19,6 +19,8 @@ func (a *app) queueFileNotification(n fileNotification) {
 	if a.root == nil || !mygo.NotificationsSupported() {
 		return
 	}
+	n.title = a.tr(n.title)
+	n.body = a.tr(n.body)
 	a.notificationOnce.Do(func() {
 		a.notificationQueue = make(chan fileNotification, maxFileNotifications)
 		go runFileNotifications(a.root, a.notificationQueue, func(id string, n fileNotification) notificationHandle {

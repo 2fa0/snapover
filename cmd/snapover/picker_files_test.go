@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 	clipsync "github.com/2fa0/snapover/internal/sync"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 func historyFileEntry(t *testing.T, a *app, folder bool) history.Entry {
