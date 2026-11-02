@@ -151,7 +151,7 @@ func (a *app) shortcutRecorderInput(ev ui.InputEvent) bool {
 }
 
 func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failure *string, save func(string)) {
-	row := ui.Row(c).Gap(12).AlignItems(ui.Center)
+	row := ui.Column(c).Gap(8)
 	hasFocus := false
 	row.Children(func() {
 		r := a.shortcutRecording
@@ -163,32 +163,36 @@ func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failu
 				label = displayPickerShortcut(r.key)
 			}
 		}
-		button := ui.Button(c.Key("record"), label).Label("设置" + title).Grow(1)
-		if button.Clicked() {
-			a.beginShortcutRecording(kind)
-			button.Focus()
-			r, active = a.shortcutRecording, true
-		}
-		hasFocus = button.Focused()
+		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+			button := ui.Button(c.Key("record"), label).Label("设置" + title).Grow(1).MinWidth(0)
+			if button.Clicked() {
+				a.beginShortcutRecording(kind)
+				button.Focus()
+				r, active = a.shortcutRecording, true
+			}
+			hasFocus = button.Focused()
+			if active {
+				button.HandleInput(a.shortcutRecorderInput)
+			} else if ui.Button(c, "恢复默认").Label("恢复默认" + title).Clicked() {
+				save("")
+			}
+		})
 		if active {
-			button.HandleInput(a.shortcutRecorderInput)
-		}
-		if active {
-			saveButton := ui.Button(c, "保存").Label("保存" + title).Disabled(r.key == "")
-			hasFocus = hasFocus || saveButton.Focused()
-			if saveButton.Clicked() {
-				save(r.key)
-				if *failure == "" {
+			ui.Row(c).Gap(8).Children(func() {
+				saveButton := ui.Button(c, "保存").Label("保存" + title).Disabled(r.key == "")
+				hasFocus = hasFocus || saveButton.Focused()
+				if saveButton.Clicked() {
+					save(r.key)
+					if *failure == "" {
+						a.cancelShortcutRecording()
+					}
+				}
+				cancelButton := ui.Button(c, "取消").Label("取消设置" + title)
+				hasFocus = hasFocus || cancelButton.Focused()
+				if cancelButton.Clicked() {
 					a.cancelShortcutRecording()
 				}
-			}
-			cancelButton := ui.Button(c, "取消").Label("取消设置" + title)
-			hasFocus = hasFocus || cancelButton.Focused()
-			if cancelButton.Clicked() {
-				a.cancelShortcutRecording()
-			}
-		} else if ui.Button(c, "恢复默认").Label("恢复默认" + title).Clicked() {
-			save("")
+			})
 		}
 	})
 	if r := a.shortcutRecording; r != nil && r.kind == kind {
