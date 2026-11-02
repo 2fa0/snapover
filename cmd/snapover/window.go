@@ -150,6 +150,8 @@ type app struct {
 	tray                *mygo.Tray
 	trayMenuOpen        bool
 	menuBarIconError    string
+	menuBarPreviews     [3]*ui.Bitmap
+	menuBarPreviewDark  bool
 	picker              *mygo.Window
 	pickPreview         pickerPreview
 	pickLoading         bool
@@ -388,6 +390,7 @@ func (a *app) openMainWindow() {
 			a.closePickPreview()
 		}
 		a.win = nil
+		a.menuBarPreviews = [3]*ui.Bitmap{}
 		a.historySearch.reset()
 		a.shownSource, a.shownEntries = nil, nil
 		// ListState holds its window host, including the closed UI's resources.
@@ -708,8 +711,12 @@ func (a *app) settingsPage(c *ui.Context) {
 	})
 	settingsGroup(c, "复制并同步快捷键", func() { a.copyShortcutSettings(c) })
 	settingsGroup(c, "快速历史快捷键", func() { a.shortcutSettings(c) })
-	if runtime.GOOS == "darwin" {
-		settingsGroup(c, "菜单栏图标", func() { a.menuBarIconSettings(c) })
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		title := "菜单栏图标"
+		if runtime.GOOS == "windows" {
+			title = "托盘图标"
+		}
+		settingsGroup(c, title, func() { a.menuBarIconSettings(c) })
 	}
 	settingsGroup(c, "历史存储", func() { a.historyStorageSettings(c) })
 	ui.Column(c.Key("开机启动")).Padding(16).Radius(12).Background(c.Theme().Surface).Children(func() {

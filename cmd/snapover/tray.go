@@ -11,11 +11,13 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"github.com/2fa0/snapover/internal/settings"
 	"github.com/2fa0/snapover/resources"
 )
 
 func (a *app) startTray() {
-	template := runtime.GOOS == "darwin"
+	// Windows templates follow the taskbar's theme, which can differ from apps.
+	template := runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 	icon, err := a.menuIcon(template)
 	if err != nil && a.engine.Log != nil {
 		a.engine.Log.Warn("托盘图标没做成", "err", err)
@@ -51,18 +53,73 @@ func (a *app) startTray() {
 }
 
 func (a *app) menuIcon(template bool) ([]byte, error) {
-	return trayIconPNG(a.loadMenuIcon(), !template && mygo.Theme.IsDark())
+	white := !template && mygo.Theme.IsDark()
+	selected := settings.DefaultMenuBarIcon
+	if a.cfg != nil {
+		selected = a.cfg.Values.MenuBarIcon
+	}
+	return menuBarIconPNG(selected, white)
 }
 
 func (a *app) menuBarIconSettings(c *ui.Context) {
-	selected := a.cfg.Values.MenuBarIcon
-	if ui.Segmented(c, &selected, "原图标", "icon1", "icon2", "icon3").Label("菜单栏图标样式").Changed() {
-		a.saveMenuBarIcon(selected)
+	t := c.Theme()
+	ids := [...]int{2, 1, 3}
+	selected := 0
+	for i, id := range ids {
+		if id == a.cfg.Values.MenuBarIcon {
+			selected = i
+		}
 	}
-	ui.Text(c, "选择后立即生效，并随系统适配深浅色。").FontSize(12).TextColor(c.Theme().TextMuted)
+	parts := ui.SegmentedBase(c, &selected, len(ids))
+	parts.Track.Label("图标样式").Gap(12).FillWidth().MaxWidth(360).Children(func() {
+		for i, label := range []string{"邮筒", "小鸟", "信封"} {
+			option := parts.Segment(i).Label(label).Grow(1).Basis(0).MinWidth(0).
+				Padding(12, 8).Radius(8).Border(1, t.Border).Background(t.Background)
+			if option.Hovered() {
+				option.Background(t.SurfaceHover)
+			}
+			if selected == i {
+				option.BorderColor(t.Accent)
+			}
+			option.Children(func() {
+				ui.Column(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					if bmp := a.menuBarIconPreview(ids[i], t.Dark); bmp != nil {
+						ui.Image(c, bmp).Size(32, 32).Fit(ui.Contain)
+					}
+					text := ui.Text(c, label).FontSize(12)
+					if selected == i {
+						text.Bold().TextColor(t.Accent)
+					}
+				})
+			})
+		}
+	})
+	if parts.Track.Changed() {
+		a.saveMenuBarIcon(ids[selected])
+	}
 	if a.menuBarIconError != "" {
 		ui.Text(c, a.menuBarIconError).FontSize(12).TextColor(c.Theme().Danger)
 	}
+}
+
+func (a *app) menuBarIconPreview(selected int, dark bool) *ui.Bitmap {
+	if a.menuBarPreviewDark != dark {
+		a.menuBarPreviews = [3]*ui.Bitmap{}
+		a.menuBarPreviewDark = dark
+	}
+	index := selected - 1
+	if a.menuBarPreviews[index] == nil {
+		data, err := menuBarIconPNG(selected, dark)
+		if err != nil {
+			return nil
+		}
+		bmp, err := ui.DecodeBitmap(data)
+		if err != nil {
+			return nil
+		}
+		a.menuBarPreviews[index] = bmp
+	}
+	return a.menuBarPreviews[index]
 }
 
 func (a *app) saveMenuBarIcon(selected int) {
@@ -75,9 +132,10 @@ func (a *app) saveMenuBarIcon(selected int) {
 	}
 	a.menuBarIconError = ""
 	if a.tray != nil {
-		icon, err := a.menuIcon(true)
+		template := runtime.GOOS == "darwin" || runtime.GOOS == "windows"
+		icon, err := a.menuIcon(template)
 		if err == nil {
-			err = a.tray.SetIcon(icon, true)
+			err = a.tray.SetIcon(icon, template)
 		}
 		if err != nil {
 			a.menuBarIconError = "图标已保存，但切换失败，请重启 Snapover 后重试"
@@ -273,33 +331,56 @@ func loginErr(err error) string {
 	}
 }
 
-func (a *app) loadMenuIcon() []byte {
-	if runtime.GOOS == "darwin" && a.cfg != nil {
-		switch a.cfg.Values.MenuBarIcon {
-		case 1:
-			return resources.Icon1PNG
-		case 2:
-			return resources.Icon2PNG
-		case 3:
-			return resources.Icon3PNG
-		}
+func menuIconSource(selected int) []byte {
+	switch selected {
+	case 1:
+		return resources.Icon1PNG
+	case 3:
+		return resources.Icon3PNG
+	default:
+		return resources.Icon2PNG
 	}
-	// 嵌入程序图标，Windows 上单独拷走 exe 也能显示托盘图标。
-	return resources.IconPNG
 }
 
-func trayIconPNG(src []byte, white bool) ([]byte, error) {
+func menuBarIconPNG(selected int, white bool) ([]byte, error) {
+	if selected < 1 || selected > 3 {
+		selected = settings.DefaultMenuBarIcon
+	}
+	img, _, err := image.Decode(bytes.NewReader(menuIconSource(selected)))
+	if err != nil {
+		return nil, err
+	}
+	// Crop the visible template, not white details or faint export remnants
+	// that would disappear later but still shift or shrink the actual icon.
+	mask := image.NewNRGBA(img.Bounds())
+	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			mask.SetNRGBA(x, y, color.NRGBA{A: uint8((a - (r+g+b)/3) >> 8)})
+		}
+	}
+	inner := image.Rect(3, 3, 29, 29)
+	switch selected {
+	case 1:
+		// The bird's raised wing needs a slight optical shift downward.
+		inner = inner.Add(image.Pt(0, 1))
+	case 2:
+		// The narrow mailbox needs more height for comparable visual weight.
+		inner = image.Rect(1, 1, 31, 31)
+	case 3:
+		// Balance the envelope's solid top flap after removing its export margins.
+		inner = inner.Add(image.Pt(0, 1))
+	}
+	return renderTrayIconPNG(cropAlphaAbove(mask, 0x1000), white, inner)
+}
+
+func renderTrayIconPNG(img image.Image, white bool, inner image.Rectangle) ([]byte, error) {
 	const size = 32
 	dst := image.NewNRGBA(image.Rect(0, 0, size, size))
-	if len(src) == 0 {
+	if img == nil {
 		fillFallback(dst, white)
 	} else {
-		img, _, err := image.Decode(bytes.NewReader(src))
-		if err != nil {
-			return nil, err
-		}
 		cropped := cropAlpha(img)
-		inner := image.Rect(3, 3, size-3, size-3)
 		width, height := cropped.Bounds().Dx(), cropped.Bounds().Dy()
 		if width > height {
 			height = max(1, height*inner.Dx()/width)
@@ -345,12 +426,16 @@ func fillFallback(dst *image.NRGBA, white bool) {
 }
 
 func cropAlpha(img image.Image) image.Image {
+	return cropAlphaAbove(img, 0)
+}
+
+func cropAlphaAbove(img image.Image, threshold uint32) image.Image {
 	b := img.Bounds()
 	minx, miny, maxx, maxy := b.Max.X, b.Max.Y, b.Min.X-1, b.Min.Y-1
 	for y := b.Min.Y; y < b.Max.Y; y++ {
 		for x := b.Min.X; x < b.Max.X; x++ {
 			_, _, _, a := img.At(x, y).RGBA()
-			if a == 0 {
+			if a <= threshold {
 				continue
 			}
 			if x < minx {

@@ -30,13 +30,31 @@ func TestPickerShortcuts(t *testing.T) {
 }
 
 func TestMenuPNGBecomesTrayIcon(t *testing.T) {
-	for name, src := range map[string][]byte{
-		"original": resources.IconPNG,
-		"icon1":    resources.Icon1PNG,
-		"icon2":    resources.Icon2PNG,
-		"icon3":    resources.Icon3PNG,
-	} {
-		t.Run(name, func(t *testing.T) { checkMenuPNGBecomesTrayIcon(t, src) })
+	for selected := 1; selected <= 3; selected++ {
+		for _, white := range []bool{false, true} {
+			out, err := menuBarIconPNG(selected, white)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkMenuPNGBecomesTrayIcon(t, out)
+		}
+	}
+}
+
+func TestDefaultTrayIconUsesMailbox(t *testing.T) {
+	if !bytes.Equal(menuIconSource(0), resources.Icon2PNG) {
+		t.Fatal("removed icon did not fall back to the mailbox")
+	}
+	actual, err := (&app{}).menuIcon(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := menuBarIconPNG(2, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(actual, want) {
+		t.Fatal("default tray icon is not the mailbox")
 	}
 }
 
@@ -82,12 +100,8 @@ func TestIgnoreNextCopySettingsAndTemporaryTrayCancel(t *testing.T) {
 	}
 }
 
-func checkMenuPNGBecomesTrayIcon(t *testing.T, src []byte) {
+func checkMenuPNGBecomesTrayIcon(t *testing.T, out []byte) {
 	t.Helper()
-	out, err := trayIconPNG(src, false)
-	if err != nil {
-		t.Fatal(err)
-	}
 	img, err := png.Decode(bytes.NewReader(out))
 	if err != nil {
 		t.Fatal(err)
@@ -109,12 +123,11 @@ func checkMenuPNGBecomesTrayIcon(t *testing.T, src []byte) {
 func TestMenuBarIconSelectionPersists(t *testing.T) {
 	a := interfaceTestApp(t)
 	tt := ui.NewTester(a.menuBarIconSettings, 600, 180)
-	icons := [][]byte{resources.IconPNG, resources.Icon1PNG, resources.Icon2PNG, resources.Icon3PNG}
-	for _, selected := range []int{1, 2, 3, 0} {
-		label := "原图标"
-		if selected != 0 {
-			label = []string{"", "icon1", "icon2", "icon3"}[selected]
-		}
+	if a.cfg.Values.MenuBarIcon != settings.DefaultMenuBarIcon || tt.HasText("原图标") {
+		t.Fatal("icon chooser did not default to the mailbox or still offers the removed icon")
+	}
+	for _, selected := range []int{1, 3, 2} {
+		label := []string{"", "小鸟", "邮筒", "信封"}[selected]
 		clickInterface(t, tt, label)
 		got, err := settings.Load(filepath.Dir(a.cfg.Path))
 		if err != nil {
@@ -123,15 +136,24 @@ func TestMenuBarIconSelectionPersists(t *testing.T) {
 		if a.menuBarIconError != "" || got.Values.MenuBarIcon != selected {
 			t.Fatalf("selection %d: saved=%d error=%q", selected, got.Values.MenuBarIcon, a.menuBarIconError)
 		}
-		// A new app must load the saved artwork; other platforms keep the original.
+		// Both platforms restore the same saved artwork, rendered as a template.
 		b := &app{cfg: got}
-		want := resources.IconPNG
-		if runtime.GOOS == "darwin" {
-			want = icons[selected]
+		actual, err := b.menuIcon(true)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if !bytes.Equal(b.loadMenuIcon(), want) {
+		want, err := menuBarIconPNG(selected, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(actual, want) {
 			t.Fatalf("selection %d: wrong startup icon", selected)
 		}
+	}
+	tt.Key(0, ui.KeyRight)
+	got, err := settings.Load(filepath.Dir(a.cfg.Path))
+	if err != nil || got.Values.MenuBarIcon != 1 {
+		t.Fatalf("keyboard selection was not saved: cfg=%+v err=%v", got, err)
 	}
 }
 
@@ -145,7 +167,7 @@ func TestMenuBarIconSaveFailureKeepsPreviousSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt := ui.NewTester(a.menuBarIconSettings, 600, 180)
-	clickInterface(t, tt, "icon3")
+	clickInterface(t, tt, "信封")
 	got, err := settings.Load(filepath.Dir(a.cfg.Path))
 	if err != nil {
 		t.Fatal(err)
@@ -173,12 +195,8 @@ func TestTrayIconPreservesAlphaAndAspectRatio(t *testing.T) {
 	}
 	src.SetNRGBA(2, 1, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	src.SetNRGBA(5, 1, color.NRGBA{R: 255, G: 255, B: 255, A: 128})
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, src); err != nil {
-		t.Fatal(err)
-	}
 	for _, white := range []bool{false, true} {
-		out, err := trayIconPNG(buf.Bytes(), white)
+		out, err := renderTrayIconPNG(src, white, image.Rect(3, 3, 29, 29))
 		if err != nil {
 			t.Fatal(err)
 		}
