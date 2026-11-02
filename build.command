@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 if [[ "$(uname -s)" != Darwin ]]; then
-    echo "请在 macOS 上运行此脚本，生成 Windows x64 和 Mac M 系列的包。" >&2
+    echo "请在 macOS 上运行此脚本，生成 Windows x64、Mac M 系列和 Intel Mac 的包。" >&2
     exit 1
 fi
 
@@ -51,11 +51,13 @@ if [[ ! -f resources/app.png ]]; then
 fi
 
 echo "正在编译命令行入口…"
-mkdir -p resources/windows-amd64 resources/darwin-arm64
+mkdir -p resources/windows-amd64 resources/darwin-arm64 resources/darwin-amd64
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 "$go_bin" build -trimpath -ldflags="-s -w" \
     -o resources/windows-amd64/snapover-cli.exe ./cmd/snapover-cli
 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 "$go_bin" build -trimpath -ldflags="-s -w" \
     -o resources/darwin-arm64/snapover-cli ./cmd/snapover-cli
+GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 "$go_bin" build -trimpath -ldflags="-s -w" \
+    -o resources/darwin-amd64/snapover-cli ./cmd/snapover-cli
 
 echo "正在打包 Windows 11 x64…"
 # MyGo always invokes NSIS when found. Exclude Homebrew's crashing
@@ -73,10 +75,17 @@ echo "正在打包 Mac M 系列（arm64）…"
 CGO_ENABLED=0 "$go_bin" tool mygo build -platform darwin/arm64 -o dist
 collect_updates dist/darwin-arm64
 
+echo "正在打包 Intel Mac（amd64）…"
+CGO_ENABLED=0 "$go_bin" tool mygo build -platform darwin/amd64 -o dist
+collect_updates dist/darwin-amd64
+
 echo "打包完成："
 echo "  Windows 11 x64：$PWD/$windows_zip"
 echo "  Windows CLI：$PWD/dist/windows-amd64/snapover-cli.exe"
 echo "  Mac 应用：$PWD/dist/darwin-arm64/Snapover.app"
 echo "  Mac CLI：$PWD/dist/darwin-arm64/Snapover.app/Contents/Resources/snapover-cli"
-echo "  Mac 安装包：$PWD/dist/darwin-arm64/Snapover ${version} arm64.dmg"
+echo "  Mac 安装包：$PWD/dist/darwin-arm64/snapover-${version}-arm64.dmg"
+echo "  Intel Mac 应用：$PWD/dist/darwin-amd64/Snapover.app"
+echo "  Intel Mac CLI：$PWD/dist/darwin-amd64/Snapover.app/Contents/Resources/snapover-cli"
+echo "  Intel Mac 安装包：$PWD/dist/darwin-amd64/snapover-${version}-amd64.dmg"
 echo "  更新包与清单：$PWD/dist/releases（普通上传时最后传 update-*.json）"
