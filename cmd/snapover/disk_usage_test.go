@@ -54,7 +54,7 @@ func TestOtherDiskUsageScansOnDemandAndCancelsOnCollapse(t *testing.T) {
 	if a.diskUsagePending != nil || a.diskUsageValid {
 		t.Fatal("collapsed storage controls scanned folders")
 	}
-	clickInterface(t, tt, "文件与备份占用")
+	clickInterface(t, tt, "占用明细")
 	deadline := time.Now().Add(3 * time.Second)
 	for !a.diskUsageValid {
 		tt.Frame()
@@ -63,11 +63,11 @@ func TestOtherDiskUsageScansOnDemandAndCancelsOnCollapse(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if !tt.HasText("文件剪贴板缓存 0 B") || !tt.HasText("损坏历史备份 0 B") {
+	if !tt.HasText("文件剪贴板缓存") || !tt.HasText("损坏历史备份") || !tt.HasText("0 B") {
 		t.Fatal("storage statistics were not displayed")
 	}
 	a.startDiskUsage()
-	clickInterface(t, tt, "文件与备份占用")
+	clickInterface(t, tt, "占用明细")
 	if a.diskUsagePending != nil || a.diskUsageCancel != nil {
 		t.Fatal("collapsing storage controls retained a scan")
 	}
