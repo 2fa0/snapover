@@ -156,13 +156,42 @@ func TestHistoryQuotaBarShowsUsedOfLimit(t *testing.T) {
 	if !tt.HasText("历史内容占用") || !tt.HasText("1.0 MB / 2.0 MB") {
 		t.Fatal("quota bar did not show used and limit")
 	}
-	if !tt.HasText("历史内容 1.0 MB，其中置顶 256.0 KB") {
-		t.Fatal("quota bar replaced the existing usage copy")
+	if tt.HasText("历史内容 1.0 MB，其中置顶 256.0 KB") || tt.HasText("置顶内容") || tt.HasText("历史目录") {
+		t.Fatal("storage summary duplicates usage or exposes collapsed details")
+	}
+	clickInterface(t, tt, "占用明细")
+	t.Cleanup(a.cancelDiskUsage)
+	if !tt.HasText("置顶内容") || !tt.HasText("256.0 KB") || !tt.HasText("历史目录") {
+		t.Fatal("expanded details lost pinned or disk usage")
 	}
 	a.historyUsage.PinnedBytes = 3 << 20
 	a.historyUsage.ContentBytes = 3 << 20
 	tt.Frame()
 	if !tt.HasText("3.0 MB / 2.0 MB") || !tt.HasText("置顶内容已超过容量上限，请取消部分置顶或手动删除。") {
 		t.Fatal("over-limit usage lost the quota text or pinned warning")
+	}
+}
+
+func TestStorageRefreshUpdatesHistoryAndExpandedDetails(t *testing.T) {
+	a := interfaceTestApp(t)
+	t.Cleanup(a.cancelDiskUsage)
+	a.historyUsageValid = true
+	a.historyUsage.ContentBytes = 1 << 20
+	a.showDiskUsage, a.diskUsageValid = true, true
+	a.diskUsage = diskUsageResult{receiveDir: a.engine.ReceiveDir(), cache: 1 << 20}
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Gap(12).Children(func() { a.historyStorageSettings(c) })
+	}, 850, 600)
+	clickInterface(t, tt, "刷新占用")
+	deadline := time.Now().Add(3 * time.Second)
+	for !a.historyUsageValid || !a.diskUsageValid || a.historyUsagePending != nil || a.diskUsagePending != nil {
+		tt.Frame()
+		if time.Now().After(deadline) {
+			t.Fatal("refresh did not finish history and file statistics")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if a.historyUsage.ContentBytes != 0 || a.diskUsage.cache != 0 {
+		t.Fatal("refresh retained stale history or file statistics")
 	}
 }

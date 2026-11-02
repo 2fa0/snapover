@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -112,8 +113,13 @@ func (a *app) startDiskUsage() {
 }
 
 func (a *app) otherDiskUsageSettings(c *ui.Context) {
-	ui.Collapsible(c, "文件与备份占用", &a.showDiskUsage, func() {
-		ui.Column(c).Padding(12, 0).Gap(8).Children(func() {
+	ui.Collapsible(c, "占用明细", &a.showDiskUsage, func() {
+		ui.Column(c).Padding(12, 0).Gap(12).Children(func() {
+			if a.historyUsageValid && a.historyUsageError == "" {
+				storageUsageLine(c, "置顶内容", a.historyUsage.PinnedBytes, nil).Tooltip("已包含在历史内容占用中")
+				storageUsageLine(c, "历史目录", a.historyUsage.TotalBytes, nil).Tooltip("包含历史内容、索引、日志和临时查看副本")
+				ui.Divider(c)
+			}
 			if a.diskUsageValid && a.diskUsage.receiveDir != a.engine.ReceiveDir() {
 				a.cancelDiskUsage()
 			}
@@ -135,17 +141,17 @@ func (a *app) otherDiskUsageSettings(c *ui.Context) {
 			} else if a.diskUsageValid {
 				storageUsageLine(c, "文件剪贴板缓存", a.diskUsage.cache, a.diskUsage.cacheErr)
 				storageUsageLine(c, "接收文件夹", a.diskUsage.received, a.diskUsage.receivedErr)
-				storageUsageLine(c, "损坏历史备份", a.diskUsage.backups, a.diskUsage.backupErr)
-				ui.Text(c, "接收文件和历史备份不会自动删除，请在文件夹中确认后整理。").FontSize(12).TextColor(c.Theme().TextMuted)
+				label := "损坏历史备份"
+				if a.diskUsage.backupCount > 0 {
+					label = fmt.Sprintf("损坏历史备份（%d 份）", a.diskUsage.backupCount)
+				}
+				storageUsageLine(c, label, a.diskUsage.backups, a.diskUsage.backupErr)
 			}
 			ui.Row(c).Gap(8).Children(func() {
-				if ui.Button(c, "刷新文件占用").Disabled(a.diskUsagePending != nil).Clicked() {
-					a.startDiskUsage()
-				}
 				if ui.Button(c, "打开接收文件夹").Clicked() {
 					a.openReceiveFolder()
 				}
-				if a.diskUsageValid && a.diskUsage.backupCount > 0 && ui.Button(c, "整理历史备份").Clicked() {
+				if a.diskUsageValid && a.diskUsage.backupCount > 0 && ui.Button(c, "整理历史备份").Tooltip("打开数据目录，查看 history.damaged-* 备份").Clicked() {
 					dir := filepath.Dir(a.hist.Dir())
 					go func() {
 						if err := mygo.Shell.OpenPath(dir); err != nil {
@@ -156,9 +162,6 @@ func (a *app) otherDiskUsageSettings(c *ui.Context) {
 					}()
 				}
 			})
-			if a.diskUsageValid && a.diskUsage.backupCount > 0 {
-				ui.Textf(c, "共 %d 份备份，位于数据目录的 history.damaged-* 文件夹。", a.diskUsage.backupCount).FontSize(12).TextColor(c.Theme().TextMuted)
-			}
 		})
 	})
 	if !a.showDiskUsage && a.diskUsagePending != nil {
@@ -166,10 +169,14 @@ func (a *app) otherDiskUsageSettings(c *ui.Context) {
 	}
 }
 
-func storageUsageLine(c *ui.Context, label string, bytes int64, err error) {
-	if err != nil {
-		ui.Text(c, label+"无法统计，请检查文件夹访问权限后刷新。").FontSize(12).TextColor(c.Theme().Warning)
-		return
-	}
-	ui.Textf(c, "%s %s", label, storageSize(bytes)).FontSize(12).TextColor(c.Theme().TextMuted)
+func storageUsageLine(c *ui.Context, label string, bytes int64, err error) ui.Element {
+	return ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, label).Grow(1).FontSize(12).TextColor(c.Theme().TextMuted)
+		if err != nil {
+			message := label + "无法统计，请检查文件夹访问权限后刷新。"
+			ui.Text(c, "统计失败").FontSize(12).TextColor(c.Theme().Warning).Label(message).Tooltip(message)
+		} else {
+			ui.Text(c, storageSize(bytes)).FontSize(12).FontFeatures("tnum")
+		}
+	})
 }
