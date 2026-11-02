@@ -263,7 +263,7 @@ macOS 目前是 ad-hoc 签名，更新只替换程序本身：更新后如果快
 
 文件名中的版本号自动读取 `mygo.json`。脚本的 Windows 步骤会避开 NSIS，生成 ZIP 包，不生成 Setup 安装器；macOS 沿用当前签名配置。
 
-应用图标使用 `resources/app.png`。macOS 可在「设置 → 菜单栏图标」中选择原图标或 `icon1`～`icon3`，切换立即生效并记住选择；Windows 托盘仍使用原图标。对应资源为 `resources/icon.png`、`resources/icon1.png`、`resources/icon2.png`、`resources/icon3.png`，请保留 PNG 的透明通道；显示时保持图标比例，并按系统主题适配黑色或白色。替换这些图片资源后需要重新打包并重启程序。
+应用图标使用 `resources/app.png`。macOS「设置 → 菜单栏图标」和 Windows「设置 → 托盘图标」均可点击横排预览选择邮筒、小鸟或信封，默认邮筒，切换立即生效并记住选择。旧版原图标已移除，之前的原图标选择自动改用邮筒，小鸟和信封的选择保持不变。对应资源分别为 `resources/icon2.png`、`resources/icon1.png`、`resources/icon3.png`，请保留 PNG 的透明通道；显示时保持图标比例，并适配 macOS 菜单栏或 Windows 任务栏的深浅色。替换这些图片资源后需要重新打包并重启程序。
 
 macOS 安装包（Universal `.app` + `.dmg`）：
 

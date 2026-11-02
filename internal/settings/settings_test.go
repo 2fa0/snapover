@@ -21,11 +21,11 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if f.Values.MaxFileMB != 200 {
 		t.Fatalf("default file mb = %d", f.Values.MaxFileMB)
 	}
-	if f.Values.HistoryMaxMB != DefaultHistoryMB || f.Values.PickerShortcut != "" || f.Values.ManualSync || f.Values.CopyShortcut != "" || f.Values.KeepAwake || f.Values.AllowTailscale || f.Values.MenuBarIcon != 0 {
+	if f.Values.HistoryMaxMB != DefaultHistoryMB || f.Values.PickerShortcut != "" || f.Values.ManualSync || f.Values.CopyShortcut != "" || f.Values.KeepAwake || f.Values.AllowTailscale || f.Values.MenuBarIcon != DefaultMenuBarIcon {
 		t.Fatalf("unexpected defaults: %+v", f.Values)
 	}
 	f.Values.Paused = true
-	f.Values.MenuBarIcon = 2
+	f.Values.MenuBarIcon = 3
 	f.Values.TextOnly = true
 	f.Values.MaxImageMB = 8
 	f.Values.MaxTextMB = 10
@@ -48,7 +48,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !again.Values.Paused || !again.Values.TextOnly || again.Values.MaxImageMB != 8 || again.Values.ReceiveDir != dir || !again.Values.DisableSendTo || again.Values.MenuBarIcon != 2 {
+	if !again.Values.Paused || !again.Values.TextOnly || again.Values.MaxImageMB != 8 || again.Values.ReceiveDir != dir || !again.Values.DisableSendTo || again.Values.MenuBarIcon != 3 {
 		t.Fatalf("%+v", again.Values)
 	}
 	if again.Values.MaxTextMB != 10 {
@@ -62,6 +62,43 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	}
 	if again.Values.DiscoveryMode != "selected" || len(again.Values.DiscoveryNets) != 1 || again.Values.DiscoveryNets[0] != "en0/192.168.1.0/24" || len(again.Values.DiscoverySeen) != 2 {
 		t.Fatalf("discovery selection not restored: %+v", again.Values)
+	}
+}
+
+func TestIconDefaultsAndLegacySelection(t *testing.T) {
+	for _, test := range []struct {
+		json string
+		want int
+	}{
+		{"", 2},
+		{`{}`, 2},
+		{`{"menu_bar_icon":0}`, 2},
+		{`{"menu_bar_icon":1}`, 1},
+		{`{"menu_bar_icon":2}`, 2},
+		{`{"menu_bar_icon":3}`, 3},
+		{`{"menu_bar_icon":-1}`, 2},
+		{`{"menu_bar_icon":4}`, 2},
+	} {
+		dir := t.TempDir()
+		if test.json != "" {
+			if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(test.json), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cfg, err := Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Values.MenuBarIcon != test.want {
+			t.Fatalf("%s: icon=%d want=%d", test.json, cfg.Values.MenuBarIcon, test.want)
+		}
+		if err := cfg.Save(); err != nil {
+			t.Fatal(err)
+		}
+		reopened, err := Load(dir)
+		if err != nil || reopened.Values.MenuBarIcon != test.want {
+			t.Fatalf("%s: selection did not survive save/reload: %+v %v", test.json, reopened, err)
+		}
 	}
 }
 

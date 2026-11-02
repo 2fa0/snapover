@@ -9,6 +9,8 @@ import (
 
 const DefaultMaxImageMB = 20
 
+const DefaultMenuBarIcon = 2
+
 const (
 	DefaultMaxFileMB       = 200
 	MaxFileMB        int64 = (1<<63 - 1) >> 20
@@ -36,6 +38,7 @@ const (
 )
 
 // Values is the small set of options the settings page can change.
+// MenuBarIcon keeps its original key and icon IDs for both platforms.
 type Values struct {
 	Paused         bool   `json:"paused"`
 	TextOnly       bool   `json:"text_only"`
@@ -76,7 +79,7 @@ type File struct {
 func Load(dataDir string) (*File, error) {
 	f := &File{
 		Path:   filepath.Join(dataDir, "settings.json"),
-		Values: Values{MaxImageMB: DefaultMaxImageMB, MaxTextMB: DefaultMaxTextMB, MaxFileMB: DefaultMaxFileMB, HistoryMaxMB: DefaultHistoryMB},
+		Values: Values{MaxImageMB: DefaultMaxImageMB, MaxTextMB: DefaultMaxTextMB, MaxFileMB: DefaultMaxFileMB, HistoryMaxMB: DefaultHistoryMB, MenuBarIcon: DefaultMenuBarIcon},
 	}
 	buf, err := os.ReadFile(f.Path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -140,8 +143,8 @@ func clampFileMB(n int64) int64 {
 }
 
 func clampMenuBarIcon(n int) int {
-	if n < 0 || n > 3 {
-		return 0
+	if n < 1 || n > 3 {
+		return DefaultMenuBarIcon
 	}
 	return n
 }
