@@ -58,10 +58,11 @@ func dwordZero(b []byte) bool {
 
 func HasImage(formats []string) bool {
 	for _, raw := range formats {
-		switch strings.ToLower(strings.TrimSpace(raw)) {
-		case "image/png", "image/tiff", "image/bmp", "png",
-			"public.png", "public.tiff", "public.bmp":
-			return true
+		name := strings.ToLower(strings.TrimSpace(raw))
+		for _, known := range imageFormatNames {
+			if name == known {
+				return true
+			}
 		}
 	}
 	return false
