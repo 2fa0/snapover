@@ -15,7 +15,7 @@ func TestDIBInitializesHeaderInReusedNativeMemory(t *testing.T) {
 	img.SetNRGBA(0, 1, color.NRGBA{B: 255, A: 255})
 	img.SetNRGBA(1, 1, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	// GlobalAlloc(GMEM_MOVEABLE) does not zero the destination like Go's make.
-	raw := bytes.Repeat([]byte{0xa5}, 40+4*2*2)
+	raw := bytes.Repeat([]byte{0xa5}, dibRawSize(2, 2))
 	encodeDIBInto(raw, img)
 	for _, offset := range []int{16, 24, 28, 32, 36} {
 		if value := binary.LittleEndian.Uint32(raw[offset:]); value != 0 {
@@ -39,6 +39,12 @@ func TestDIBColorAndRowOrder(t *testing.T) {
 		}
 	}
 	raw := encodeDIB(img)
+	if bits := binary.LittleEndian.Uint16(raw[14:]); bits != 24 {
+		t.Fatalf("compatible DIB should be 24-bit, got %d", bits)
+	}
+	if height := int32(binary.LittleEndian.Uint32(raw[8:])); height != 2 {
+		t.Fatalf("compatible DIB should be bottom-up, got height %d", height)
+	}
 	back, err := decodeDIB(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -46,14 +52,14 @@ func TestDIBColorAndRowOrder(t *testing.T) {
 	if HashImage(img) != HashImage(back) {
 		t.Fatal("DIB changed colors or row order")
 	}
-	// Convert the top-down payload to bottom-up without changing the picture.
-	binary.LittleEndian.PutUint32(raw[8:], 2)
+	// Convert the bottom-up payload to top-down without changing the picture.
+	binary.LittleEndian.PutUint32(raw[8:], ^uint32(1))
 	a, b := append([]byte(nil), raw[40:52]...), append([]byte(nil), raw[52:64]...)
 	copy(raw[40:], b)
 	copy(raw[52:], a)
 	back, err = decodeDIB(raw)
 	if err != nil || HashImage(img) != HashImage(back) {
-		t.Fatal("bottom-up DIB changed", err)
+		t.Fatal("top-down DIB changed", err)
 	}
 }
 func TestDIBRejectsInvalidDimensionsLayoutAndMasks(t *testing.T) {
@@ -116,10 +122,30 @@ func TestDIB24AndV5Alpha(t *testing.T) {
 	}
 }
 
+func TestDIB24BottomUpPadsOddWidth(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 1, 2))
+	img.SetNRGBA(0, 0, color.NRGBA{R: 255, A: 128})
+	img.SetNRGBA(0, 1, color.NRGBA{B: 255, A: 64})
+	raw := bytes.Repeat([]byte{0xa5}, dibRawSize(1, 2))
+	encodeDIBInto(raw, img)
+	if len(raw) != 48 {
+		t.Fatalf("odd-width 24-bit DIB size %d", len(raw))
+	}
+	if raw[43] != 0 || raw[47] != 0 {
+		t.Fatal("row padding retained native memory")
+	}
+	back, err := decodeDIB(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.NRGBAAt(0, 0) != (color.NRGBA{R: 255, A: 255}) || back.NRGBAAt(0, 1) != (color.NRGBA{B: 255, A: 255}) {
+		t.Fatal("24-bit DIB dropped opaque RGB or kept alpha")
+	}
+}
+
 func encodeDIB(img image.Image) []byte {
 	b := img.Bounds()
-	w, h := b.Dx(), b.Dy()
-	raw := make([]byte, 40+4*w*h)
+	raw := make([]byte, dibRawSize(b.Dx(), b.Dy()))
 	encodeDIBInto(raw, img)
 	return raw
 }

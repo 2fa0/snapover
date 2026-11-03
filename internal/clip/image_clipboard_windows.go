@@ -148,7 +148,7 @@ func prepareNativeImage(item Item, remote bool) (PreparedWrite, bool, error) {
 		}
 		size := len(b)
 		if i == 1 {
-			size = 40 + 4*img.Bounds().Dx()*img.Bounds().Dy()
+			size = dibRawSize(img.Bounds().Dx(), img.Bounds().Dy())
 		}
 		handle, _, allocErr := globalAlloc.Call(0x2, uintptr(size))
 		if handle == 0 {
