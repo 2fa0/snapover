@@ -1,6 +1,6 @@
 # Snapover
 
-当前版本 **0.8.4**，更新内容见 [更新记录](docs/CHANGELOG.md)。
+当前版本 **0.8.5**，更新内容见 [更新记录](docs/CHANGELOG.md)。
 
 局域网同步文字、图片、文件和文件夹剪贴板，也可以主动发送一个或多个文件。支持 Windows 10/11 与 macOS 13 及以上版本。通过局域网自动发现电脑，首次配对需要双方核对校验码并确认，也支持手填地址。两端安装并连接 Tailscale 后，可选择开启跨网络连接。
 
@@ -236,6 +236,8 @@ macOS 目前是 ad-hoc 签名，更新只替换程序本身：更新后如果快
 
 在这之前发布的版本没有内置更新器，需要用安装包手动装一次，之后的版本才能在应用内升级。
 
+手动替换安装包、选择文件、以及更新后重新允许 macOS 权限的步骤见 [手动升级](docs/manual-upgrade.md)。
+
 发布新版本：
 
 图标嵌入代码与图片位于 `internal/resources/`；`resources/` 只放随包发布的文件，避免将源码复制进安装包。
@@ -262,11 +264,11 @@ macOS 目前是 ad-hoc 签名，更新只替换程序本身：更新后如果快
 
 一键生成 Windows 11 x64、Mac M 系列（arm64）和 Intel Mac（amd64）的包，Mac 均要求 macOS 13 及以上版本：
 
-- `dist/Snapover-0.8.4-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
+- `dist/Snapover-0.8.5-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
 - `dist/darwin-arm64/Snapover.app`
-- `dist/darwin-arm64/snapover-0.8.4-arm64.dmg`：打开后拖入 Applications
+- `dist/darwin-arm64/snapover-0.8.5-arm64.dmg`：打开后拖入 Applications
 - `dist/darwin-amd64/Snapover.app`
-- `dist/darwin-amd64/snapover-0.8.4-amd64.dmg`：Intel Mac 安装包，打开后拖入 Applications
+- `dist/darwin-amd64/snapover-0.8.5-amd64.dmg`：Intel Mac 安装包，打开后拖入 Applications
 
 文件名中的版本号自动读取 `mygo.json`。脚本的 Windows 步骤会避开 NSIS，生成 ZIP 包，不生成 Setup 安装器；macOS 沿用当前签名配置。
 
@@ -309,7 +311,7 @@ macOS 从 Cindy 等桌面应用运行测试时，本地网络权限归属于启�
 
 ## 已知限制
 
-MyGo 的 `WriteImage` 写出 PNG。Windows 会再带一份普通 `CF_DIB`，不是 `CF_DIBV5`；macOS 不会同时写 TIFF。系统截图和普通文本是这一批的完成标准。贴进微信、Word、Photoshop 时透明通道可能丢。
+MyGo 的 `WriteImage` 写出 PNG。Windows 会再带一份 24 位、自下而上的 `CF_DIB`，不是 `CF_DIBV5`；macOS 不会同时写 TIFF。系统截图和普通文本是这一批的完成标准。贴进微信、Word、Photoshop、飞书时透明通道可能丢。
 
 通过远程桌面使用 Windows 时，请关闭该连接的剪贴板共享／重定向，跨设备复制交给 Snapover。RDP 的 `rdpclip.exe` 可能在 Snapover 写入成功后覆盖剪贴板，导致 Ctrl+V 无反应而历史回贴正常；已实机确认关闭 RDP 剪贴板同步可以解决。
 
