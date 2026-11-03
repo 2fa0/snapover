@@ -2,25 +2,32 @@
 
 package clip
 
-import "errors"
-
 func readClipboardImage() (Item, error) {
 	// Native provider access, byte copies and decoding all stay off the UI.
-	for _, format := range []struct {
-		typ   string
-		limit int
-	}{{"public.png", MaxImageBytes}, {"public.tiff", MaxNativeImageBytes}} {
-		raw, err := readNativePasteboardData(format.typ, format.limit)
+	var decodeErr error
+	for _, candidate := range darwinImageReadFlavors {
+		raw, err := readNativePasteboardData(candidate.name, candidate.limit)
 		if err != nil {
-			return Item{}, err
+			// A provider that fails or exceeds its cap must not hide another
+			// type on the same pasteboard, so keep the reason and try the next.
+			if decodeErr == nil {
+				decodeErr = err
+			}
+			continue
 		}
 		if len(raw) == 0 {
 			continue
 		}
-		if format.typ == "public.png" {
-			return FromPNG(raw)
+		item, err := decodeImageFlavor(candidate.flavor, raw)
+		if err == nil {
+			return item, nil
 		}
-		return fromTIFF(raw)
+		if decodeErr == nil {
+			decodeErr = err
+		}
 	}
-	return Item{}, errors.New("剪贴板没有可读取的图片")
+	if decodeErr != nil {
+		return Item{}, decodeErr
+	}
+	return Item{}, errNoClipboardImage
 }

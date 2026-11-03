@@ -43,6 +43,12 @@ func decodeDIB(raw []byte) (*image.NRGBA, error) {
 	}
 	out := image.NewNRGBA(image.Rect(0, 0, width, int(height)))
 	px := int(bits / 8)
+	// Alpha is read only when bV5AlphaMask names the alpha channel. Word and
+	// XnView do store alpha in the high byte but leave the mask zero, and a
+	// premultiplied producer (Chrome, Firefox) cannot be told apart from a
+	// straight one. Both are accepted losses of the loose cross-device contract:
+	// PNG is the preferred format on read, so this only affects applications that
+	// publish nothing but a DIB, and a 24-bit CF_DIB carries no alpha at all.
 	alpha := bits == 32 && header >= 56 && le.Uint32(raw[52:]) == 0xff000000
 	for y := 0; y < int(height); y++ {
 		row := y

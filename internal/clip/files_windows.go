@@ -17,7 +17,7 @@ func readClipboardFiles() ([]string, error) {
 		return nil, ErrClipboardBusy
 	}
 	defer closeClipboard.Call()
-	available, _, _ := clipUser.NewProc("IsClipboardFormatAvailable").Call(15)
+	available, _, _ := formatAvailable.Call(15)
 	if available == 0 {
 		return nil, nil
 	}
