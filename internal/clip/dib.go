@@ -63,28 +63,41 @@ func decodeDIB(raw []byte) (*image.NRGBA, error) {
 	return out, nil
 }
 
-// Keep the established CF_DIB representation for applications that do not
-// accept PNG. A row buffer avoids per-pixel interface allocations.
+func dibStride(width int) int {
+	return ((width*24 + 31) / 32) * 4
+}
+
+func dibRawSize(width, height int) int {
+	return 40 + dibStride(width)*height
+}
+
+// Feishu and other Windows apps often convert CF_DIB to CF_BITMAP and reject
+// top-down 32-bit payloads. A 24-bit bottom-up DIB is the compatible form;
+// PNG still carries any alpha. A row buffer avoids per-pixel allocations.
 func encodeDIBInto(raw []byte, img image.Image) {
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
-	// Native GlobalAlloc memory is not zeroed; initialize BI_RGB and the
-	// unused resolution/palette fields before filling the remaining header.
+	stride := dibStride(w)
+	// Native GlobalAlloc memory is not zeroed; initialize BI_RGB, unused
+	// header fields, and row padding before filling pixels.
 	clear(raw[:40])
 	le := binary.LittleEndian
 	le.PutUint32(raw, 40)
 	le.PutUint32(raw[4:], uint32(w))
-	le.PutUint32(raw[8:], uint32(-int32(h)))
+	le.PutUint32(raw[8:], uint32(h))
 	le.PutUint16(raw[12:], 1)
-	le.PutUint16(raw[14:], 32)
-	le.PutUint32(raw[20:], uint32(4*w*h))
+	le.PutUint16(raw[14:], 24)
+	le.PutUint32(raw[20:], uint32(stride*h))
 	row := image.NewNRGBA(image.Rect(0, 0, w, 1))
 	for y := 0; y < h; y++ {
 		draw.Draw(row, row.Bounds(), img, image.Pt(b.Min.X, b.Min.Y+y), draw.Src)
-		dst := raw[40+y*w*4:]
+		dst := raw[40+(h-1-y)*stride:]
 		for x := 0; x < w; x++ {
-			i := x * 4
-			dst[i], dst[i+1], dst[i+2], dst[i+3] = row.Pix[i+2], row.Pix[i+1], row.Pix[i], row.Pix[i+3]
+			i, j := x*4, x*3
+			dst[j], dst[j+1], dst[j+2] = row.Pix[i+2], row.Pix[i+1], row.Pix[i]
+		}
+		for i := w * 3; i < stride; i++ {
+			dst[i] = 0
 		}
 	}
 }
