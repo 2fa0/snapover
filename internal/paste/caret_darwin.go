@@ -9,6 +9,8 @@ import (
 )
 
 const (
+	axValueCGPoint = 1
+	axValueCGSize  = 2
 	axValueCGRect  = 3
 	axValueCFRange = 4
 	caretTimeout   = 40 * time.Millisecond
