@@ -152,12 +152,13 @@ func (a *app) devicesPage(c *ui.Context) {
 				})
 			}
 			if count == 0 && a.discoveryMessage == "" {
-				ui.Text(c, a.tr("暂未发现其他电脑")).Bold()
-				if len(a.devices) == 0 && !a.showAddress {
-					if ui.Button(c, a.tr("手填地址")).Clicked() {
-						a.showAddress = true
+				emptyState(c, deviceIcon, a.tr("暂未发现其他电脑"), "", func() {
+					if len(a.devices) == 0 && !a.showAddress {
+						if ui.Button(c, a.tr("手填地址")).Clicked() {
+							a.showAddress = true
+						}
 					}
-				}
+				})
 			}
 			if a.discoveryMessage != "" {
 				ui.Text(c, a.tr(a.discoveryMessage)).FontSize(12).TextColor(t.TextMuted)

@@ -164,7 +164,14 @@ func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failu
 			}
 		}
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			button := ui.Button(c.Key("record"), label).Label(a.tr("设置" + title)).Grow(1).MinWidth(0)
+			button := ui.Button(c.Key("record"), "").Label(a.tr("设置" + title)).Grow(1).MinWidth(0)
+			button.Children(func() {
+				if active && r.key == "" {
+					ui.Text(c, label).TextColor(c.Theme().TextMuted).SingleLine()
+				} else {
+					hotkeyCaps(c, label)
+				}
+			})
 			if button.Clicked() {
 				a.beginShortcutRecording(kind)
 				button.Focus()
@@ -201,6 +208,6 @@ func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failu
 		}
 	}
 	if *failure != "" {
-		ui.Text(c, a.tr(*failure)).FontSize(12).TextColor(c.Theme().Danger)
+		errorMessage(c, a.tr(*failure))
 	}
 }

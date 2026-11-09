@@ -64,15 +64,13 @@ func (a *app) networkSetupHint(c *ui.Context) {
 		return
 	}
 	t := c.Theme()
-	ui.Column(c).Gap(8).Padding(14).Background(t.Surface).Radius(8).Children(func() {
+	ui.Column(c).Gap(8).Children(func() {
 		access := a.tr("打开本地网络设置")
 		if kind == guideWindows {
 			access = a.tr("打开防火墙设置")
-			ui.Text(c, a.tr("允许 Snapover 连接另一台电脑")).Bold()
-			ui.Text(c, a.tr("出现防火墙提示时，允许 Snapover 在可信的专用网络上通信。")).FontSize(12).TextColor(t.TextMuted)
+			alertMessage(c, a.tr("允许 Snapover 连接另一台电脑"), a.tr("出现防火墙提示时，允许 Snapover 在可信的专用网络上通信。"), infoIcon, t.Accent)
 		} else {
-			ui.Text(c, a.tr("允许 Snapover 查找另一台电脑")).Bold()
-			ui.Text(c, a.tr("系统询问本地网络权限时，选择「允许」。")).FontSize(12).TextColor(t.TextMuted)
+			alertMessage(c, a.tr("允许 Snapover 查找另一台电脑"), a.tr("系统询问本地网络权限时，选择「允许」。"), infoIcon, t.Accent)
 		}
 		ui.Row(c).Gap(8).Children(func() {
 			if ui.PrimaryButton(c, access).Disabled(a.openingNetworkSettings).Clicked() {

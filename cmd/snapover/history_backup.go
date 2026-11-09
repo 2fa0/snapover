@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/egoist/mygo"
@@ -16,8 +17,8 @@ func (a *app) backupSettings(c *ui.Context) {
 func (a *app) backupControls(c *ui.Context) {
 	ui.Text(c, a.tr("按最新到最旧的顺序导出；范围留空表示全部。大备份可填写起止序号分批导出，每批最多 1 GiB。")).FontSize(12)
 	ui.Row(c).Gap(8).Children(func() {
-		ui.TextInput(c.Key("backup-first"), &a.backupFirst).Label(a.tr("起始序号")).Width(100)
-		ui.TextInput(c.Key("backup-last"), &a.backupLast).Label(a.tr("结束序号")).Width(100)
+		a.numberInput(c.Key("backup-first"), &a.backupFirst, a.tr("起始序号"), 1, math.MaxInt64, 116)
+		a.numberInput(c.Key("backup-last"), &a.backupLast, a.tr("结束序号"), 1, math.MaxInt64, 116)
 	})
 
 	ui.Row(c).Gap(8).Children(func() {

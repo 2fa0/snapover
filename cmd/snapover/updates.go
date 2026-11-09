@@ -57,12 +57,7 @@ func (a *app) checkForUpdates() {
 
 // updateSettings is the settings page's "关于与更新" group.
 func (a *app) updateSettings(c *ui.Context) {
-	t := c.Theme()
-	ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).Gap(4).Children(func() {
-			ui.Text(c, a.tr(fmt.Sprintf("当前版本 %s", appVersionLabel()))).Bold()
-			ui.Text(c, a.tr(a.updateStateText())).FontSize(12).TextColor(t.TextMuted)
-		})
+	settingRow(c, a.tr(fmt.Sprintf("当前版本 %s", appVersionLabel())), a.tr(a.updateStateText()), func() {
 		if ui.Button(c, a.tr("检查更新")).Clicked() {
 			a.checkForUpdates()
 		}
