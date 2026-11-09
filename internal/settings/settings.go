@@ -46,24 +46,26 @@ const (
 // Values is the small set of options the settings page can change.
 // MenuBarIcon keeps its original key and icon IDs for both platforms.
 type Values struct {
-	Paused         bool   `json:"paused"`
-	TextOnly       bool   `json:"text_only"`
-	MaxImageMB     int    `json:"max_image_mb"`
-	MaxTextMB      int    `json:"max_text_mb"`
-	MaxFileMB      int64  `json:"max_file_mb"`
-	OpenAtLogin    bool   `json:"open_at_login"`
-	MenuBarIcon    int    `json:"menu_bar_icon,omitempty"`
-	KeepAwake      bool   `json:"keep_awake,omitempty"`
-	ReceiveDir     string `json:"receive_dir,omitempty"`
-	DisableSendTo  bool   `json:"disable_send_to,omitempty"`
-	PickerShortcut string `json:"picker_shortcut,omitempty"`
-	PickerWidth    int    `json:"picker_width,omitempty"`
-	PickerHeight   int    `json:"picker_height,omitempty"`
-	CopyShortcut   string `json:"copy_shortcut,omitempty"`
-	ManualSync     bool   `json:"manual_sync,omitempty"`
-	AllowTailscale bool   `json:"allow_tailscale,omitempty"`
-	HistoryMaxMB   int    `json:"history_max_mb"`
-	Language       string `json:"language,omitempty"`
+	PrivacyMode    bool     `json:"privacy_mode,omitempty"`
+	ExcludedApps   []string `json:"excluded_apps,omitempty"`
+	Paused         bool     `json:"paused"`
+	TextOnly       bool     `json:"text_only"`
+	MaxImageMB     int      `json:"max_image_mb"`
+	MaxTextMB      int      `json:"max_text_mb"`
+	MaxFileMB      int64    `json:"max_file_mb"`
+	OpenAtLogin    bool     `json:"open_at_login"`
+	MenuBarIcon    int      `json:"menu_bar_icon,omitempty"`
+	KeepAwake      bool     `json:"keep_awake,omitempty"`
+	ReceiveDir     string   `json:"receive_dir,omitempty"`
+	DisableSendTo  bool     `json:"disable_send_to,omitempty"`
+	PickerShortcut string   `json:"picker_shortcut,omitempty"`
+	PickerWidth    int      `json:"picker_width,omitempty"`
+	PickerHeight   int      `json:"picker_height,omitempty"`
+	CopyShortcut   string   `json:"copy_shortcut,omitempty"`
+	ManualSync     bool     `json:"manual_sync,omitempty"`
+	AllowTailscale bool     `json:"allow_tailscale,omitempty"`
+	HistoryMaxMB   int      `json:"history_max_mb"`
+	Language       string   `json:"language,omitempty"`
 
 	WindowsNetworkGuideDismissed bool `json:"windows_network_guide_dismissed,omitempty"`
 	MacNetworkGuideDismissed     bool `json:"mac_network_guide_dismissed,omitempty"`

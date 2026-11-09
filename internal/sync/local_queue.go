@@ -15,6 +15,7 @@ type localJob struct {
 	seq   uint64
 	item  clip.Item
 	bytes int
+	epoch uint64
 }
 
 // StartLocalQueue processes settled clipboard events away from the watcher.
@@ -29,7 +30,7 @@ func (e *Engine) StartLocalQueue(ctx context.Context) {
 // ObserveLocal enqueues a settled local clipboard event. A full queue is
 // reported instead of blocking the watcher.
 func (e *Engine) ObserveLocal(seq uint64, item clip.Item) {
-	if e.isOwnEcho(seq, item.Hash) || e.ignoreLocalCopy(seq, item) {
+	if e.isOwnEcho(seq, item.Hash) || e.suppressLocal(seq, item) || e.ignoreLocalCopy(seq, item) {
 		return
 	}
 	// Local history and transport only need encoded bytes. The transient decode
@@ -41,6 +42,7 @@ func (e *Engine) ObserveLocal(seq uint64, item clip.Item) {
 	}
 	n := queuedSize(item)
 	e.mu.Lock()
+	epoch := e.privacyEpoch
 	full := e.localClosed || n > localQueueBytes-e.localBytes || len(e.localQueue) == cap(e.localQueue)
 	if !full {
 		e.localBytes += n
@@ -51,7 +53,7 @@ func (e *Engine) ObserveLocal(seq uint64, item clip.Item) {
 		return
 	}
 	select {
-	case e.localQueue <- localJob{seq: seq, item: item, bytes: n}:
+	case e.localQueue <- localJob{seq: seq, item: item, bytes: n, epoch: epoch}:
 	default:
 		e.mu.Lock()
 		e.localBytes -= n
@@ -72,7 +74,12 @@ func (e *Engine) localLoop(ctx context.Context) {
 			e.mu.Unlock()
 			return
 		case job := <-e.localQueue:
-			e.HandleLocal(job.seq, job.item)
+			e.mu.Lock()
+			valid := job.epoch == e.privacyEpoch
+			e.mu.Unlock()
+			if valid {
+				e.HandleLocal(job.seq, job.item)
+			}
 			e.mu.Lock()
 			e.localBytes -= job.bytes
 			if e.localBytes < 0 {

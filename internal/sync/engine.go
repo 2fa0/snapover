@@ -61,39 +61,42 @@ type Engine struct {
 	tailscaleRemovalSeq uint64
 	tailscaleRemovals   map[string]uint64
 
-	clipMu      sync.Mutex
-	mu          sync.Mutex
-	paused      bool
-	manualSync  bool
-	copyRequest *copyRequest
-	ignoreNext  bool
-	ignoreAfter uint64
-	ignoredSeq  uint64
-	haveIgnored bool
-	textOnly    bool
-	maxImage    int
-	maxText     int
-	maxFile     int64
-	receiveDir  string
-	sess        *Session
-	link        Link
-	localActive time.Time
-	lastHash    [32]byte
-	lastSeq     uint64
-	haveLast    bool
-	lastSendID  string
-	ownSeq      uint64
-	ownHash     [32]byte
-	haveOwnSeq  bool
-	localOnce   sync.Once
-	localQueue  chan localJob
-	localBytes  int
-	localClosed bool
+	clipMu       sync.Mutex
+	mu           sync.Mutex
+	privacyMode  bool
+	excludedApps []string
+	privacyEpoch uint64
+	paused       bool
+	manualSync   bool
+	copyRequest  *copyRequest
+	ignoreNext   bool
+	ignoreAfter  uint64
+	ignoredSeq   uint64
+	haveIgnored  bool
+	textOnly     bool
+	maxImage     int
+	maxText      int
+	maxFile      int64
+	receiveDir   string
+	sess         *Session
+	link         Link
+	localActive  time.Time
+	lastHash     [32]byte
+	lastSeq      uint64
+	haveLast     bool
+	lastSendID   string
+	ownSeq       uint64
+	ownHash      [32]byte
+	haveOwnSeq   bool
+	localOnce    sync.Once
+	localQueue   chan localJob
+	localBytes   int
+	localClosed  bool
 }
 
 // HandleLocal is called for a clipboard change that happened on this machine.
 func (e *Engine) HandleLocal(seq uint64, item clip.Item) {
-	if e.isOwnEcho(seq, item.Hash) || e.ignoreLocalCopy(seq, item) {
+	if e.isOwnEcho(seq, item.Hash) || e.suppressLocal(seq, item) || e.ignoreLocalCopy(seq, item) {
 		return
 	}
 	e.mu.Lock()
@@ -209,6 +212,10 @@ func (e *Engine) handleLocal(item clip.Item, request *copyRequest, seq uint64) e
 	}
 	e.mu.Lock()
 	// Same generation can be delivered twice; same bytes on a new generation cannot.
+	if e.blockedLocalLocked(item) {
+		e.mu.Unlock()
+		return errors.New("隐私设置已阻止记录和同步")
+	}
 	if request == nil && e.haveLast && e.lastSeq == seq {
 		e.mu.Unlock()
 		return nil
@@ -286,7 +293,10 @@ func (e *Engine) SetPolicy(paused, textOnly bool, maxImage int) {
 func (e *Engine) admitClipboard(item queuedItem) (bool, string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.paused {
+	if e.blockedLocalLocked(item.Item) {
+		return false, "隐私设置已阻止记录和同步"
+	}
+	if e.paused || e.privacyMode {
 		return false, "已暂停，未发送"
 	}
 	if e.manualSync && !item.explicit {
@@ -300,7 +310,7 @@ func (e *Engine) admitClipboard(item queuedItem) (bool, string) {
 }
 
 func (e *Engine) policyLocked() policy {
-	return policy{Paused: e.paused, TextOnly: e.textOnly, MaxImage: e.maxImage, MaxText: e.textLimitLocked()}
+	return policy{Paused: e.paused || e.privacyMode, TextOnly: e.textOnly, MaxImage: e.maxImage, MaxText: e.textLimitLocked()}
 }
 
 func (e *Engine) SetTextLimit(maxBytes int) {
@@ -369,7 +379,7 @@ func (e *Engine) deliver(item clip.Item) {
 // published. The clipboard callback still rechecks in case policy changes.
 func (e *Engine) rejectRemoteBeforePrepare(source *Session, item clip.Item) error {
 	e.mu.Lock()
-	paused := e.paused
+	paused := e.paused || e.privacyMode
 	textOnly := e.textOnly
 	var textErr error
 	if item.Kind == clip.KindText {
@@ -453,7 +463,7 @@ func (e *Engine) deliverFromSequence(source *Session, item clip.Item, expected u
 			default:
 			}
 		}
-		paused = e.paused
+		paused = e.paused || e.privacyMode
 		fileTextOnly = item.Kind == clip.KindFiles && e.textOnly
 		active = time.Since(e.localActive) < localPriority
 		if paused || fileTextOnly {
@@ -563,7 +573,7 @@ func (e *Engine) deliverFromSequence(source *Session, item clip.Item, expected u
 		return errors.New("对端写入剪贴板失败，已存入对端历史，可稍后重新复制")
 	}
 	e.Log.Info("已写入剪贴板", "kind", item.Kind, "bytes", item.Size)
-	if historyErr := e.notify(Notice{Kind: NoticeRemote, Item: item, PeerID: link.ID, PeerName: link.Name}); historyErr != nil {
+	if historyErr := e.notify(Notice{Kind: NoticeRemote, Item: item, PeerID: link.ID, PeerName: link.Name, Written: true}); historyErr != nil {
 		e.Log.Error("保存对端历史失败", "err", historyErr)
 		return fmt.Errorf("对端已写入剪贴板，但保存历史失败：%w", historyErr)
 	}
@@ -679,10 +689,10 @@ func (e *Engine) attachPeer(ctx context.Context, conn *tls.Conn, weDialed bool, 
 	sess.fileClipboardCheck = func(item queuedItem) error { return e.checkFileClipboard(sess, item) }
 	sess.onItem = func(item clip.Item) error { return e.deliverFrom(sess, item) }
 	sess.onClipboardResult = func(result wire.Ack) {
-		if result.State != "complete" && result.State != "sending" {
+		if result.State != "complete" && result.State != "sending" && result.State != "cancelled" {
 			e.allowLocalRetry(sess, result.ItemID)
 		}
-		if result.State != "sending" {
+		if result.State != "sending" && result.State != "cancelled" {
 			e.Log.Info("对端剪贴板处理结果", "item", result.ItemID, "state", result.State, "message", result.Message)
 		}
 		e.notify(Notice{Kind: NoticeSync, Message: result.Message, PeerID: peer.id, PeerName: hello.Name, ClipboardState: result.State, SessionID: sess.sessionID})
