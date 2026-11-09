@@ -114,11 +114,7 @@ func (a *app) languageSettings(c *ui.Context) {
 			selected = 2
 		}
 	}
-	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).Gap(4).Children(func() {
-			ui.Text(c, a.tr("界面语言")).Bold()
-			ui.Text(c, a.tr("默认跟随系统语言，也可手动固定为简体中文或 English")).FontSize(12).TextColor(c.Theme().TextMuted)
-		})
+	settingRow(c, a.tr("界面语言"), a.tr("默认跟随系统语言，也可手动固定为简体中文或 English"), func() {
 		if ui.Segmented(c, &selected, a.tr("跟随系统"), "简体中文", "English").Label(a.tr("界面语言")).Changed() {
 			a.saveLanguageChoice(selected)
 		}
@@ -929,18 +925,22 @@ var enStrings = map[string]string{
 	"未写入剪贴板":                        "Not written to the clipboard",
 
 	// History Page & Quick Picker & Previews
-	"搜索复制历史":  "Search clipboard history",
-	"搜索快速历史":  "Search quick history",
-	"搜索内容或来源": "Search content or source",
-	"清空未置顶":   "Clear Unpinned",
-	"确认清空":    "Confirm Clear",
-	"全部":      "All",
-	"置顶":      "Pinned",
-	"文本":      "Text",
-	"图片":      "Images",
-	"文件":      "Files",
-	"历史类型":    "History Category",
-	"还没有复制历史": "No clipboard history yet",
+	"搜索复制历史":      "Search clipboard history",
+	"搜索快速历史":      "Search quick history",
+	"搜索内容或来源":     "Search content or source",
+	"清空搜索":        "Clear search",
+	"清空搜索并查看全部记录": "Clear search and show all items",
+	"增加":          "Increase",
+	"减少":          "Decrease",
+	"清空未置顶":       "Clear Unpinned",
+	"确认清空":        "Confirm Clear",
+	"全部":          "All",
+	"置顶":          "Pinned",
+	"文本":          "Text",
+	"图片":          "Images",
+	"文件":          "Files",
+	"历史类型":        "History Category",
+	"还没有复制历史":     "No clipboard history yet",
 	"复制文字、图片、文件或文件夹后会出现在这里": "Copied text, images, files, or folders will appear here",
 	"没有匹配的记录":  "No matching items",
 	"没有匹配的记录。": "No matching items.",

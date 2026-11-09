@@ -763,12 +763,8 @@ func (a *app) settingsPage(c *ui.Context) {
 		ui.Divider(c)
 		ui.Collapsible(c, a.tr("大小限制"), &a.showSyncLimits, func() {
 			ui.Column(c).Gap(14).Padding(12, 0).Children(func() {
-				ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
-					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, a.tr("文本大小上限")).Bold()
-						ui.Text(c, a.tr("1–20 MB，超限不保存、不收发。")).FontSize(12).TextColor(t.TextMuted)
-					})
-					if ui.TextInput(c.Key("maxtextmb"), &a.maxTextText).Label(a.tr("文本大小上限，MB")).Width(56).Submitted() {
+				settingRow(c, a.tr("文本大小上限"), a.tr("1–20 MB，超限不保存、不收发。"), func() {
+					if a.numberInput(c.Key("maxtextmb"), &a.maxTextText, a.tr("文本大小上限，MB"), 1, settings.MaxTextMB, 88).Submitted() {
 						a.saveTextLimit()
 					}
 					ui.Text(c, "MB").TextColor(t.TextMuted)
@@ -777,15 +773,11 @@ func (a *app) settingsPage(c *ui.Context) {
 					}
 				})
 				if a.maxTextError != "" {
-					ui.Text(c, a.tr(a.maxTextError)).FontSize(12).TextColor(t.Danger)
+					errorMessage(c, a.tr(a.maxTextError))
 				}
 				ui.Divider(c)
-				ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
-					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, a.tr("图片大小上限")).Bold()
-						ui.Text(c, a.tr("最多 20 MB，超限仅保留本机历史。")).FontSize(12).TextColor(t.TextMuted)
-					})
-					if ui.TextInput(c.Key("maxmb"), &a.maxImageText).Label(a.tr("图片大小上限，MB")).Width(56).Submitted() {
+				settingRow(c, a.tr("图片大小上限"), a.tr("最多 20 MB，超限仅保留本机历史。"), func() {
+					if a.numberInput(c.Key("maxmb"), &a.maxImageText, a.tr("图片大小上限，MB"), 1, settings.DefaultMaxImageMB, 88).Submitted() {
 						a.saveSettings()
 					}
 					ui.Text(c, "MB").TextColor(t.TextMuted)
@@ -794,12 +786,8 @@ func (a *app) settingsPage(c *ui.Context) {
 					}
 				})
 				ui.Divider(c)
-				ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
-					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, a.tr("文件大小上限")).Bold()
-						ui.Text(c, a.tr("默认 200 MB，整批内容合计，双方分别校验。")).FontSize(12).TextColor(t.TextMuted)
-					})
-					if ui.TextInput(c.Key("maxfilemb"), &a.maxFileText).Label(a.tr("文件大小上限，MB")).Width(88).Submitted() {
+				settingRow(c, a.tr("文件大小上限"), a.tr("默认 200 MB，整批内容合计，双方分别校验。"), func() {
+					if a.numberInput(c.Key("maxfilemb"), &a.maxFileText, a.tr("文件大小上限，MB"), 1, settings.MaxFileMB, 152).Submitted() {
 						a.saveFileLimit()
 					}
 					ui.Text(c, "MB").TextColor(t.TextMuted)
@@ -808,7 +796,7 @@ func (a *app) settingsPage(c *ui.Context) {
 					}
 				})
 				if a.maxFileError != "" {
-					ui.Text(c, a.tr(a.maxFileError)).FontSize(12).TextColor(t.Danger)
+					errorMessage(c, a.tr(a.maxFileError))
 				}
 			})
 		})
@@ -885,8 +873,11 @@ func (a *app) historyPage(c *ui.Context) {
 		return
 	}
 	a.backupSettings(c)
+	var searchField ui.Element
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		if ui.TextInput(c.Key("query"), &a.query).Label(a.tr("搜索复制历史")).Placeholder(a.tr("搜索内容或来源")).Grow(1).Changed() {
+		field, cleared := a.searchBar(c.Key("query"), &a.query, a.tr("搜索复制历史"), a.historySearch.pending != nil)
+		searchField = field
+		if field.Changed() || cleared {
 			a.closePickPreview()
 			a.histSel = -1
 			a.histList.ScrollTo(0, ui.Start)
@@ -922,7 +913,7 @@ func (a *app) historyPage(c *ui.Context) {
 	ui.Column(c).Grow(1).Radius(10).Border(1, t.Border).Clip().Children(func() {
 		switch {
 		case len(a.entries) == 0:
-			emptyState(c, historyIcon, a.tr("还没有复制历史"), a.tr("复制文字、图片、文件或文件夹后会出现在这里"))
+			emptyState(c, historyIcon, a.tr("还没有复制历史"), a.tr("复制文字、图片、文件或文件夹后会出现在这里"), nil)
 		case len(shown) == 0:
 			message := ""
 			if a.query != "" {
@@ -931,7 +922,16 @@ func (a *app) historyPage(c *ui.Context) {
 					message = ""
 				}
 			}
-			emptyState(c, searchIcon, a.tr("没有匹配的记录"), a.tr(message))
+			emptyState(c, searchIcon, a.tr("没有匹配的记录"), a.tr(message), func() {
+				if a.query != "" && ui.Button(c, a.tr("清空搜索")).Label(a.tr("清空搜索并查看全部记录")).Clicked() {
+					a.query = ""
+					a.closePickPreview()
+					a.histSel = -1
+					a.histList.ScrollTo(0, ui.Start)
+					searchField.Focus()
+					c.Invalidate()
+				}
+			})
 		default:
 			if ui.List(c, &a.histList, len(shown), func(i int) {
 				entry := shown[i]
@@ -953,7 +953,7 @@ func (a *app) historyPage(c *ui.Context) {
 								ui.Icon(c, pinIcon).FontSize(12).TextColor(rowMetaColor(t, sel)).Shrink(0)
 							}
 							if entry.Pinned && entry.PinKey > 0 && entry.PinKey <= 9 {
-								ui.Text(c, pinShortcutLabel(entry.PinKey)).FontSize(11).TextColor(rowMetaColor(t, sel)).Shrink(0).
+								hotkeyCaps(c, pinShortcutLabel(entry.PinKey)).
 									Tooltip(a.tr("在快速历史内直接粘贴此条记录"))
 							}
 							a.historySource(c, entry, rowMetaColor(t, sel), 12)

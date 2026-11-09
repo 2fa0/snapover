@@ -11,9 +11,10 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Heroicons, MIT licensed; see icons/LICENSE.
+// Heroicons (MIT) and selected Lucide icons (ISC/MIT); see icons/LICENSE*.
+// Adapted Lobe MyGo component notices are also included in the application.
 //
-//go:embed icons/*.svg
+//go:embed icons/*.svg icons/LICENSE* licenses/*.txt
 var interfaceIcons embed.FS
 
 func interfaceIcon(name string) *ui.SVG {
@@ -50,9 +51,24 @@ func appVersionLabel() string {
 }
 
 func settingsGroup(c *ui.Context, title string, contents func()) ui.Element {
-	return ui.Column(c.Key(title)).Gap(8).Children(func() {
-		ui.Text(c, title).FontSize(13).Bold()
-		ui.Column(c).Padding(16).Gap(14).Radius(12).Background(c.Theme().Surface).Children(contents)
+	t := c.Theme()
+	return ui.Column(c.Key(title)).AlignSelf(ui.Stretch).Radius(12).Border(1, t.Border).Background(t.Surface).Children(func() {
+		ui.Text(c, title).FontSize(16).FontWeight(600).Padding(16)
+		ui.Divider(c)
+		ui.Column(c).Padding(16).Gap(14).Grow(1).MinWidth(0).Children(contents)
+	})
+}
+
+// Adapted from Lobe MyGo's Form.Field; persistence stays with each caller.
+func settingRow(c *ui.Context, title, description string, controls func()) ui.Element {
+	return ui.Row(c.Key(title)).Gap(12).AlignItems(ui.Center).AlignSelf(ui.Stretch).Children(func() {
+		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(6).Children(func() {
+			ui.Text(c, title).FontSize(14).FontWeight(500)
+			if description != "" {
+				ui.Text(c, description).FontSize(12).LineHeight(1.44).TextColor(c.Theme().TextMuted)
+			}
+		})
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(controls)
 	})
 }
 
@@ -62,24 +78,23 @@ func settingSwitch(c *ui.Context, value *bool, title, description string) bool {
 	if title != "" && title[0] < 0x80 {
 		switchLabel = title + " switch"
 	}
-	ui.Row(c.Key(title)).Gap(20).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).Gap(4).Children(func() {
-			ui.Text(c, title).Bold()
-			if description != "" {
-				ui.Text(c, description).FontSize(12).TextColor(c.Theme().TextMuted)
-			}
-		})
+	settingRow(c, title, description, func() {
 		changed = ui.Switch(c, value).Label(switchLabel).Changed()
 	})
 	return changed
 }
 
-func emptyState(c *ui.Context, icon *ui.SVG, title, description string) {
-	arrive(ui.Column(c).Padding(24, 16).Gap(8).AlignItems(ui.Center)).Children(func() {
-		ui.Icon(c, icon).FontSize(28).TextColor(c.Theme().TextMuted)
-		ui.Text(c, title).Bold()
+// Adapted from Lobe MyGo's Empty, including its optional action area.
+func emptyState(c *ui.Context, icon *ui.SVG, title, description string, action func()) {
+	t := c.Theme()
+	arrive(ui.Column(c).Gap(4).Padding(24, 8).AlignItems(ui.Center).FillWidth()).Children(func() {
+		ui.Icon(c, icon).FontSize(32).TextColor(t.TextMuted)
+		ui.Text(c, title).FontWeight(500).TextAlign(ui.Center).Margin(8, 0, 0, 0)
 		if description != "" {
-			ui.Text(c, description).TextColor(c.Theme().TextMuted).FontSize(12)
+			ui.Text(c, description).FontSize(13).TextColor(t.TextMuted).TextAlign(ui.Center).MaxWidth(13 * 0.55 * 34)
+		}
+		if action != nil {
+			ui.Row(c).Gap(8).Margin(8, 0, 0, 0).Children(action)
 		}
 	})
 }

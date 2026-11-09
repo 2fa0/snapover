@@ -42,6 +42,6 @@ func (a *app) privacySettings(c *ui.Context) {
 		})
 	})
 	if a.privacyError != "" {
-		ui.Text(c, a.tr(a.privacyError)).TextColor(c.Theme().Danger)
+		errorMessage(c, a.tr(a.privacyError))
 	}
 }

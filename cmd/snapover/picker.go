@@ -491,10 +491,12 @@ func (a *app) pickerView(c *ui.Context) {
 		box.Background(t.Surface).Radius(10).Border(1, t.Border)
 	}
 	box.Children(func() {
+		var searchField ui.Element
 		// The count sits beside the field, where it costs no room until a
 		// query takes the placeholder's place.
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).Label(a.tr("搜索快速历史")).Placeholder(a.tr("搜索内容或来源")).Grow(1).MinWidth(0)
+			field, cleared := a.searchBar(c.Key("pick-query"), &a.pickQuery, a.tr("搜索快速历史"), a.pickerSearch.pending != nil)
+			searchField = field
 			if !editingNote {
 				field = field.AutoFocus()
 			}
@@ -511,10 +513,14 @@ func (a *app) pickerView(c *ui.Context) {
 			if field.Shortcut(0, ui.KeyUp) {
 				a.movePick(-1)
 			}
-			if field.Changed() {
+			if field.Changed() || cleared {
 				// A newer search is a new selection intent. A pending mutation
 				// must not restore the old query's selected record afterwards.
 				a.pickRestore = false
+				if cleared {
+					// Clearing must also override the list's remembered row key.
+					a.pickRestore, a.pickRestoreID, a.pickRestoreIndex = true, "", 0
+				}
 				a.pickSel = 0
 				if len(a.filtered(a.pickQuery)) == 0 {
 					a.pickSel = -1
@@ -538,9 +544,18 @@ func (a *app) pickerView(c *ui.Context) {
 		a.noteEditorRow(c, true)
 		switch {
 		case len(a.entries) == 0:
-			ui.Text(c, a.tr("还没有记录")).TextColor(t.TextMuted)
+			emptyState(c, historyIcon, a.tr("还没有记录"), a.tr("复制文字、图片、文件或文件夹后会出现在这里"), nil)
 		case len(shown) == 0:
-			ui.Text(c, a.tr(a.pickerSearch.emptyMessage())).TextColor(t.TextMuted)
+			emptyState(c, searchIcon, a.tr(a.pickerSearch.emptyMessage()), "", func() {
+				if a.pickQuery != "" && ui.Button(c, a.tr("清空搜索")).Label(a.tr("清空搜索并查看全部记录")).Clicked() {
+					a.pickQuery = ""
+					a.pickRestore, a.pickRestoreID, a.pickRestoreIndex = true, "", 0
+					a.pickSel = 0
+					a.pickList.ScrollTo(0, ui.Start)
+					searchField.Focus()
+					c.Invalidate()
+				}
+			})
 		default:
 			list := ui.List(c, &a.pickList, len(shown), func(i int) {
 				entry := shown[i]
@@ -566,7 +581,7 @@ func (a *app) pickerView(c *ui.Context) {
 						})
 					})
 					if entry.Pinned && entry.PinKey > 0 && entry.PinKey <= 9 {
-						ui.Text(c, pinShortcutLabel(entry.PinKey)).FontSize(11).TextColor(rowMetaColor(t, sel)).Shrink(0).
+						hotkeyCaps(c, pinShortcutLabel(entry.PinKey)).
 							Tooltip(a.tr("在快速历史内直接粘贴此条记录"))
 					}
 				})

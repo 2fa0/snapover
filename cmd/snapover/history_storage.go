@@ -27,9 +27,8 @@ func (a *app) historyStorageSettings(c *ui.Context) {
 	a.pollHistoryStorage()
 	t := c.Theme()
 	busy := a.historyCleanupPending != nil
-	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, a.tr("容量上限")).Grow(1).Bold()
-		input := ui.TextInput(c.Key("history-max-mb"), &a.historyMaxText).Label(a.tr("历史容量上限，MB")).Width(84)
+	settingRow(c, a.tr("容量上限"), "", func() {
+		input := a.numberInput(c.Key("history-max-mb"), &a.historyMaxText, a.tr("历史容量上限，MB"), 1, settings.MaxHistoryMB, 116)
 		if input.Submitted() && !busy {
 			a.saveHistoryCapacity()
 		}
