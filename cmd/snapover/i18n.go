@@ -928,6 +928,7 @@ var enStrings = map[string]string{
 	"搜索复制历史":      "Search clipboard history",
 	"搜索快速历史":      "Search quick history",
 	"搜索内容或来源":     "Search content or source",
+	"关闭提示":        "Dismiss notification",
 	"清空搜索":        "Clear search",
 	"清空搜索并查看全部记录": "Clear search and show all items",
 	"增加":          "Increase",

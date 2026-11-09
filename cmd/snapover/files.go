@@ -85,7 +85,7 @@ func (a *app) filesView(c *ui.Context) {
 			if a.fileSize > 0 {
 				value = float64(a.fileDone) / float64(a.fileSize)
 			}
-			ui.Progress(c, value).FillWidth().Label(a.tr("文件发送进度"))
+			progressBar(c, value, toneRunning, a.tr("文件发送进度"))
 		}
 		// Show one relevant status instead of stacking connection and transfer hints.
 		message := a.fileMessage

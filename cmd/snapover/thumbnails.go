@@ -56,6 +56,13 @@ func (a *app) thumb(id string) *ui.Bitmap {
 	return nil
 }
 
+// thumbLoading tells whether a thumbnail is queued or being decoded, which a
+// row uses to hold its place instead of claiming there is no preview.
+func (a *app) thumbLoading(id string) bool {
+	a.initThumbnails()
+	return a.thumbPending[id] != nil
+}
+
 func (a *app) dispatchThumbnails() {
 	for a.thumbActive < thumbWorkers && len(a.thumbQueue) > 0 {
 		r := a.thumbQueue[0]

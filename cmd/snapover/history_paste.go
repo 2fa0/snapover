@@ -199,5 +199,8 @@ func (a *app) completeHistoryPaste(r *pasteRequest) {
 		a.pickFlash = message
 	} else {
 		a.flash = message
+		// The flash line belongs to the history actions; the toast carries the
+		// failure to wherever the user is looking.
+		a.notify(toastFailure, message)
 	}
 }

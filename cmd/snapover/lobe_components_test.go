@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"math"
 	"testing"
 
@@ -159,5 +160,110 @@ func TestEmptySearchActionRestoresHistoryAndTyping(t *testing.T) {
 		if *query != "alpha" {
 			t.Fatal("typing after the empty-state action missed the search field")
 		}
+	}
+}
+
+func TestToastCarriesItsOutcomeAndCloses(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.notify(toastFailure, "写回剪贴板失败")
+	tt := ui.NewTesterWith(a.view, 960, 640, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
+	tt.Frame()
+	if a.pendingToast.text != "" {
+		t.Fatal("the view did not consume the queued toast")
+	}
+	if !tt.HasText("写回剪贴板失败") {
+		t.Fatal("the toast did not show what failed")
+	}
+	clickInterface(t, tt, "关闭提示")
+	tt.Frame()
+	if tt.HasText("写回剪贴板失败") {
+		t.Fatal("the close button left the toast on screen")
+	}
+}
+
+func TestFailedPasteQueuesAFailureToast(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.board = &pasteTestBoard{err: errors.New("clipboard busy")}
+	item, _ := clip.FromText("keep clipboard")
+	entry, err := a.hist.Add(history.DirLocal, "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.refreshEntries()
+	r := &pasteRequest{id: entry.ID, result: make(chan pasteResult, 1)}
+	a.historyPaste = r
+	r.result <- pasteResult{item: item}
+	a.completeHistoryPaste(r)
+	if a.flash != "写回剪贴板失败" {
+		t.Fatalf("the history line lost its failure: %q", a.flash)
+	}
+	if a.pendingToast.text != "写回剪贴板失败" || a.pendingToast.kind != toastFailure {
+		t.Fatalf("a failed paste reported as %+v", a.pendingToast)
+	}
+}
+
+func TestTransferProgressToneTellsFinishedFromFailed(t *testing.T) {
+	for _, test := range []struct {
+		phase string
+		want  progressTone
+	}{
+		{phasePacking, toneRunning},
+		{phaseSending, toneRunning},
+		{phaseWaiting, toneRunning},
+		{phaseReceiving, toneRunning},
+		{phaseUnpacking, toneRunning},
+		{phaseComplete, toneDone},
+		{phaseError, toneFailed},
+	} {
+		if got := (transferProgress{phase: test.phase}).tone(); got != test.want {
+			t.Fatalf("%s showed as tone %d, want %d", test.phase, got, test.want)
+		}
+	}
+}
+
+func TestProgressBarHoldsItsLabelAndEnds(t *testing.T) {
+	for _, test := range []struct {
+		value float64
+		tone  progressTone
+	}{
+		{0.42, toneRunning},
+		{-1, toneRunning},
+		{1, toneDone},
+		{0.4, toneFailed},
+	} {
+		tt := ui.NewTester(func(c *ui.Context) {
+			ui.Column(c).Padding(8).Children(func() {
+				progressBar(c, test.value, test.tone, "文件同步进度")
+			})
+		}, 320, 48)
+		tt.Frame()
+		if _, ok := tt.Find("文件同步进度"); !ok {
+			t.Fatalf("value=%v tone=%d: the bar lost its label", test.value, test.tone)
+		}
+	}
+}
+
+func TestStatusLabelShowsItsStateWhilePulsing(t *testing.T) {
+	for _, pending := range []bool{false, true} {
+		tt := ui.NewTester(func(c *ui.Context) {
+			statusLabel(c, "正在重连", c.Theme().TextMuted, pending)
+		}, 240, 48)
+		tt.Frame()
+		if !tt.HasText("正在重连") {
+			t.Fatalf("pending=%v: the state lost its text", pending)
+		}
+	}
+}
+
+func TestSkeletonRowsBuildInTheirParent(t *testing.T) {
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Gap(10).FillWidth().Children(func() {
+			ui.Text(c, "正在统计文件与备份占用…")
+			skeletonRows(c, 3)
+		})
+	}, 320, 160)
+	tt.Frame()
+	if !tt.HasText("正在统计文件与备份占用…") {
+		t.Fatal("the placeholder lost what it is standing in for")
 	}
 }

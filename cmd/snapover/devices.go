@@ -78,13 +78,13 @@ func (a *app) devicesPage(c *ui.Context) {
 							ui.Text(c, a.displayName(dev.Peer.Name, dev.ID)).Bold().SingleLine()
 							ui.Text(c, a.tr(platformLabel(dev.Peer.Platform))).FontSize(12).TextColor(t.TextMuted)
 						})
-						state, color := "离线", t.TextMuted
+						state, color, pending := "离线", t.TextMuted, false
 						if online {
 							state, color = "已连接 · "+link.Route.Label(), t.Success
 						} else if a.targetPeerID == dev.ID && a.dialCancel != nil {
-							state = "正在重连"
+							state, pending = "正在重连", true
 						}
-						ui.Text(c, a.tr(state)).FontSize(12).TextColor(color).SingleLine().ContentTransition(ui.ContentTransition{})
+						statusLabel(c, a.tr(state), color, pending)
 						endpoints := dev.Peer.Endpoints(a.allowTailscale)
 						if !online && ui.Button(c, a.tr("连接")).Disabled(waiting || len(endpoints) == 0).Clicked() {
 							a.connectDevice(dev.ID, endpoints[0].Addr)

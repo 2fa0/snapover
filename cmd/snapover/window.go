@@ -109,7 +109,7 @@ type app struct {
 	clipboardOwner      func() string
 	syncSessionID       string
 	flash               string
-	pendingToast        string
+	pendingToast        queuedToast
 	confirm             bool
 	confirmClear        bool
 	showIdentity        bool
@@ -453,7 +453,7 @@ func (a *app) openMainWindow() {
 		if !a.editNotePicker {
 			a.cancelEditNote()
 		}
-		a.pendingToast = ""
+		a.pendingToast = queuedToast{}
 		if r := a.historyPaste; r != nil && r.picker == nil {
 			a.cancelHistoryPaste()
 		}
@@ -646,10 +646,10 @@ func (a *app) view(c *ui.Context) {
 	if a.page != pageSettings {
 		a.cancelShortcutRecording()
 	}
-	if a.pendingToast != "" {
-		c.Toast(a.tr(a.pendingToast))
-		a.pendingToast = ""
-	}
+	// The viewport is built every frame: MyGo draws its own look for the
+	// window's toasts in a frame that does not, and the look would change
+	// under the pointer.
+	a.showToast(c)
 	a.windowShortcuts(c)
 	a.pumpTransfer(c)
 	a.pollHistoryStorage()
@@ -1223,7 +1223,7 @@ func (a *app) pasteHistory() {
 }
 
 func (a *app) toast(msg string) {
-	a.pendingToast = msg
+	a.notify(toastSuccess, msg)
 }
 
 func kv(c *ui.Context, k, v string) {
