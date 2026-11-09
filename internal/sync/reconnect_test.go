@@ -203,3 +203,66 @@ func TestCancelDialInterruptsTLSHandshake(t *testing.T) {
 		t.Fatal("canceled handshake became trusted")
 	}
 }
+
+func TestReconnectTriesOtherTrustedPeerBeforeBackoff(t *testing.T) {
+	e := reconnectEngine(t)
+	if _, err := e.Peers.Allow("other", "ccdd", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	selected := lan.Endpoint{Addr: "192.168.1.10:47821", Route: lan.RouteLAN}
+	other := lan.Endpoint{Addr: "192.168.1.30:47821", Route: lan.RouteLAN}
+	target := NewDialTarget("selected", 0, nil)
+	target.UpdateCandidates([]DialCandidate{
+		{PeerID: "selected", Endpoint: selected},
+		{PeerID: "other", Endpoint: other},
+	})
+	var attempts []string
+	rounds := 0
+	reconnect(context.Background(), target, e, func(_ context.Context, ep lan.Endpoint, id string, _ *Engine) error {
+		attempts = append(attempts, id+" "+ep.Addr)
+		return errors.New("offline")
+	}, func(context.Context, time.Duration) bool {
+		rounds++
+		return rounds < 2
+	})
+	want := []string{
+		"selected 192.168.1.10:47821",
+		"other 192.168.1.30:47821",
+		"selected 192.168.1.10:47821",
+		"other 192.168.1.30:47821",
+	}
+	if !reflect.DeepEqual(attempts, want) {
+		t.Fatalf("attempts: %v", attempts)
+	}
+}
+
+func TestReconnectContinuesOtherPeerAfterSelectedIsRevoked(t *testing.T) {
+	e := reconnectEngine(t)
+	if _, err := e.Peers.Allow("other", "ccdd", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	selected := lan.Endpoint{Addr: "192.168.1.10:47821", Route: lan.RouteLAN}
+	other := lan.Endpoint{Addr: "192.168.1.30:47821", Route: lan.RouteLAN}
+	target := NewDialTarget("selected", 0, nil)
+	target.UpdateCandidates([]DialCandidate{
+		{PeerID: "selected", Endpoint: selected},
+		{PeerID: "other", Endpoint: other},
+	})
+	var attempts []string
+	rounds := 0
+	reconnect(context.Background(), target, e, func(_ context.Context, ep lan.Endpoint, id string, _ *Engine) error {
+		attempts = append(attempts, id)
+		return errors.New("offline")
+	}, func(context.Context, time.Duration) bool {
+		rounds++
+		if rounds == 1 {
+			if err := e.Peers.Forget("selected"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return rounds < 3
+	})
+	if !reflect.DeepEqual(attempts, []string{"selected", "other", "other", "other"}) {
+		t.Fatalf("attempts: %v", attempts)
+	}
+}
