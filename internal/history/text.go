@@ -166,6 +166,26 @@ func Title(entry Entry) string {
 
 const maxTitleRunes = 80
 
+const MaxNoteRunes = 80
+
+// CleanNote normalizes a custom note to a bounded single line.
+func CleanNote(note string) string {
+	note = strings.TrimSpace(strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace(note))
+	if utf8.RuneCountInString(note) <= MaxNoteRunes {
+		return note
+	}
+	var b strings.Builder
+	n := 0
+	for _, r := range note {
+		if n == MaxNoteRunes {
+			break
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return strings.TrimSpace(b.String())
+}
+
 // TitleTruncated reports that the list title dropped part of the text.
 // Offloaded bodies keep only that title in memory.
 func TitleTruncated(entry Entry) bool {
@@ -177,6 +197,9 @@ func TitleTruncated(entry Entry) bool {
 
 // Matches checks inline text and display fields without copying long bodies.
 func Matches(entry Entry, query string) bool {
+	if entry.Pinned && entry.Note != "" && strcase.Contains(entry.Note, query) {
+		return true
+	}
 	if entry.Kind == string(clip.KindFiles) {
 		if strcase.Contains(entry.FileName+" "+entry.Peer+" "+entry.SourceApp, query) {
 			return true

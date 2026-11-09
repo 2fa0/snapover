@@ -68,6 +68,30 @@ func (s *Store) entryBytesLocked(entry Entry) (int64, error) {
 
 func (s *Store) entryBytes(entry Entry) (int64, error) {
 	size := int64(len(entry.Text))
+	if HasFileSnapshot(entry) {
+		err := filepath.WalkDir(s.pinFilesDir(entry.ID), func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				if os.IsNotExist(err) {
+					return nil
+				}
+				return err
+			}
+			if d.Type().IsRegular() {
+				info, err := d.Info()
+				if os.IsNotExist(err) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				size += info.Size()
+			}
+			return nil
+		})
+		if err != nil {
+			return 0, err
+		}
+	}
 	paths := []string{}
 	if entry.FileBundle != "" {
 		path, err := s.bundlePath(entry.FileBundle)
@@ -110,10 +134,30 @@ func (s *Store) entryBytes(entry Entry) (int64, error) {
 // Add writes under the same lock, so its unpublished assets cannot be collected.
 func (s *Store) cleanOrphansLocked() error {
 	live := make(map[string]bool, len(s.entries))
+	pinnedSnapshots := make(map[string]bool, len(s.entries))
 	for _, entry := range s.entries {
 		live[entry.ID] = true
+		if entry.Pinned && HasFileSnapshot(entry) {
+			pinnedSnapshots[entry.ID] = true
+		}
 	}
 	var failures []error
+	if entries, err := os.ReadDir(filepath.Join(s.dir, "pinned-files")); err == nil {
+		for _, entry := range entries {
+			id := entry.Name()
+			if pinnedSnapshots[id] {
+				continue
+			}
+			if _, err := ulid.ParseStrict(id); err != nil {
+				continue
+			}
+			if err := os.RemoveAll(filepath.Join(s.dir, "pinned-files", id)); err != nil && !os.IsNotExist(err) {
+				failures = append(failures, err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		failures = append(failures, err)
+	}
 	for _, dir := range []string{"blobs", "thumbs", "previews", "texts", "files"} {
 		entries, err := os.ReadDir(filepath.Join(s.dir, dir))
 		if err != nil {

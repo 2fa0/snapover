@@ -164,22 +164,24 @@ func (MyGoBoard) prepareWrite(item Item, remote bool) (PreparedWrite, error) {
 		if len(item.Files) == 0 {
 			return PreparedWrite{}, errEmptyWrite
 		}
+		markerFormat := localFormat
 		if remote {
-			var items []transfer.Item
-			for _, file := range data.Items() {
-				var reps []transfer.Representation
-				for _, format := range file.Formats() {
-					raw, err := file.Read(format)
-					if err != nil {
-						return PreparedWrite{}, err
-					}
-					reps = append(reps, transfer.Bytes(format, raw))
-				}
-				reps = append(reps, transfer.Bytes(remoteFormat, remoteMarker))
-				items = append(items, transfer.NewItem(reps...))
-			}
-			data = transfer.New(items...)
+			markerFormat = remoteFormat
 		}
+		var items []transfer.Item
+		for _, file := range data.Items() {
+			var reps []transfer.Representation
+			for _, format := range file.Formats() {
+				raw, err := file.Read(format)
+				if err != nil {
+					return PreparedWrite{}, err
+				}
+				reps = append(reps, transfer.Bytes(format, raw))
+			}
+			reps = append(reps, transfer.Bytes(markerFormat, remoteMarker))
+			items = append(items, transfer.NewItem(reps...))
+		}
+		data = transfer.New(items...)
 		return PreparedWrite{Publish: func() error { return publishClipboard(data, item.Kind, item.Size) }}, nil
 	}
 	var reps []transfer.Representation
