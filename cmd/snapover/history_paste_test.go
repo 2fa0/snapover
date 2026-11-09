@@ -129,18 +129,18 @@ func TestHistoryPasteSuccessQueuesToastOnce(t *testing.T) {
 	a.historyPaste = r
 	r.result <- pasteResult{item: item}
 	a.completeHistoryPaste(r)
-	if a.pendingToast != "已写回剪贴板" || a.flash != "" || a.historyPaste != nil {
-		t.Fatalf("success did not queue a one-shot toast: toast=%q flash=%q paste=%v", a.pendingToast, a.flash, a.historyPaste)
+	if a.pendingToast.text != "已写回剪贴板" || a.pendingToast.kind != toastSuccess || a.flash != "" || a.historyPaste != nil {
+		t.Fatalf("success did not queue a one-shot toast: toast=%+v flash=%q paste=%v", a.pendingToast, a.flash, a.historyPaste)
 	}
 	tt := ui.NewTester(a.view, 960, 640)
-	if a.pendingToast != "" {
+	if a.pendingToast.text != "" {
 		t.Fatal("main window view did not consume the toast")
 	}
 	if !tt.HasText("已写回剪贴板") {
 		t.Fatal("toast text was not shown")
 	}
 	tt.Frame()
-	if a.pendingToast != "" {
+	if a.pendingToast.text != "" {
 		t.Fatal("later frames requeued the toast")
 	}
 }
@@ -160,7 +160,7 @@ func TestHistoryPasteSuccessKeepsUnrelatedFlash(t *testing.T) {
 	a.historyPaste = r
 	r.result <- pasteResult{item: item}
 	a.completeHistoryPaste(r)
-	if a.flash != "写入失败" || a.pendingToast != "已写回剪贴板" {
+	if a.flash != "写入失败" || a.pendingToast.text != "已写回剪贴板" {
 		t.Fatal("success cleared an unrelated flash")
 	}
 }
@@ -177,12 +177,12 @@ func TestClosedMainWindowDropsQueuedPasteToast(t *testing.T) {
 	a.refreshEntries()
 	r := &pasteRequest{id: entry.ID, result: make(chan pasteResult, 1)}
 	a.historyPaste = r
-	a.pendingToast = ""
+	a.pendingToast = queuedToast{}
 	// Closing the main window cancels an in-flight history paste.
 	a.cancelHistoryPaste()
 	r.result <- pasteResult{item: item}
 	a.completeHistoryPaste(r)
-	if a.pendingToast != "" || len(board.writes) != 0 {
+	if a.pendingToast.text != "" || len(board.writes) != 0 {
 		t.Fatal("closed window still toasted or wrote a late paste")
 	}
 }

@@ -143,6 +143,12 @@ func (a *app) historyThumb(c *ui.Context, entry history.Entry, t *ui.Theme, sele
 			ui.Image(c, bmp).Size(size, size).Fit(ui.Contain).Radius(6)
 			return
 		}
+		// An image whose preview is still being decoded holds its square
+		// with the placeholder rather than jump to a picture later.
+		if a.thumbLoading(entry.ID) {
+			skeleton(c, size, size, 6)
+			return
+		}
 	}
 	// Filled shapes mark the items that name something on disk (files,
 	// folders, images), while text keeps the outline page with its lines: the

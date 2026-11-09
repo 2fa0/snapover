@@ -136,7 +136,12 @@ func (a *app) otherDiskUsageSettings(c *ui.Context) {
 				}
 			}
 			if a.diskUsagePending != nil {
-				ui.Text(c, a.tr("正在统计文件与备份占用…")).FontSize(12).TextColor(c.Theme().TextMuted)
+				// The rows keep their room while the walk is running, so that
+				// the numbers land where the eye already is.
+				ui.Column(c).Gap(12).FillWidth().Children(func() {
+					ui.Text(c, a.tr("正在统计文件与备份占用…")).FontSize(12).TextColor(c.Theme().TextMuted)
+					skeletonRows(c, 3)
+				})
 				c.After(50 * time.Millisecond)
 			} else if a.diskUsageValid {
 				a.storageUsageLine(c, "文件剪贴板缓存", a.diskUsage.cache, a.diskUsage.cacheErr)
@@ -157,6 +162,7 @@ func (a *app) otherDiskUsageSettings(c *ui.Context) {
 						if err := mygo.Shell.OpenPath(dir); err != nil {
 							a.update(func() {
 								a.status = "打开历史备份位置失败，请从文件管理器打开数据目录：" + err.Error()
+								a.notify(toastFailure, "打开历史备份位置失败，请从文件管理器打开数据目录")
 							})
 						}
 					}()

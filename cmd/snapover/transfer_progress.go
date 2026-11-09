@@ -126,6 +126,17 @@ func (t transferProgress) label() string {
 	}
 }
 
+// tone tells a finished transfer from a failed one, which the bar shows.
+func (t transferProgress) tone() progressTone {
+	switch t.phase {
+	case phaseComplete:
+		return toneDone
+	case phaseError:
+		return toneFailed
+	}
+	return toneRunning
+}
+
 func (t transferProgress) detail() string {
 	if t.total <= 0 || (t.phase != phaseSending && t.phase != phaseReceiving) {
 		return ""
@@ -341,7 +352,7 @@ func (a *app) sidebarTransfer(c *ui.Context, t *ui.Theme) {
 		return
 	}
 	ui.Text(c, a.tr(label)).FontSize(11).TextColor(t.TextMuted).MaxLines(3).Tooltip(a.tr(label)).ContentTransition(ui.ContentTransition{})
-	ui.Progress(c, a.transfer.bar()).FillWidth().Label(a.tr("文件同步进度"))
+	progressBar(c, a.transfer.bar(), a.transfer.tone(), a.tr("文件同步进度"))
 }
 
 func (a *app) canShowTransferHUD() bool {
@@ -397,7 +408,7 @@ func (a *app) transferView(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Padding(16).Gap(10).Background(t.Background).Children(func() {
 		ui.Text(c, a.tr(a.transfer.label())).Bold().MaxLines(2)
-		ui.Progress(c, a.transfer.bar()).FillWidth().Label(a.tr("文件同步进度"))
+		progressBar(c, a.transfer.bar(), a.transfer.tone(), a.tr("文件同步进度"))
 		if detail := a.transfer.detail(); detail != "" {
 			ui.Text(c, detail).FontSize(12).TextColor(t.TextMuted)
 		}
