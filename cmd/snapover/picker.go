@@ -541,6 +541,13 @@ func (a *app) pickerView(c *ui.Context) {
 				ui.Text(c, a.tr(a.pickerSearch.countLabel(len(shown)))).FontSize(11).TextColor(t.TextMuted).SingleLine().Shrink(0)
 			}
 		})
+		a.sourceSuggestionChips(c, a.pickQuery, func(name string) {
+			a.pickQuery = name
+			a.pickRestore, a.pickRestoreID, a.pickRestoreIndex = true, "", 0
+			a.pickSel = 0
+			a.pickList.ScrollTo(0, ui.Start)
+			searchField.Focus()
+		})
 		a.noteEditorRow(c, true)
 		switch {
 		case len(a.entries) == 0:

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"image"
 	"image/png"
 	"os"
@@ -115,18 +114,20 @@ func TestMainHistoryPreviewLoadsAndKeepsMainWindow(t *testing.T) {
 					t.Errorf("render main history preview: %v", err)
 				}
 			})
-			opened := false
-			original := openSystemImage
-			openSystemImage = func(context.Context, string) error { opened = true; return nil }
-			t.Cleanup(func() { openSystemImage = original })
 			mygo.RunOnMain(func() {
 				if kind == "text" {
 					a.loadPickText(entry.ID, parent)
 				} else {
-					a.loadPickImage(entry.ID, parent)
+					a.openImageViewer(entry)
 				}
 			})
-			waitForImageOpen(t, a)
+			if kind == "text" {
+				waitForImageOpen(t, a)
+			} else {
+				waitForViewer(t, func() bool {
+					return a.imageViewer != nil && (a.imageViewer.err != "" || a.imageViewer.request == nil)
+				})
+			}
 			mygo.RunOnMain(func() {
 				if a.win != parent || parent.IsDestroyed() || a.pickPreview.win != nil {
 					t.Error("opening full content closed the main window or retained the preview")
@@ -137,8 +138,10 @@ func TestMainHistoryPreviewLoadsAndKeepsMainWindow(t *testing.T) {
 					} else if _, err := a.pickOriginal.CapturePage(); err != nil {
 						t.Errorf("render full text: %v", err)
 					}
-				} else if !opened {
-					t.Error("original image did not open")
+				} else if viewer := a.imageViewer; viewer == nil || viewer.win == nil {
+					t.Error("the image viewer did not open")
+				} else if _, err := viewer.win.CapturePage(); err != nil {
+					t.Errorf("render the image viewer: %v", err)
 				}
 				startPreview()
 				parent.Close()
@@ -148,6 +151,7 @@ func TestMainHistoryPreviewLoadsAndKeepsMainWindow(t *testing.T) {
 				if a.win != nil || a.pickPreview.win != nil || a.pickPreview.request != nil {
 					t.Error("late load reopened a preview after the main window closed")
 				}
+				a.closeImageViewer()
 			})
 		})
 	}

@@ -1,11 +1,13 @@
 Adapted components: SearchBar, Alert, Hotkey, InputNumber, Form.Group, Form.Field,
-Empty, Toast, Progress, Badge (status dot), Skeleton
+Empty, Toast, Progress, Badge (status dot), Skeleton, ImageViewer,
+Autocomplete (source suggestions)
 Source: https://github.com/lobehub/lobe-mygo
 Revision: 5b3ecde8b184a2ab9d9aa2c8cac2ca3e6266a42b
 Files: pkg/field/searchbar.go, pkg/field/input.go, pkg/field/number.go,
 pkg/feedback/alert.go, pkg/feedback/toast.go, pkg/feedback/progress.go,
 pkg/feedback/badge.go, pkg/display/hotkey.go, pkg/display/empty.go,
-pkg/display/skeleton.go, pkg/form/group.go, pkg/form/view.go
+pkg/display/skeleton.go, pkg/display/imageviewer.go, pkg/field/autocomplete.go,
+pkg/form/group.go, pkg/form/view.go
 Retrieved: 2026-11-09
 
 MIT License

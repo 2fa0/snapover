@@ -283,6 +283,14 @@ func (a *app) pickerEntryMenu(m *ui.Menu, entry history.Entry) {
 	if files && !available {
 		m.Item(a.tr("文件正文未保存在历史中，请重新复制")).Disabled(true)
 	}
+	if entry.Kind == string(clip.KindImage) {
+		if m.Item(a.tr("放大查看")).Chosen() {
+			// The quick history steps aside for the picture, as it does for
+			// the system viewer.
+			a.closePicker()
+			a.openImageViewer(entry)
+		}
+	}
 	m.Separator()
 	label := a.tr("置顶")
 	if entry.Pinned {
@@ -325,6 +333,11 @@ func (a *app) historyEntryMenu(m *ui.Menu, entry history.Entry) {
 	}
 	if files && !available {
 		m.Item(a.tr("文件正文未保存在历史中，请重新复制")).Disabled(true)
+	}
+	if entry.Kind == string(clip.KindImage) {
+		if m.Item(a.tr("放大查看")).Chosen() {
+			a.openImageViewer(entry)
+		}
 	}
 	m.Separator()
 	label := a.tr("置顶")

@@ -132,6 +132,9 @@ func (a *app) clampWindowsToDisplays() {
 	move(a.fileWin)
 	move(a.transferWin)
 	move(a.pickOriginal)
+	if a.imageViewer != nil {
+		move(a.imageViewer.win)
+	}
 	if a.networkGuide != nil {
 		move(a.networkGuide.win)
 	}
