@@ -194,8 +194,11 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 			if err != nil {
 				w, h = 240, 60
 			}
-			workW, workH := previewWorkSize()
-			winW, winH := previewFlyoutSize(w, h, workW, workH)
+			area := a.pickArea
+			if parent != a.picker {
+				area = windowWorkArea(parent)
+			}
+			winW, winH := previewFlyoutSize(w, h, area.Width, area.Height)
 			var textPreview *editor.State
 			if isText && err == nil {
 				textPreview = newPickTextEditor(text, a.tr("文本预览"), pickTextLanguage(text))

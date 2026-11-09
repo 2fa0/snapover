@@ -26,7 +26,7 @@ func (a *app) togglePicker() {
 	a.openPicker(false)
 }
 
-func (a *app) openPicker(atCaret bool) {
+func (a *app) openPicker(atPointer bool) {
 	a.pasteSerial.Add(1)
 	if a.picker != nil {
 		a.picker.Close()
@@ -53,18 +53,19 @@ func (a *app) openPicker(atCaret bool) {
 		a.pickSel = 0
 	}
 	a.pickList.ScrollTo(0, ui.Start)
-	// The flyout cannot grow past the work area it opens in: dragging toward
-	// the screen edge must stop where the window would leave it.
-	area := mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint()).WorkArea
-	a.pickArea = area
 	width, height := a.pickerSize()
 	a.pickSizeW, a.pickSizeH = width, height
 	a.pickDragW, a.pickDragH = float32(width), float32(height)
 	a.pickResizing = false
-	if atCaret && (runtime.GOOS == "darwin" || runtime.GOOS == "windows") {
+	// Shortcut panels stay on the working display. They follow the pointer
+	// only when it is on that display; otherwise they sit by the caret or
+	// in the front window so a leftover pointer on another screen is ignored.
+	if atPointer && (runtime.GOOS == "darwin" || runtime.GOOS == "windows") {
 		paste.Prompt()
 		bounds, scale := pickerScreenBounds(a.pasteTo, width, height)
 		a.pickPlaced, a.pickRect, a.pickScale = true, bounds, scale
+		// The flyout cannot grow past the work area it opens in.
+		a.pickArea = pickerAreaAt(bounds)
 		a.picker = mygo.NewFlyout(mygo.FlyoutOptions{
 			Tray: a.tray, Width: bounds.Width, Height: bounds.Height,
 			Hidden: true, Focusable: true, Shadow: true,
@@ -79,6 +80,7 @@ func (a *app) openPicker(atCaret bool) {
 	} else {
 		// The platform places this one next to the tray icon; the first
 		// frame reads back where it landed.
+		a.pickArea = mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint()).WorkArea
 		a.pickPlaced = false
 		a.pickRect, a.pickScale = mygo.Rectangle{}, 1
 		opts := mygo.FlyoutOptions{
@@ -113,18 +115,25 @@ func (a *app) openPicker(atCaret bool) {
 		a.pickBusy = false
 		a.pickRestore = false
 		a.pickMutationPending = false
+		if a.editNotePicker {
+			a.cancelEditNote()
+		}
 	})
 	a.picker.Show()
 	a.picker.Focus()
 	// A tray flyout is placed by the platform: read where it landed so a drag
-	// or a resize moves it from there. The caret flyout is already recorded.
+	// or a resize moves it from there. The pointer flyout is already recorded.
 	a.syncPickerPlacement()
 }
 
 func pickerBounds(anchor, area mygo.Rectangle, width, height int) mygo.Rectangle {
 	const gap = 4
 	width, height = min(width, area.Width), min(height, area.Height)
-	x, y := anchor.X, anchor.Y+anchor.Height+gap
+	// Center on the pointer so a large panel stays around the hand instead
+	// of hanging off to the right. Keep the pointer just above the panel so
+	// it does not rest on a history row.
+	x := anchor.X + max(anchor.Width, 0)/2 - width/2
+	y := anchor.Y + anchor.Height + gap
 	if y+height > area.Y+area.Height {
 		y = anchor.Y - height - gap
 	}
@@ -133,6 +142,54 @@ func pickerBounds(anchor, area mygo.Rectangle, width, height int) mygo.Rectangle
 		Y:     max(area.Y, min(y, area.Y+area.Height-height)),
 		Width: width, Height: height,
 	}
+}
+
+// A caret is only an insertion point when it is a short, narrow rectangle.
+// Accessibility often returns the whole editor instead.
+func trustworthyPickerCaret(r mygo.Rectangle) bool {
+	return r.Height > 0 && r.Height <= 80 && r.Width >= 0 && r.Width <= 480
+}
+
+func pickerCenteredIn(host, area mygo.Rectangle, width, height int) mygo.Rectangle {
+	width, height = min(width, area.Width), min(height, area.Height)
+	x := host.X + (host.Width-width)/2
+	y := host.Y + (host.Height-height)/2
+	return mygo.Rectangle{
+		X:     max(area.X, min(x, area.X+area.Width-width)),
+		Y:     max(area.Y, min(y, area.Y+area.Height-height)),
+		Width: width, Height: height,
+	}
+}
+
+type pickerPlaceInput struct {
+	width, height int
+	mouse         mygo.Rectangle
+	mouseArea     mygo.Rectangle
+	mouseOnWork   bool
+	caret         mygo.Rectangle
+	hasCaret      bool
+	window        mygo.Rectangle
+	hasWindow     bool
+	workArea      mygo.Rectangle
+}
+
+// placeShortcutPicker keeps the panel on the working display. The pointer
+// wins only when it is already there.
+func placeShortcutPicker(p pickerPlaceInput) mygo.Rectangle {
+	work := p.workArea
+	if work.Width <= 0 || work.Height <= 0 {
+		work = p.mouseArea
+	}
+	if p.mouseOnWork {
+		return pickerBounds(p.mouse, p.mouseArea, p.width, p.height)
+	}
+	if p.hasCaret && trustworthyPickerCaret(p.caret) {
+		return pickerBounds(p.caret, work, p.width, p.height)
+	}
+	if p.hasWindow {
+		return pickerCenteredIn(p.window, work, p.width, p.height)
+	}
+	return pickerBounds(p.mouse, p.mouseArea, p.width, p.height)
 }
 
 // pickerSize is the size the picker opens at: the one the pointer left it at
@@ -231,6 +288,11 @@ func pickerAreaAt(bounds mygo.Rectangle) mygo.Rectangle {
 // bounds are in. A test moves it to drive a drag.
 var pickerCursor = func() mygo.Point { return mygo.Screen.CursorScreenPoint() }
 
+var pickerDisplayAt = func(p mygo.Point) (mygo.Rectangle, float64) {
+	d := mygo.Screen.DisplayNearestPoint(p)
+	return d.WorkArea, d.ScaleFactor
+}
+
 // dragPickerMove moves the window with the pointer. The picker has no title
 // bar, so its padding and the seams beside the search field do the job: they
 // take the press themselves, while a row, the field and the grips above them
@@ -258,21 +320,38 @@ func (a *app) dragPickerMove(handle ui.Element) {
 		// window a frame behind it.
 		a.closePickPreview()
 	}
+	a.followPickerDisplay(at)
 	x, y := a.pickX+at.X-a.pickGrab.X, a.pickY+at.Y-a.pickGrab.Y
 	if a.pickArea.Width > 0 && a.pickArea.Height > 0 {
-		// Keep the whole window on the screen it is dragged across. Stopping
-		// at its edge holds no offset: dragging back moves the window at once.
-		x = min(max(x, a.pickArea.X), a.pickArea.X+a.pickArea.Width-a.pickSizeW)
-		y = min(max(y, a.pickArea.Y), a.pickArea.Y+a.pickArea.Height-a.pickSizeH)
+		// Stay on one display. Crossing into another work area moves the
+		// whole window there; stopping at an edge holds no offset.
+		x = min(max(x, a.pickArea.X), max(a.pickArea.X, a.pickArea.X+a.pickArea.Width-a.pickSizeW))
+		y = min(max(y, a.pickArea.Y), max(a.pickArea.Y, a.pickArea.Y+a.pickArea.Height-a.pickSizeH))
 	}
-	rect := a.pickRect
-	rect.X, rect.Y = x, y
+	rect := mygo.Rectangle{X: x, Y: y, Width: a.pickSizeW, Height: a.pickSizeH}
 	if rect == a.pickRect {
 		return
 	}
 	a.pickRect = rect
 	if a.picker != nil {
 		setPickerBounds(a.picker, rect, a.pickScale)
+	}
+}
+
+func (a *app) followPickerDisplay(at mygo.Point) {
+	area, scale := pickerDisplayAt(at)
+	if area.Width <= 0 || area.Height <= 0 {
+		return
+	}
+	a.pickArea = area
+	if scale > 0 {
+		a.pickScale = scale
+	}
+	if a.pickSizeW > area.Width {
+		a.pickSizeW = area.Width
+	}
+	if a.pickSizeH > area.Height {
+		a.pickSizeH = area.Height
 	}
 }
 
@@ -359,7 +438,12 @@ func (a *app) closePicker() {
 func (a *app) pickerView(c *ui.Context) {
 	a.drainThumbnails()
 	a.pollHistoryStorage()
+	editingNote := a.editNoteID != "" && a.editNotePicker
 	if c.Shortcut(0, ui.KeyEscape) {
+		if editingNote {
+			a.cancelEditNote()
+			return
+		}
 		a.finishPick()
 		return
 	}
@@ -383,7 +467,7 @@ func (a *app) pickerView(c *ui.Context) {
 	var hoverID string
 	var hoverBounds ui.Rect
 	shown := a.filtered(a.pickQuery)
-	if len(shown) > 0 {
+	if len(shown) > 0 && !editingNote {
 		if c.Shortcut(0, ui.KeyDown) {
 			a.movePick(1)
 		}
@@ -410,7 +494,11 @@ func (a *app) pickerView(c *ui.Context) {
 		// The count sits beside the field, where it costs no room until a
 		// query takes the placeholder's place.
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).Label(a.tr("搜索快速历史")).AutoFocus().Placeholder(a.tr("搜索内容或来源")).Grow(1).MinWidth(0).OnTextKey(func(k ui.TextKey) bool {
+			field := ui.TextInput(c.Key("pick-query"), &a.pickQuery).Label(a.tr("搜索快速历史")).Placeholder(a.tr("搜索内容或来源")).Grow(1).MinWidth(0)
+			if !editingNote {
+				field = field.AutoFocus()
+			}
+			field = field.OnTextKey(func(k ui.TextKey) bool {
 				if k.Mods == ui.Alt && k.Key == ui.KeyEnter || k.Mods == ui.Cmd|ui.Shift && (k.Key == ui.KeyP || k.Key == ui.KeyBackspace) || k.Mods == ui.Cmd && k.Key >= ui.Key1 && k.Key <= ui.Key9 {
 					a.pickQuery = k.Text()
 					return a.pickerActionKey(k.Mods, k.Key)
@@ -440,13 +528,14 @@ func (a *app) pickerView(c *ui.Context) {
 			if a.pickSel < 0 && len(shown) > 0 {
 				a.pickSel = 0
 			}
-			if field.Submitted() {
+			if field.Submitted() && !editingNote {
 				a.pastePicked()
 			}
 			if strings.TrimSpace(a.pickQuery) != "" {
 				ui.Text(c, a.tr(a.pickerSearch.countLabel(len(shown)))).FontSize(11).TextColor(t.TextMuted).SingleLine().Shrink(0)
 			}
 		})
+		a.noteEditorRow(c, true)
 		switch {
 		case len(a.entries) == 0:
 			ui.Text(c, a.tr("还没有记录")).TextColor(t.TextMuted)
@@ -463,12 +552,6 @@ func (a *app) pickerView(c *ui.Context) {
 				})
 				var title ui.Element
 				titleText := a.entryTitle(entry)
-				if row.DoubleClicked() {
-					a.pickSel = i
-					a.pastePicked()
-				} else if row.Clicked() {
-					a.pickSel = i
-				}
 				row.Children(func() {
 					a.pickerThumb(c, entry, t, sel)
 					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {

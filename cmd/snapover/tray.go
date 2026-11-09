@@ -82,13 +82,9 @@ func (a *app) menuBarIconSettings(c *ui.Context) {
 				option.BorderColor(t.Accent)
 			}
 			option.Children(func() {
-				ui.Column(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Column(c).AlignItems(ui.Center).Children(func() {
 					if bmp := a.menuBarIconPreview(ids[i], t.Dark); bmp != nil {
 						ui.Image(c, bmp).Size(32, 32).Fit(ui.Contain)
-					}
-					text := ui.Text(c, label).FontSize(12)
-					if selected == i {
-						text.Bold().TextColor(t.Accent)
 					}
 				})
 			})
@@ -182,11 +178,14 @@ func (a *app) refreshTray() {
 		return
 	}
 	status := a.displayStatus()
-	if a.paused {
+	if a.paused && !a.privacyMode {
 		status = "已暂停"
 	}
-	if a.engine.IgnoreNextCopyPending() {
+	if a.engine.IgnoreNextCopyPending() && !a.privacyMode {
 		status = "等待忽略下一次复制（不记录、不同步）"
+	}
+	if label, ok := a.transferStatusText(); ok {
+		status = label
 	}
 	if status == "" {
 		status = "Snapover"
@@ -198,17 +197,20 @@ func (a *app) refreshTray() {
 }
 
 func (a *app) trayMenu() *mygo.Menu {
-	// 菜单只放动作，不放版本号和连接状态：状态在托盘提示里，页面切换在窗口侧栏里。
+	// 菜单只放高频动作，不放版本号、连接状态和低频设置项：状态在托盘提示里，页面切换和低频配置在主窗口里。
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Label: a.tr("快速历史"), Click: func(*mygo.MenuItem, *mygo.Window) { a.togglePicker() }},
 		{Label: a.tr("设置"), Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageSettings) }},
-		{Label: a.tr("检查更新…"), Click: func(*mygo.MenuItem, *mygo.Window) { a.checkForUpdates() }},
 		mygo.Separator(),
+		{ID: "privacy-mode", Label: a.tr("隐私模式"), Type: mygo.MenuItemCheckbox, Checked: a.privacyMode, Click: func(item *mygo.MenuItem, _ *mygo.Window) { a.privacyMode = item.Checked; a.savePrivacy() }},
 		{
-			ID:     "cancel-ignore-next-copy",
-			Label:  a.tr("取消忽略下一次复制"),
-			Hidden: !a.engine.IgnoreNextCopyPending(),
-			Click:  func(*mygo.MenuItem, *mygo.Window) { a.setIgnoreNextCopy(false) },
+			ID:      "ignore-next-copy",
+			Label:   a.tr("忽略下一次复制"),
+			Type:    mygo.MenuItemCheckbox,
+			Checked: a.engine.IgnoreNextCopyPending(),
+			Click: func(item *mygo.MenuItem, _ *mygo.Window) {
+				a.setIgnoreNextCopy(item.Checked)
+			},
 		},
 		{
 			Label:   a.tr("暂停同步"),
@@ -219,30 +221,8 @@ func (a *app) trayMenu() *mygo.Menu {
 				a.saveSettings()
 			},
 		},
-		{
-			Label:   a.tr("开机启动"),
-			Type:    mygo.MenuItemCheckbox,
-			Checked: a.openAtLogin,
-			Click: func(item *mygo.MenuItem, _ *mygo.Window) {
-				a.setOpenAtLogin(item.Checked)
-			},
-		},
 		mygo.Separator(),
 		{Label: a.tr("退出"), Role: mygo.RoleQuit},
-	})
-}
-
-func (a *app) ignoreNextCopySettings(c *ui.Context) {
-	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, a.tr("忽略下一次复制")).Bold().Grow(1).Tooltip(a.tr("该次复制不记录历史，也不同步"))
-		if a.engine.IgnoreNextCopyPending() {
-			ui.Text(c, a.tr("等待复制…")).FontSize(12).TextColor(c.Theme().TextMuted)
-			if ui.Button(c, a.tr("取消")).Label(a.tr("取消忽略下一次复制")).Clicked() {
-				a.setIgnoreNextCopy(false)
-			}
-		} else if ui.Button(c, a.tr("忽略一次")).Label(a.tr("启用忽略下一次复制")).Tooltip(a.tr("该次复制不记录历史，也不同步")).Clicked() {
-			a.setIgnoreNextCopy(true)
-		}
 	})
 }
 

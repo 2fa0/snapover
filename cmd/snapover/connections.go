@@ -29,38 +29,82 @@ func (a *app) peerIDForAddress(addr string) string {
 	return ""
 }
 
-func (a *app) connectionCandidates() []lan.Endpoint {
-	p, paired := a.engine.Peers.Get(a.targetPeerID)
+func (a *app) connectionCandidates() []clipsync.DialCandidate {
+	if a.dialPinned {
+		return a.candidatesFor(a.targetPeerID)
+	}
+	var out []clipsync.DialCandidate
+	seen := map[string]bool{}
+	for _, id := range a.autoPeerOrder() {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, a.candidatesFor(id)...)
+	}
+	return out
+}
+
+func (a *app) autoPeerOrder() []string {
+	var ids []string
+	if a.targetPeerID != "" {
+		ids = append(ids, a.targetPeerID)
+	}
+	if a.engine != nil && a.engine.Peers != nil {
+		for _, dev := range a.engine.Peers.List() {
+			ids = append(ids, dev.ID)
+		}
+	}
+	return ids
+}
+
+func (a *app) candidatesFor(peerID string) []clipsync.DialCandidate {
+	tag := func(ep lan.Endpoint) clipsync.DialCandidate {
+		return clipsync.DialCandidate{PeerID: peerID, Endpoint: ep}
+	}
+	var p clipsync.Peer
+	paired := false
+	if a.engine != nil && a.engine.Peers != nil {
+		p, paired = a.engine.Peers.Get(peerID)
+	}
 	if !paired {
 		if a.dialProposed.Addr == "" || (a.dialProposed.Route == lan.RouteTailscale && !a.allowTailscale) {
 			return nil
 		}
-		return []lan.Endpoint{a.dialProposed}
+		if peerID != "" && peerID != a.targetPeerID {
+			return nil
+		}
+		return []clipsync.DialCandidate{tag(a.dialProposed)}
 	}
-	// Proposed edits stay in memory until a handshake verifies this device.
-	if ep := a.dialProposed; ep.Addr != "" {
-		// Resolve the legacy address before overriding a classified endpoint.
-		p.LANAddr = p.LANAddress()
-		p.Addr = ""
-		if ep.Route == lan.RouteTailscale {
-			p.TailscaleAddr = ep.Addr
-		} else {
-			p.LANAddr = ep.Addr
+	if peerID == a.targetPeerID {
+		// Proposed edits stay in memory until a handshake verifies this device.
+		if ep := a.dialProposed; ep.Addr != "" {
+			// Resolve the legacy address before overriding a classified endpoint.
+			p.LANAddr = p.LANAddress()
+			p.Addr = ""
+			if ep.Route == lan.RouteTailscale {
+				p.TailscaleAddr = ep.Addr
+			} else {
+				p.LANAddr = ep.Addr
+			}
 		}
 	}
-	var out []lan.Endpoint
+	var out []clipsync.DialCandidate
 	for _, found := range a.discovered {
-		if found.ID == a.targetPeerID {
-			out = append(out, lan.Endpoint{Addr: found.Addr, Route: lan.RouteLAN})
+		if found.ID == peerID {
+			out = append(out, tag(lan.Endpoint{Addr: found.Addr, Route: lan.RouteLAN}))
 			break
 		}
 	}
-	return append(out, p.Endpoints(a.allowTailscale)...)
+	for _, ep := range p.Endpoints(a.allowTailscale) {
+		out = append(out, tag(ep))
+	}
+	return out
 }
 
 func (a *app) refreshConnectionCandidates() {
 	if a.dialTarget != nil {
-		a.dialTarget.Update(a.connectionCandidates())
+		a.dialTarget.UpdateCandidates(a.connectionCandidates())
 	}
 }
 
@@ -108,6 +152,7 @@ func (a *app) startConnection(ep lan.Endpoint, peerID string, explicit bool) {
 	}
 	a.cancelProbe()
 	a.stopDial()
+	a.dialPinned = explicit
 	a.peer, a.targetPeerID = ep.Addr, peerID
 	a.addressRoute = 0
 	if ep.Route == lan.RouteTailscale {
@@ -128,7 +173,8 @@ func (a *app) startConnection(ep lan.Endpoint, peerID string, explicit bool) {
 	if !a.isPaired(peerID) {
 		a.engine.SetPairing(true)
 	}
-	target := clipsync.NewDialTarget(peerID, a.dialSeq, a.connectionCandidates())
+	target := clipsync.NewDialTarget(peerID, a.dialSeq, nil)
+	target.UpdateCandidates(a.connectionCandidates())
 	if explicit {
 		target.Prefer(ep)
 	}

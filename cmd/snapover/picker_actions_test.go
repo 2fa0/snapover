@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -193,16 +194,99 @@ func TestPickerPinShortcutAndFixedKeyIgnoreRowOrder(t *testing.T) {
 func TestPickerFileMenuAndBusyMutationGuards(t *testing.T) {
 	a := interfaceTestApp(t)
 	entry := historyFileEntry(t, a, true)
+	revealed := make(chan string, 1)
+	restore := revealFileInFolder
+	revealFileInFolder = func(path string) { revealed <- path }
+	t.Cleanup(func() { revealFileInFolder = restore })
+
 	tt := ui.NewTester(a.pickerView, 380, 440)
 	if err := tt.RightClick(entry.FileName); err != nil {
 		t.Fatal(err)
 	}
+	if err := tt.ChooseMenuItem(revealFileLabel()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case path := <-revealed:
+		if path != entry.FilePaths[0] {
+			t.Fatal(path)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reveal worker did not finish")
+	}
+
+	for _, p := range entry.FilePaths {
+		if err := os.RemoveAll(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.fileAvailability = map[string]fileAvailabilityResult{entry.ID: {id: entry.ID, available: false, at: time.Now()}}
+	tt.Frame()
+	if err := tt.RightClick(entry.FileName); err != nil {
+		t.Fatal(err)
+	}
 	if err := tt.ChooseMenuItem("只复制"); err == nil {
-		t.Fatal("file metadata offered as a complete copy")
+		t.Fatal("missing file metadata offered as a complete copy")
 	}
 	a.historyCleanupPending = make(chan historyCleanupResult, 1)
 	a.performPickerAction(entry.ID, "delete")
 	if len(a.hist.List()) != 1 || a.pickRestore {
 		t.Fatal("concurrent cleanup allowed deletion")
+	}
+}
+
+func TestPinnedNoteEditorAndSearchInPickerAndMainHistory(t *testing.T) {
+	a := interfaceTestApp(t)
+	item, _ := clip.FromText("https://internal.example.com/admin")
+	entry, err := a.hist.Add(history.DirLocal, "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.hist.SetPinned(entry.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	a.refreshEntries()
+
+	tt := ui.NewTester(a.pickerView, 380, 440)
+	if err := tt.RightClick(entry.Text); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.ChooseMenuItem("设置备注…"); err != nil {
+		t.Fatal(err)
+	}
+	if a.editNoteID != entry.ID {
+		t.Fatalf("note editor did not open for %s", entry.ID)
+	}
+	a.editNoteText = "内网管理后台"
+	tt.Frame()
+	if err := tt.Click("保存备注"); err != nil {
+		t.Fatal(err)
+	}
+	waitPickerMutation(t, a, tt)
+	if !strings.Contains(strings.Join(tt.Texts(), " "), "备注：内网管理后台") {
+		t.Fatalf("picker did not render saved note: %v", tt.Texts())
+	}
+
+	// Search by note in main history page and verify shortcut badge + note match detail.
+	a.page = pageHistory
+	a.query = "管理后台"
+	mainTT := ui.NewTester(a.view, 960, 560)
+	if !mainTT.HasText(entry.Text) || !mainTT.HasText(pinShortcutLabel(1)) {
+		t.Fatalf("main history missing note search hit or shortcut badge: %v", mainTT.Texts())
+	}
+	if !strings.Contains(strings.Join(mainTT.Texts(), " "), "备注：内网管理后台") {
+		t.Fatalf("main history missing note match detail: %v", mainTT.Texts())
+	}
+
+	// Clear note via main history context menu.
+	if err := mainTT.RightClick(entry.Text); err != nil {
+		t.Fatal(err)
+	}
+	if err := mainTT.ChooseMenuItem("清除备注"); err != nil {
+		t.Fatal(err)
+	}
+	waitPickerMutation(t, a, mainTT)
+	if got := a.hist.List()[0]; got.Note != "" {
+		t.Fatalf("note was not cleared: %+v", got)
 	}
 }

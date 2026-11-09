@@ -115,21 +115,88 @@ func TestPickerBounds(t *testing.T) {
 		width, height int
 		want          mygo.Rectangle
 	}{
-		{"below caret", mygo.Rectangle{X: 200, Y: 200, Height: 20}, area, 380, 440, mygo.Rectangle{X: 200, Y: 224, Width: 380, Height: 440}},
-		{"mouse fallback", mygo.Rectangle{X: 200, Y: 200}, area, 380, 440, mygo.Rectangle{X: 200, Y: 204, Width: 380, Height: 440}},
-		{"above caret near bottom", mygo.Rectangle{X: 200, Y: 800, Height: 20}, area, 380, 440, mygo.Rectangle{X: 200, Y: 356, Width: 380, Height: 440}},
-		{"right screen edge", mygo.Rectangle{X: 1400, Y: 200, Height: 20}, area, 380, 440, mygo.Rectangle{X: 1060, Y: 224, Width: 380, Height: 440}},
-		{"display left of primary", mygo.Rectangle{X: -1500, Y: 200, Height: 20}, mygo.Rectangle{X: -1920, Y: 25, Width: 1920, Height: 1055}, 380, 440, mygo.Rectangle{X: -1500, Y: 224, Width: 380, Height: 440}},
-		{"display above primary", mygo.Rectangle{X: 200, Y: -800, Height: 20}, mygo.Rectangle{X: 0, Y: -1080, Width: 1920, Height: 1040}, 380, 440, mygo.Rectangle{X: 200, Y: -776, Width: 380, Height: 440}},
-		{"small work area", mygo.Rectangle{X: 100, Y: 100, Height: 20}, mygo.Rectangle{X: 0, Y: 25, Width: 320, Height: 400}, 380, 440, mygo.Rectangle{X: 0, Y: 25, Width: 320, Height: 400}},
+		{"below pointer", mygo.Rectangle{X: 200, Y: 200}, area, 380, 440, mygo.Rectangle{X: 10, Y: 204, Width: 380, Height: 440}},
+		{"above pointer near bottom", mygo.Rectangle{X: 200, Y: 800}, area, 380, 440, mygo.Rectangle{X: 10, Y: 356, Width: 380, Height: 440}},
+		{"right screen edge", mygo.Rectangle{X: 1400, Y: 200}, area, 380, 440, mygo.Rectangle{X: 1060, Y: 204, Width: 380, Height: 440}},
+		{"left screen edge", mygo.Rectangle{X: 50, Y: 200}, area, 380, 440, mygo.Rectangle{X: 0, Y: 204, Width: 380, Height: 440}},
+		{"display left of primary", mygo.Rectangle{X: -1500, Y: 200}, mygo.Rectangle{X: -1920, Y: 25, Width: 1920, Height: 1055}, 380, 440, mygo.Rectangle{X: -1690, Y: 204, Width: 380, Height: 440}},
+		{"display above primary", mygo.Rectangle{X: 200, Y: -800}, mygo.Rectangle{X: 0, Y: -1080, Width: 1920, Height: 1040}, 380, 440, mygo.Rectangle{X: 10, Y: -796, Width: 380, Height: 440}},
+		{"small work area", mygo.Rectangle{X: 100, Y: 100}, mygo.Rectangle{X: 0, Y: 25, Width: 320, Height: 400}, 380, 440, mygo.Rectangle{X: 0, Y: 25, Width: 320, Height: 400}},
 		// A custom size keeps the same anchoring rules as the default one.
-		{"custom size", mygo.Rectangle{X: 200, Y: 200, Height: 20}, area, 600, 700, mygo.Rectangle{X: 200, Y: 25, Width: 600, Height: 700}},
-		{"custom size above caret", mygo.Rectangle{X: 200, Y: 760, Height: 20}, area, 600, 700, mygo.Rectangle{X: 200, Y: 56, Width: 600, Height: 700}},
-		{"custom size larger than work area", mygo.Rectangle{X: 100, Y: 100, Height: 20}, mygo.Rectangle{X: 0, Y: 25, Width: 320, Height: 400}, 600, 700, mygo.Rectangle{X: 0, Y: 25, Width: 320, Height: 400}},
+		{"custom size", mygo.Rectangle{X: 200, Y: 200}, area, 600, 700, mygo.Rectangle{X: 0, Y: 25, Width: 600, Height: 700}},
+		{"custom size above pointer", mygo.Rectangle{X: 200, Y: 760}, area, 600, 700, mygo.Rectangle{X: 0, Y: 56, Width: 600, Height: 700}},
+		{"custom size larger than work area", mygo.Rectangle{X: 100, Y: 100}, mygo.Rectangle{X: 0, Y: 25, Width: 320, Height: 400}, 600, 700, mygo.Rectangle{X: 0, Y: 25, Width: 320, Height: 400}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := pickerBounds(tc.anchor, tc.area, tc.width, tc.height); got != tc.want {
 				t.Fatalf("bounds = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTrustworthyPickerCaret(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rect mygo.Rectangle
+		want bool
+	}{
+		{"caret", mygo.Rectangle{Height: 20}, true},
+		{"text field", mygo.Rectangle{Width: 240, Height: 24}, true},
+		{"empty", mygo.Rectangle{}, false},
+		{"editor", mygo.Rectangle{Width: 800, Height: 600}, false},
+		{"too tall", mygo.Rectangle{Width: 8, Height: 120}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := trustworthyPickerCaret(tc.rect); got != tc.want {
+				t.Fatalf("trustworthy(%+v) = %v, want %v", tc.rect, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPlaceShortcutPicker(t *testing.T) {
+	work := mygo.Rectangle{X: 0, Y: 25, Width: 1440, Height: 850}
+	other := mygo.Rectangle{X: -1920, Y: 25, Width: 1920, Height: 1055}
+	mouseOnWork := mygo.Rectangle{X: 200, Y: 200}
+	mouseOffWork := mygo.Rectangle{X: -1500, Y: 200}
+	caret := mygo.Rectangle{X: 240, Y: 180, Height: 20}
+	huge := mygo.Rectangle{X: 100, Y: 80, Width: 900, Height: 640}
+	window := mygo.Rectangle{X: 80, Y: 40, Width: 900, Height: 700}
+	for _, tc := range []struct {
+		name string
+		in   pickerPlaceInput
+		want mygo.Rectangle
+	}{
+		{
+			name: "pointer on working display",
+			in:   pickerPlaceInput{width: 380, height: 440, mouse: mouseOnWork, mouseArea: work, mouseOnWork: true, caret: caret, hasCaret: true, window: window, hasWindow: true, workArea: work},
+			want: pickerBounds(mouseOnWork, work, 380, 440),
+		},
+		{
+			name: "pointer elsewhere uses caret",
+			in:   pickerPlaceInput{width: 380, height: 440, mouse: mouseOffWork, mouseArea: other, mouseOnWork: false, caret: caret, hasCaret: true, window: window, hasWindow: true, workArea: work},
+			want: pickerBounds(caret, work, 380, 440),
+		},
+		{
+			name: "pointer elsewhere uses window when caret is an editor",
+			in:   pickerPlaceInput{width: 380, height: 440, mouse: mouseOffWork, mouseArea: other, mouseOnWork: false, caret: huge, hasCaret: true, window: window, hasWindow: true, workArea: work},
+			want: pickerCenteredIn(window, work, 380, 440),
+		},
+		{
+			name: "pointer elsewhere uses window without caret",
+			in:   pickerPlaceInput{width: 380, height: 440, mouse: mouseOffWork, mouseArea: other, mouseOnWork: false, window: window, hasWindow: true, workArea: work},
+			want: pickerCenteredIn(window, work, 380, 440),
+		},
+		{
+			name: "no working window falls back to pointer",
+			in:   pickerPlaceInput{width: 380, height: 440, mouse: mouseOffWork, mouseArea: other, mouseOnWork: false, workArea: work},
+			want: pickerBounds(mouseOffWork, other, 380, 440),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := placeShortcutPicker(tc.in); got != tc.want {
+				t.Fatalf("place = %+v, want %+v", got, tc.want)
 			}
 		})
 	}

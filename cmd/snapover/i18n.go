@@ -166,6 +166,10 @@ func (a *app) refreshLanguageUI() {
 		a.fileWin.SetTitle(a.tr("发送文件 · Snapover"))
 		a.fileWin.Invalidate()
 	}
+	if a.transferWin != nil {
+		a.transferWin.SetTitle(a.tr("文件同步 · Snapover"))
+		a.transferWin.Invalidate()
+	}
 	if a.networkGuide != nil && a.networkGuide.win != nil {
 		a.networkGuide.win.SetTitle(a.tr("连接指引 · Snapover"))
 		a.networkGuide.win.Invalidate()
@@ -336,6 +340,27 @@ func translateENPattern(s string) (string, bool) {
 	}
 	if strings.HasPrefix(s, "正在发送到 ") {
 		return "Sending to " + strings.TrimPrefix(s, "正在发送到 "), true
+	}
+	if strings.HasPrefix(s, "正在打包 ") && strings.HasSuffix(s, "…") {
+		return "Packing " + strings.TrimSuffix(strings.TrimPrefix(s, "正在打包 "), "…") + "…", true
+	}
+	if strings.HasPrefix(s, "正在同步 ") && strings.Contains(s, " · ") {
+		return "Syncing " + strings.TrimPrefix(s, "正在同步 "), true
+	}
+	if strings.HasPrefix(s, "正在同步 ") && strings.HasSuffix(s, "…") {
+		return "Syncing " + strings.TrimPrefix(s, "正在同步 "), true
+	}
+	if strings.HasPrefix(s, "正在整理 ") && strings.HasSuffix(s, "…") {
+		return "Finishing " + strings.TrimSuffix(strings.TrimPrefix(s, "正在整理 "), "…") + "…", true
+	}
+	if strings.HasPrefix(s, "对方已可粘贴 ") {
+		return "Peer can paste " + strings.TrimPrefix(s, "对方已可粘贴 "), true
+	}
+	if strings.HasPrefix(s, "已可粘贴 ") {
+		return "Ready to paste " + strings.TrimPrefix(s, "已可粘贴 "), true
+	}
+	if strings.HasPrefix(s, "已发送 ") && !strings.Contains(s, " 个文件") {
+		return "Sent " + strings.TrimPrefix(s, "已发送 "), true
 	}
 
 	// Limits & settings status messages
@@ -565,6 +590,40 @@ func translateENPattern(s string) (string, bool) {
 }
 
 var enStrings = map[string]string{
+	"隐私模式": "Privacy Mode",
+	"隐私模式：不记录、不收发剪贴板":                  "Privacy Mode: history and clipboard sync are off",
+	"不记录本机复制，不收发剪贴板；重启后保持。主动发送文件仍可使用。": "Stops local history and clipboard sending/receiving; persists after restart. Direct file sending remains available.",
+	"排除来源应用":  "Exclude Source Apps",
+	"排除的应用名称": "Excluded App Names",
+	"保存应用排除":  "Save App Exclusions",
+	"填写历史中显示的来源应用名，用分号分隔；这些应用的本机复制不记录、不同步。无法识别来源时仍按普通复制处理。": "Enter source app names as shown in history, separated by semicolons. Copies from these apps are neither recorded nor synced. Unknown sources are handled normally.",
+	"隐私设置保存失败，请检查数据目录权限后重试":                                 "Could not save privacy settings; check data directory permissions and try again",
+	"隐私设置已阻止记录和同步": "Privacy settings blocked history and sync",
+	"%d 项":         "%d items",
+	"按最新到最旧的顺序导出；范围留空表示全部。大备份可填写起止序号分批导出，每批最多 1 GiB。": "Export newest first. Leave the range blank for all pins, or enter positions to export batches of up to 1 GiB.",
+	"起始序号":       "First item",
+	"结束序号":       "Last item",
+	"请填写有效的起止序号": "Enter a valid first and last item number",
+	"置顶备份":       "Pinned Backup",
+	"导出置顶":       "Export Pins",
+	"导入置顶":       "Import Pins",
+	"备份包含置顶文本、图片和备注，不含文件正文；备份未加密，请妥善保管。导入会追加记录，容量不足时按历史规则清理未置顶内容。": "Backups include pinned text, images and notes, without file contents. Backups are unencrypted; keep them safe. Import appends records and may remove unpinned history under the storage limit.",
+	"正在处理置顶备份…":           "Processing pinned backup…",
+	"置顶备份已完成：%d 条":        "Pinned backup complete: %d items",
+	"置顶备份未完成，已处理 %d 条：%s": "Pinned backup incomplete; processed %d items: %s",
+	"生成诊断摘要":              "Generate Diagnostic Summary",
+	"复制诊断摘要":              "Copy Diagnostic Summary",
+	"复制诊断摘要失败，请重试":        "Could not copy the diagnostic summary; try again",
+	"已复制诊断摘要":             "Diagnostic summary copied",
+	"摘要不含剪贴板正文、文件路径、设备名、地址或证书。TCP 测试通过不代表剪贴板写入成功。": "The summary excludes clipboard contents, file paths, device names, addresses and certificates. A TCP test does not confirm a clipboard write.",
+	"最近同步结果":           "Last Sync Result",
+	"已连接（TLS 配对会话）":    "Connected (paired TLS session)",
+	"暂无结果":             "No result yet",
+	"只存入对端历史，未覆盖剪贴板":   "Saved to peer history without replacing the clipboard",
+	"失败或未确认，请检查对端后重试":  "Failed or unconfirmed; check the peer before retrying",
+	"被同步策略阻止或对端拒收":     "Blocked by sync policy or rejected by peer",
+	"对端已确认写入剪贴板":       "Peer confirmed clipboard write",
+	"尚无可归类的确认结果，请测试连接": "No classified confirmation yet; test the connection",
 	// App & Menu & Sidebar
 	"开发版":        "Dev",
 	"设置":         "Settings",
@@ -620,6 +679,7 @@ var enStrings = map[string]string{
 	"开机启动没改成":                          "Failed to change launch at login",
 
 	// Settings Page
+	"通用与外观":  "General & Appearance",
 	"剪贴板同步":  "Clipboard Sync",
 	"只同步文本":  "Text Only",
 	"大小限制":   "Size Limits",
@@ -853,6 +913,20 @@ var enStrings = map[string]string{
 	"若按钮只打开了「隐私与安全性」，请手动选择「本地网络」。":            "If only \"Privacy & Security\" opens, select \"Local Network\" manually.",
 	"打开本地网络设置": "Open Local Network Settings",
 	"打开系统设置失败，请按上面的步骤手动打开设置后重试": "Failed to open System Settings; please open it manually following the steps above",
+	"打开系统设置失败，请按连接帮助中的步骤手动打开":   "Failed to open system settings; follow Connection Help to open them manually",
+	"同步文字、图片和文件，不保留字体和颜色。":      "Syncs text, images, and files. Formatting is not kept.",
+	"手填地址": "Enter Address",
+	"已到对方，未覆盖剪贴板（对方刚复制过）":           "Reached the other computer, but did not replace its clipboard (it just copied)",
+	"对方未写入剪贴板":                      "The other computer did not write to the clipboard",
+	"本机未写入剪贴板，已存历史":                 "Not written to this clipboard; saved in history",
+	"远程桌面剪贴板盖掉了刚才的内容。请关掉该连接的剪贴板共享。": "Remote Desktop clipboard replaced the content. Turn off clipboard sharing for that connection.",
+	"正在检查文件是否仍可粘贴":                  "Checking whether the files can still be pasted",
+	"文件已失效，请重新复制后再置顶":               "Files are gone; copy them again before pinning",
+	"已保存置顶副本，源文件删除后仍可粘贴":            "Pinned copy saved; paste still works if the original files are deleted",
+	"文件仍在原路径时可粘贴；置顶后会保存副本":          "Paste works while the original path exists; pinning saves a copy",
+	"远程桌面剪贴板覆盖了写入结果":                "Remote Desktop clipboard overwrote the write",
+	"本机跳过，未发送":                      "Skipped locally and not sent",
+	"未写入剪贴板":                        "Not written to the clipboard",
 
 	// History Page & Quick Picker & Previews
 	"搜索复制历史":  "Search clipboard history",
@@ -898,6 +972,8 @@ var enStrings = map[string]string{
 	"记录已删除，请重新选择":                                         "Item was deleted, please select again",
 	"粘贴":                                                  "Paste",
 	"只复制":                                                 "Copy Only",
+	"在 Finder 中显示":                                        "Show in Finder",
+	"在资源管理器中显示":                                           "Show in File Explorer",
 	"文件正文未保存在历史中，请重新复制":                                   "File contents are not stored in history; please copy the file again",
 	"文件内容未保存在历史中，请重新复制后再粘贴":                               "File contents are not stored in history; please copy the file again before pasting",
 	"正在清理历史，请稍后再试":                                        "Cleaning up history, please try again shortly",
@@ -928,6 +1004,20 @@ var enStrings = map[string]string{
 	"路径":                     "Path",
 	"内容":                     "Content",
 	"来源":                     "Source",
+	"备注":                     "Note",
+	"置顶备注":                   "Pinned Note",
+	"输入备注或别名，便于搜索":           "Enter a note or alias for quick search",
+	"设置备注":                   "Add Note",
+	"修改备注":                   "Edit Note",
+	"设置当前记录备注":               "Edit note for selected item",
+	"设置备注…":                  "Add Note…",
+	"修改备注…":                  "Edit Note…",
+	"保存备注":                   "Save Note",
+	"清除备注":                   "Clear Note",
+	"取消编辑备注":                 "Cancel editing note",
+	"已保存备注":                  "Note saved",
+	"已清除备注":                  "Note cleared",
+	"请先置顶记录后再设置备注":           "Pin the item before adding a note",
 	"来源应用":                   "Source App",
 	"来源设备":                   "Source Device",
 	"文件名":                    "Filename",
@@ -944,6 +1034,10 @@ var enStrings = map[string]string{
 	"选择文件…":           "Choose Files…",
 	"更换…":             "Change…",
 	"文件发送进度":          "File transfer progress",
+	"文件同步进度":          "File sync progress",
+	"文件同步 · Snapover": "File Sync · Snapover",
+	"对方处理中…":          "Waiting for the other computer…",
+	"文件同步失败":          "File sync failed",
 	"连接设备后即可发送":       "Connect a device to send files",
 	"对方暂不支持接收文件，请更新对方的 Snapover": "Peer does not support receiving files; update Snapover on the peer",
 	"关闭窗口后仍会继续传输":                "Transfer continues in the background if you close this window",

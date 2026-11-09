@@ -69,51 +69,53 @@ func TestTrayMenuKeepsOnlyActions(t *testing.T) {
 		}
 		labels = append(labels, item.Label)
 	}
-	want := []string{"快速历史", "设置", "检查更新…", "暂停同步", "开机启动", "退出"}
+	want := []string{"快速历史", "设置", "隐私模式", "忽略下一次复制", "暂停同步", "退出"}
 	if strings.Join(labels, "|") != strings.Join(want, "|") {
 		t.Fatalf("tray menu = %v, want %v", labels, want)
 	}
 }
 
-func TestIgnoreNextCopySettingsAndTemporaryTrayCancel(t *testing.T) {
+func TestIgnoreNextCopyTrayToggleAndSettledCopyReset(t *testing.T) {
 	a := interfaceTestApp(t)
 	a.engine.Board = &pasteTestBoard{}
 	tt := ui.NewTester(a.settingsPage, 960, 1200)
-	if !tt.HasText("忽略一次") || a.trayMenu().ItemByID("cancel-ignore-next-copy").IsVisible() {
-		t.Fatal("ignore action is missing from settings or cancel is visible while idle")
+	if tt.HasText("忽略一次") {
+		t.Fatal("settings page still exposes the one-shot ignore action")
 	}
-	clickInterface(t, tt, "启用忽略下一次复制")
-	tt.Frame()
-	cancel := a.trayMenu().ItemByID("cancel-ignore-next-copy")
-	if !a.engine.IgnoreNextCopyPending() || !tt.HasText("等待复制…") || !cancel.IsVisible() {
-		t.Fatal("arming ignore did not expose the waiting state and tray cancellation")
+	ignore := a.trayMenu().ItemByID("ignore-next-copy")
+	if ignore == nil || !ignore.IsVisible() || ignore.Checked {
+		t.Fatal("ignore action should be visible and unchecked in tray menu while idle")
+	}
+	ignore.Checked = true
+	ignore.Click(ignore, nil)
+	if !a.engine.IgnoreNextCopyPending() || !a.trayMenu().ItemByID("ignore-next-copy").Checked {
+		t.Fatal("arming ignore in tray did not update pending state")
 	}
 	item, err := clip.FromText("private test content")
 	if err != nil {
 		t.Fatal(err)
 	}
 	a.engine.HandleLocal(1, item)
-	tt.Frame()
-	if a.engine.IgnoreNextCopyPending() || a.trayMenu().ItemByID("cancel-ignore-next-copy").IsVisible() || !tt.HasText("忽略一次") {
-		t.Fatal("settled copy did not remove cancellation and restore the settings action")
+	if a.engine.IgnoreNextCopyPending() || a.trayMenu().ItemByID("ignore-next-copy").Checked {
+		t.Fatal("settled copy did not clear ignore state in tray")
 	}
-	// A menu opened before the copy completed must only cancel, never re-arm.
-	cancel.Click(cancel, nil)
+	// A menu opened before the copy completed must only cancel when unchecked, never re-arm.
+	ignore.Checked = false
+	ignore.Click(ignore, nil)
 	if a.engine.IgnoreNextCopyPending() {
-		t.Fatal("stale cancellation re-armed ignore")
+		t.Fatal("unchecking stale tray item re-armed ignore")
 	}
-	clickInterface(t, tt, "启用忽略下一次复制")
-	cancel = a.trayMenu().ItemByID("cancel-ignore-next-copy")
-	cancel.Click(cancel, nil)
-	tt.Frame()
-	if a.engine.IgnoreNextCopyPending() || a.trayMenu().ItemByID("cancel-ignore-next-copy").IsVisible() {
+	ignore = a.trayMenu().ItemByID("ignore-next-copy")
+	ignore.Checked = true
+	ignore.Click(ignore, nil)
+	if !a.engine.IgnoreNextCopyPending() {
+		t.Fatal("tray toggle did not arm ignore")
+	}
+	ignore = a.trayMenu().ItemByID("ignore-next-copy")
+	ignore.Checked = false
+	ignore.Click(ignore, nil)
+	if a.engine.IgnoreNextCopyPending() || a.trayMenu().ItemByID("ignore-next-copy").Checked {
 		t.Fatal("tray cancellation left ignore active")
-	}
-	clickInterface(t, tt, "启用忽略下一次复制")
-	tt.Frame()
-	clickInterface(t, tt, "取消忽略下一次复制")
-	if a.engine.IgnoreNextCopyPending() || a.trayMenu().ItemByID("cancel-ignore-next-copy").IsVisible() {
-		t.Fatal("settings cancellation left ignore active")
 	}
 }
 

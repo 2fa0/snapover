@@ -6,8 +6,35 @@ import (
 
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
+
+var revealFileInFolder = func(path string) { go mygo.Shell.ShowItemInFolder(path) }
+
+func revealFileLabel() string {
+	if runtime.GOOS == "darwin" {
+		return "在 Finder 中显示"
+	}
+	return "在资源管理器中显示"
+}
+
+func (a *app) revealHistoryFile(entry history.Entry) {
+	if len(entry.FilePaths) == 0 && len(entry.PinFiles) == 0 {
+		return
+	}
+	if a.picker != nil {
+		a.finishPick()
+	}
+	go func() {
+		path, ok := history.RevealFilePath(entry)
+		if !ok {
+			a.update(func() { a.flash = "文件内容未保存在历史中，请重新复制后再粘贴" })
+			return
+		}
+		revealFileInFolder(path)
+	}()
+}
 
 func (a *app) historyMatchTitle(c *ui.Context, entry history.Entry, selected bool) ui.Element {
 	if entry.MatchField != "" {
@@ -21,9 +48,90 @@ func (a *app) historyMatchTitle(c *ui.Context, entry history.Entry, selected boo
 }
 
 func (a *app) historyMatchDetail(c *ui.Context, entry history.Entry, color ui.Color, size float32, selected bool) {
+	if entry.Kind == string(clip.KindFiles) && selected {
+		message := a.fileAvailabilityMessage(c, entry)
+		ui.Text(c, a.tr(message)).FontSize(size).TextColor(color).SingleLine().Tooltip(a.tr(message))
+	}
 	if entry.MatchField != "" && entry.MatchText != "" {
 		a.historyMatchSnippet(c, entry, color, selected).FontSize(size)
+		return
 	}
+	if entry.Pinned && entry.Note != "" {
+		prefix := "备注："
+		if a.isEN() {
+			prefix = "Note: "
+		}
+		ui.Text(c, prefix+entry.Note).FontSize(size).TextColor(color).SingleLine()
+	}
+}
+
+func (a *app) beginEditNote(entry history.Entry, fromPicker bool) {
+	if !entry.Pinned {
+		return
+	}
+	a.editNoteID = entry.ID
+	a.editNoteText = entry.Note
+	a.editNotePicker = fromPicker
+}
+
+func (a *app) cancelEditNote() {
+	a.editNoteID = ""
+	a.editNoteText = ""
+	a.editNotePicker = false
+}
+
+func (a *app) saveEntryNote() {
+	id := a.editNoteID
+	note := a.editNoteText
+	fromPicker := a.editNotePicker
+	if id == "" {
+		return
+	}
+	a.cancelEditNote()
+	if fromPicker {
+		a.pickRestore, a.pickRestoreID, a.pickRestoreIndex = true, id, a.pickSel
+		a.pickMutationPending = true
+	}
+	msg := "已保存备注"
+	if history.CleanNote(note) == "" {
+		msg = "已清除备注"
+	}
+	a.startHistoryMutation(func() error { return a.hist.SetNote(id, note) }, msg, false)
+}
+
+func (a *app) clearEntryNote(id string, fromPicker bool) {
+	if a.editNoteID == id {
+		a.cancelEditNote()
+	}
+	if fromPicker {
+		a.pickRestore, a.pickRestoreID, a.pickRestoreIndex = true, id, a.pickSel
+		a.pickMutationPending = true
+	}
+	a.startHistoryMutation(func() error { return a.hist.SetNote(id, "") }, "已清除备注", false)
+}
+
+func (a *app) noteEditorRow(c *ui.Context, inPicker bool) {
+	if a.editNoteID == "" || a.editNotePicker != inPicker {
+		return
+	}
+	busy := a.historyCleanupPending != nil
+	ui.Row(c.Key("note-editor")).Gap(8).AlignItems(ui.Center).Children(func() {
+		input := ui.TextInput(c.Key("note-input"), &a.editNoteText).
+			Label(a.tr("置顶备注")).
+			Placeholder(a.tr("输入备注或别名，便于搜索")).
+			AutoFocus().Grow(1).MinWidth(0)
+		if input.Shortcut(0, ui.KeyEscape) {
+			a.cancelEditNote()
+			return
+		}
+		if (input.Submitted() || ui.PrimaryButton(c, a.tr("保存备注")).Disabled(busy).Clicked()) && !busy {
+			a.saveEntryNote()
+			return
+		}
+		if ui.Button(c, a.tr("取消")).Label(a.tr("取消编辑备注")).Clicked() {
+			a.cancelEditNote()
+		}
+	})
 }
 
 // historyMatchSnippet renders what matched: a snippet of the text, or of the
@@ -133,6 +241,9 @@ func (a *app) performPickerAction(id, action string) {
 		case "copy", "paste":
 			a.startHistoryPasteMode(id, a.picker, action == "copy")
 		case "pin", "delete":
+			if a.editNoteID == id {
+				a.cancelEditNote()
+			}
 			a.closePickPreview()
 			a.pickRestore, a.pickRestoreID, a.pickRestoreIndex = true, id, a.pickSel
 			a.pickMutationPending = true
@@ -157,13 +268,19 @@ func (a *app) performPickerAction(id, action string) {
 func (a *app) pickerEntryMenu(m *ui.Menu, entry history.Entry) {
 	busy := a.pickBusy || a.historyCleanupPending != nil
 	files := entry.Kind == string(clip.KindFiles)
-	if m.Item(a.tr("粘贴")).Shortcut(0, ui.KeyEnter).Disabled(busy || files).Chosen() {
+	available := !files || a.cachedFilesAvailable(entry)
+	if m.Item(a.tr("粘贴")).Shortcut(0, ui.KeyEnter).Disabled(busy || !available).Chosen() {
 		a.performPickerAction(entry.ID, "paste")
 	}
-	if m.Item(a.tr("只复制")).Shortcut(ui.Alt, ui.KeyEnter).Disabled(busy || files).Chosen() {
+	if m.Item(a.tr("只复制")).Shortcut(ui.Alt, ui.KeyEnter).Disabled(busy || !available).Chosen() {
 		a.performPickerAction(entry.ID, "copy")
 	}
-	if files {
+	if files && available {
+		if m.Item(a.tr(revealFileLabel())).Disabled(busy).Chosen() {
+			a.revealHistoryFile(entry)
+		}
+	}
+	if files && !available {
 		m.Item(a.tr("文件正文未保存在历史中，请重新复制")).Disabled(true)
 	}
 	m.Separator()
@@ -174,11 +291,66 @@ func (a *app) pickerEntryMenu(m *ui.Menu, entry history.Entry) {
 	if m.Item(label).Shortcut(ui.Cmd|ui.Shift, ui.KeyP).Disabled(busy).Chosen() {
 		a.performPickerAction(entry.ID, "pin")
 	}
+	if entry.Pinned {
+		noteItem := "设置备注…"
+		if entry.Note != "" {
+			noteItem = "修改备注…"
+		}
+		if m.Item(a.tr(noteItem)).Disabled(busy).Chosen() {
+			a.beginEditNote(entry, true)
+		}
+		if entry.Note != "" && m.Item(a.tr("清除备注")).Disabled(busy).Chosen() {
+			a.clearEntryNote(entry.ID, true)
+		}
+	}
 	if entry.Pinned && entry.PinKey > 0 && entry.PinKey <= 9 {
 		m.Item(a.tr("快捷粘贴：" + pinShortcutLabel(entry.PinKey) + "（快速历史内）")).Disabled(true)
 	}
 	if m.Item(a.tr("删除")).Shortcut(ui.Cmd|ui.Shift, ui.KeyBackspace).Disabled(busy).Chosen() {
 		a.performPickerAction(entry.ID, "delete")
+	}
+}
+
+func (a *app) historyEntryMenu(m *ui.Menu, entry history.Entry) {
+	busy := a.historyPaste != nil || a.pasteWorker != nil || a.historyCleanupPending != nil
+	files := entry.Kind == string(clip.KindFiles)
+	available := !files || a.cachedFilesAvailable(entry)
+	if m.Item(a.tr("复制")).Shortcut(0, ui.KeyEnter).Disabled(busy || !available).Chosen() {
+		a.startHistoryPaste(entry.ID, nil)
+	}
+	if files && available {
+		if m.Item(a.tr(revealFileLabel())).Disabled(busy).Chosen() {
+			a.revealHistoryFile(entry)
+		}
+	}
+	if files && !available {
+		m.Item(a.tr("文件正文未保存在历史中，请重新复制")).Disabled(true)
+	}
+	m.Separator()
+	label := a.tr("置顶")
+	if entry.Pinned {
+		label = a.tr("取消置顶")
+	}
+	if m.Item(label).Disabled(a.historyCleanupPending != nil).Chosen() {
+		a.startHistoryMutation(func() error { return a.hist.SetPinned(entry.ID, !entry.Pinned) }, "已更新置顶", false)
+	}
+	if entry.Pinned {
+		noteItem := "设置备注…"
+		if entry.Note != "" {
+			noteItem = "修改备注…"
+		}
+		if m.Item(a.tr(noteItem)).Disabled(a.historyCleanupPending != nil).Chosen() {
+			a.beginEditNote(entry, false)
+		}
+		if entry.Note != "" && m.Item(a.tr("清除备注")).Disabled(a.historyCleanupPending != nil).Chosen() {
+			a.clearEntryNote(entry.ID, false)
+		}
+	}
+	if entry.Pinned && entry.PinKey > 0 && entry.PinKey <= 9 {
+		m.Item(a.tr("快捷粘贴：" + pinShortcutLabel(entry.PinKey) + "（快速历史内）")).Disabled(true)
+	}
+	if m.Item(a.tr("删除")).Disabled(a.historyCleanupPending != nil).Chosen() {
+		a.startHistoryMutation(func() error { return a.hist.Delete(entry.ID) }, "已删除", false)
 	}
 }
 

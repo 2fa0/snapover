@@ -22,10 +22,10 @@ func (a *app) openFiles() {
 		a.fileWin.Focus()
 		return
 	}
-	a.fileWin = mygo.NewWindow(mygo.WindowOptions{
+	a.fileWin = mygo.NewWindow(a.placeOnWorkingDisplay(mygo.WindowOptions{
 		Title: a.tr("发送文件 · Snapover"), Width: 460, Height: 340,
 		MinWidth: 420, MinHeight: 300, Content: ui.View(a.filesView),
-	})
+	}))
 	a.fileWin.OnClosed(func() { a.fileWin = nil })
 }
 
@@ -211,6 +211,7 @@ func (a *app) sendSelectedFile(background bool) {
 	a.fileMessage = "正在等待对方接收…"
 	link, _ := a.engine.Link()
 	a.fileRecipient = displayName(link.Name, link.ID)
+	a.beginOrUpdateTransfer(transferFileSend, phaseSending, filepath.Base(paths[0]), 0, a.fileSize, "")
 	ctx := a.root
 	if ctx == nil {
 		ctx = context.Background()
@@ -219,10 +220,14 @@ func (a *app) sendSelectedFile(background bool) {
 		saved, err := a.engine.SendFiles(ctx, link.ID, paths, func(index int, done, total int64) {
 			a.updateFiles(func() {
 				a.fileDone, a.fileSize = done, total
-				a.fileMessage = fmt.Sprintf("正在发送 %d/%d：%s · %s / %s", index+1, len(paths), filepath.Base(paths[index]), formatSize(int(done)), formatSize(int(total)))
+				name := filepath.Base(paths[index])
+				a.fileMessage = fmt.Sprintf("正在发送 %d/%d：%s · %s / %s", index+1, len(paths), name, formatSize(int(done)), formatSize(int(total)))
+				phase := phaseSending
 				if done == total {
 					a.fileMessage = "传输完成，正在等待对方确认保存…"
+					phase = phaseWaiting
 				}
+				a.beginOrUpdateTransfer(transferFileSend, phase, name, done, total, "")
 			})
 		})
 		a.updateFiles(func() {
@@ -232,6 +237,7 @@ func (a *app) sendSelectedFile(background bool) {
 				if len(saved) > 0 {
 					a.fileMessage = fmt.Sprintf("已发送 %d/%d 个文件后失败：%s。请检查连接后重试", len(saved), len(paths), err)
 				}
+				a.beginOrUpdateTransfer(transferFileSend, phaseError, filepath.Base(paths[0]), a.fileDone, a.fileSize, a.fileMessage)
 				if background {
 					a.openFiles()
 				}
@@ -243,6 +249,11 @@ func (a *app) sendSelectedFile(background bool) {
 			} else {
 				a.fileMessage = fmt.Sprintf("已发送 %d 个文件", len(saved))
 			}
+			name := filepath.Base(paths[0])
+			if len(paths) > 1 {
+				name = a.fileTitle()
+			}
+			a.beginOrUpdateTransfer(transferFileSend, phaseComplete, name, a.fileSize, a.fileSize, "")
 			if background && runtime.GOOS == "darwin" {
 				a.sentFilesNotification(saved, displayName(link.Name, link.ID))
 			}

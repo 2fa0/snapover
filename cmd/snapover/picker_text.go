@@ -197,7 +197,7 @@ func (a *app) openPickText(text string) {
 	}
 	reader := &pickTextReader{app: a, text: text}
 	var viewer *mygo.Window
-	viewer = mygo.NewWindow(mygo.WindowOptions{
+	viewer = mygo.NewWindow(a.placeOnWorkingDisplay(mygo.WindowOptions{
 		Title: a.tr("文本全文"), Width: 720, Height: 560,
 		Hidden: true, UseContentSize: true,
 		Content: ui.View(func(c *ui.Context) {
@@ -209,7 +209,7 @@ func (a *app) openPickText(text string) {
 				reader.view(c)
 			})
 		}),
-	})
+	}))
 	// An empty menu overrides the application menu; nil inherits it on Windows.
 	viewer.SetMenu(mygo.NewMenu(nil))
 	a.pickOriginal = viewer

@@ -36,8 +36,11 @@ func (a *app) devicesPage(c *ui.Context) {
 			a.status = "已取消添加设备"
 		}
 	})
-	if adding && !waiting {
+	if !waiting {
 		a.networkSetupHint(c)
+	}
+	if len(a.devices) == 0 && !waiting {
+		ui.Text(c, a.tr("同步文字、图片和文件，不保留字体和颜色。")).FontSize(12).TextColor(t.TextMuted)
 	}
 	if waiting {
 		ui.Column(c.Key("pair-confirmation")).Padding(24).Gap(14).Radius(12).
@@ -150,6 +153,11 @@ func (a *app) devicesPage(c *ui.Context) {
 			}
 			if count == 0 && a.discoveryMessage == "" {
 				ui.Text(c, a.tr("暂未发现其他电脑")).Bold()
+				if len(a.devices) == 0 && !a.showAddress {
+					if ui.Button(c, a.tr("手填地址")).Clicked() {
+						a.showAddress = true
+					}
+				}
 			}
 			if a.discoveryMessage != "" {
 				ui.Text(c, a.tr(a.discoveryMessage)).FontSize(12).TextColor(t.TextMuted)
@@ -254,9 +262,7 @@ func (a *app) isPaired(id string) bool {
 }
 
 func (a *app) connectDevice(id, addr string) {
-	a.targetPeerID = id
-	a.peer = addr
-	a.connect()
+	a.startConnection(a.endpointForAddress(addr), id, true)
 }
 
 func (a *app) applyDiscovery(snapshot discovery.Snapshot) {
@@ -265,19 +271,31 @@ func (a *app) applyDiscovery(snapshot discovery.Snapshot) {
 	}
 	a.discovered = snapshot.Devices
 	a.discoveryMessage = snapshot.Message
-	if a.targetPeerID == "" || !a.isPaired(a.targetPeerID) {
-		return
-	}
 	if a.dialTarget != nil {
 		a.refreshConnectionCandidates()
 		return
 	}
-	if !a.engine.Connected() {
-		for _, dev := range snapshot.Devices {
-			if dev.ID == a.targetPeerID {
-				a.startConnection(lan.Endpoint{Addr: dev.Addr, Route: lan.RouteLAN}, dev.ID, false)
-				return
-			}
+	if a.engine.Connected() {
+		return
+	}
+	start := func(id, addr string) bool {
+		if !a.isPaired(id) || addr == "" {
+			return false
+		}
+		a.startConnection(lan.Endpoint{Addr: addr, Route: lan.RouteLAN}, id, false)
+		return true
+	}
+	for _, dev := range snapshot.Devices {
+		if dev.ID == a.targetPeerID && start(dev.ID, dev.Addr) {
+			return
+		}
+	}
+	if a.dialPinned {
+		return
+	}
+	for _, dev := range snapshot.Devices {
+		if start(dev.ID, dev.Addr) {
+			return
 		}
 	}
 }
