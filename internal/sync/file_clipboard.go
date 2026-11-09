@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,6 +15,9 @@ import (
 )
 
 var errFileClipboardSuperseded = errors.New("已有新的复制内容，已停止旧文件同步")
+
+// largeProgressHint matches the UI threshold for showing file transfer progress.
+const largeProgressHint int64 = 20 << 20
 
 func filePathsSize(paths []string) int {
 	n := 0
@@ -133,21 +137,116 @@ func (s *Session) fileClipboardLoop() {
 			if s.fileClipboardCheck != nil && errors.Is(s.fileClipboardCheck(item), errFileClipboardSuperseded) {
 				continue
 			}
-			if s.onClipboardResult != nil {
-				result := wire.Ack{ItemID: item.id, State: "complete"}
-				if err != nil {
-					result.State = "error"
-					result.Message = err.Error()
-				}
-				s.onClipboardResult(result)
-			}
 		}
 	}
 }
 
+func fileClipboardTitle(paths []string) string {
+	if len(paths) == 0 {
+		return "文件"
+	}
+	name := filepath.Base(paths[0])
+	if name == "" || name == "." || name == "/" {
+		name = "文件"
+	}
+	if len(paths) == 1 {
+		return name
+	}
+	return fmt.Sprintf("%s 等 %d 项", name, len(paths))
+}
+
+func estimateFilesSize(paths []string, stopAt int64) int64 {
+	var total int64
+	for _, p := range paths {
+		_ = filepath.WalkDir(p, func(_ string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			info, infoErr := d.Info()
+			if infoErr != nil || !info.Mode().IsRegular() {
+				return nil
+			}
+			total += info.Size()
+			if stopAt > 0 && total >= stopAt {
+				return fs.SkipAll
+			}
+			return nil
+		})
+		if stopAt > 0 && total >= stopAt {
+			return total
+		}
+	}
+	return total
+}
+
+func (s *Session) reportFileClipboard(item queuedItem, name, state string, done, total int64, message string) {
+	if s.onFile != nil {
+		s.onFile(Notice{
+			Kind:          NoticeFile,
+			FileClipboard: true,
+			FileName:      name,
+			FileState:     state,
+			FileDone:      done,
+			FileTotal:     total,
+			Message:       message,
+		})
+	}
+	if s.onClipboardResult == nil {
+		return
+	}
+	ack := wire.Ack{ItemID: item.id, Message: message}
+	switch state {
+	case "complete":
+		ack.State = "complete"
+	case "error":
+		ack.State = "error"
+	case "cancelled":
+		ack.State = "cancelled"
+	default:
+		ack.State = "sending"
+	}
+	s.onClipboardResult(ack)
+}
+
 func (s *Session) sendFileClipboard(item queuedItem) error {
+	title := fileClipboardTitle(item.Files)
+	estimated := estimateFilesSize(item.Files, largeProgressHint)
+	report := func(state string, done, total int64, err error) {
+		message := ""
+		switch state {
+		case "packing":
+			message = "正在准备文件剪贴板…"
+		case "sending":
+			percent := int64(100)
+			if total > 0 {
+				percent = done * 100 / total
+			}
+			message = fmt.Sprintf("正在同步文件剪贴板… %d%%", percent)
+		case "waiting":
+			message = "正在同步文件剪贴板… 100%"
+		case "error":
+			if err != nil {
+				message = err.Error()
+			}
+		}
+		s.reportFileClipboard(item, title, state, done, total, message)
+	}
+	finish := func(err error) error {
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, errFileClipboardSuperseded) {
+			s.reportFileClipboard(item, title, "cancelled", 0, estimated, "")
+			return err
+		}
+		report("error", 0, estimated, err)
+		return err
+	}
 	if !s.fileClipboardSupported {
-		return errors.New("对方版本不支持文件剪贴板，请更新对方的 Snapover")
+		return finish(errors.New("对方版本不支持文件剪贴板，请更新对方的 Snapover"))
 	}
 	check := func() error {
 		if s.fileClipboardCheck == nil {
@@ -156,35 +255,36 @@ func (s *Session) sendFileClipboard(item queuedItem) error {
 		return s.fileClipboardCheck(item)
 	}
 	if err := check(); err != nil {
-		return err
+		return finish(err)
 	}
-	progress := func(message string) {
-		if s.onClipboardResult != nil {
-			s.onClipboardResult(wire.Ack{ItemID: item.id, State: "sending", Message: message})
-		}
-	}
-	progress("正在准备文件剪贴板…")
+	report("packing", 0, estimated, nil)
 	if s.fileCache == nil {
-		return errors.New("文件剪贴板缓存未初始化")
+		return finish(errors.New("文件剪贴板缓存未初始化"))
 	}
 	lease, err := s.fileCache.BeginSend()
 	if err != nil {
-		return err
+		return finish(err)
 	}
 	defer lease.Release(false)
 	archive, err := filetransfer.PackBundleIn(s.ctx, item.Files, s.maxFileBytes(), check, lease.Dir)
 	if err != nil {
-		return err
+		return finish(err)
 	}
 	defer os.Remove(archive)
+	var lastTotal int64
 	_, err = s.sendFileMode(s.ctx, archive, func(done, total int64) {
-		percent := int64(100)
-		if total > 0 {
-			percent = done * 100 / total
+		lastTotal = total
+		state := "sending"
+		if total > 0 && done >= total {
+			state = "waiting"
 		}
-		progress(fmt.Sprintf("正在同步文件剪贴板… %d%%", percent))
+		report(state, done, total, nil)
 	}, &item)
-	return err
+	if err != nil {
+		return finish(err)
+	}
+	report("complete", lastTotal, lastTotal, nil)
+	return nil
 }
 
 type clipboardReceive struct {
