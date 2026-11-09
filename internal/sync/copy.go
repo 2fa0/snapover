@@ -41,7 +41,7 @@ func (e *Engine) SetManualSync(manual bool) {
 func (e *Engine) CopyNext(after uint64) (<-chan error, <-chan struct{}, func() bool, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.paused {
+	if e.paused || e.privacyMode {
 		return nil, nil, nil, errors.New("已暂停同步，请先恢复同步")
 	}
 	if e.sess == nil {

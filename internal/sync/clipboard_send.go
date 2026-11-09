@@ -23,7 +23,11 @@ func (e *Engine) SendClipboard(ctx context.Context, peerID string, item clip.Ite
 	e.mu.Lock()
 	s := e.sess
 	policy := e.policyLocked()
+	blocked := e.blockedLocalLocked(item)
 	e.mu.Unlock()
+	if blocked {
+		return errors.New("隐私设置已阻止记录和同步")
+	}
 	if s == nil {
 		return errors.New("没有在线设备，请先在 Snapover 中连接设备")
 	}

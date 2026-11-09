@@ -1,6 +1,9 @@
 package sync
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 import "github.com/2fa0/snapover/internal/clip"
 import "github.com/2fa0/snapover/internal/lan"
@@ -32,10 +35,12 @@ type Notice struct {
 	FileState      string
 	FileDone       int64
 	FileTotal      int64
+	FileClipboard  bool
 	ClipboardState string
 	SessionID      string
 	Route          lan.Route
 	DialSeq        uint64
+	Written        bool
 }
 
 // Link is the peer of the live session, if there is one.
@@ -51,6 +56,10 @@ type Link struct {
 
 func (e *Engine) notify(n Notice) error {
 	e.mu.Lock()
+	if n.Kind == NoticeLocal && e.blockedLocalLocked(n.Item) || n.Kind == NoticeRemote && e.privacyMode {
+		e.mu.Unlock()
+		return errors.New("隐私设置已阻止记录和同步")
+	}
 	fn := e.OnNotice
 	e.mu.Unlock()
 	if fn == nil {
