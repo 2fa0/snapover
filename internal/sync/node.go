@@ -64,14 +64,23 @@ func DialPeer(ctx context.Context, addr, expectedID string, e *Engine) {
 	Reconnect(ctx, NewDialTarget(expectedID, 0, []lan.Endpoint{{Addr: addr, Route: lan.RouteLAN}}), e)
 }
 
-// DialTarget keeps the selected identity fixed while discovery updates routing hints.
-// A target owns at most three candidates and is replaced on explicit user retry.
+// DialCandidate is one reconnect path and the identity that path must present.
+// Discovery and saved addresses are routing hints, never proof of identity.
+type DialCandidate struct {
+	PeerID   string
+	Endpoint lan.Endpoint
+}
+
+// DialTarget keeps reconnect paths while discovery updates routing hints.
+// An explicit retry pins one identity, at most three paths.
+// Automatic reconnect may include other already-trusted devices, still at most
+// three paths each, and still handshakes against that candidate's id.
 type DialTarget struct {
-	peerID    string
-	Sequence  uint64
-	mu        sync.Mutex
-	endpoints []lan.Endpoint
-	preferred lan.Endpoint
+	peerID     string
+	Sequence   uint64
+	mu         sync.Mutex
+	candidates []DialCandidate
+	preferred  lan.Endpoint
 }
 
 func NewDialTarget(peerID string, sequence uint64, endpoints []lan.Endpoint) *DialTarget {
@@ -102,41 +111,110 @@ func (t *DialTarget) Prefer(ep lan.Endpoint) {
 	t.preferred = ep
 }
 
-func (t *DialTarget) firstEndpoints() []lan.Endpoint {
+func (t *DialTarget) firstCandidates() []DialCandidate {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.preferred.Addr == "" {
-		return slices.Clone(t.endpoints)
+		return slices.Clone(t.candidates)
 	}
-	out := []lan.Endpoint{t.preferred}
-	for _, ep := range t.endpoints {
-		if !slices.Contains(out, ep) && len(out) < 3 {
-			out = append(out, ep)
+	out := []DialCandidate{{PeerID: t.peerID, Endpoint: t.preferred}}
+	for _, c := range t.candidates {
+		if !containsCandidate(out, c) {
+			out = append(out, c)
 		}
 	}
 	return out
 }
 
-func (t *DialTarget) Update(endpoints []lan.Endpoint) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	next := make([]lan.Endpoint, 0, 3)
-	for _, ep := range endpoints {
-		if ep.Addr == "" || slices.Contains(next, ep) {
+func containsCandidate(list []DialCandidate, c DialCandidate) bool {
+	for _, have := range list {
+		if have.Endpoint != c.Endpoint {
 			continue
 		}
-		next = append(next, ep)
-		if len(next) == 3 {
-			break
+		if have.PeerID == c.PeerID || have.PeerID == "" || c.PeerID == "" {
+			return true
 		}
 	}
-	t.endpoints = next
+	return false
+}
+
+func (t *DialTarget) Update(endpoints []lan.Endpoint) {
+	id := t.PeerID()
+	cands := make([]DialCandidate, 0, len(endpoints))
+	for _, ep := range endpoints {
+		cands = append(cands, DialCandidate{PeerID: id, Endpoint: ep})
+	}
+	t.UpdateCandidates(cands)
+}
+
+func (t *DialTarget) UpdateCandidates(candidates []DialCandidate) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	perPeer := map[string]int{}
+	next := make([]DialCandidate, 0, len(candidates))
+	for _, c := range candidates {
+		if c.Endpoint.Addr == "" {
+			continue
+		}
+		id := c.PeerID
+		if id == "" {
+			id = t.peerID
+		}
+		c.PeerID = id
+		if containsCandidate(next, c) {
+			continue
+		}
+		if perPeer[id] >= 3 {
+			continue
+		}
+		perPeer[id]++
+		next = append(next, c)
+	}
+	t.candidates = next
 }
 
 func (t *DialTarget) Endpoints() []lan.Endpoint {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return slices.Clone(t.endpoints)
+	out := make([]lan.Endpoint, len(t.candidates))
+	for i, c := range t.candidates {
+		out[i] = c.Endpoint
+	}
+	return out
+}
+
+func (t *DialTarget) Candidates() []DialCandidate {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return slices.Clone(t.candidates)
+}
+
+func (t *DialTarget) hasTrusted(e *Engine) bool {
+	if e == nil || e.Peers == nil {
+		return false
+	}
+	t.mu.Lock()
+	cands := slices.Clone(t.candidates)
+	preferred := t.peerID
+	t.mu.Unlock()
+	if preferred != "" {
+		if _, ok := e.Peers.Get(preferred); ok {
+			return true
+		}
+	}
+	for _, c := range cands {
+		id := c.PeerID
+		if id == "" {
+			id = preferred
+		}
+		if id == "" {
+			continue
+		}
+		if _, ok := e.Peers.Get(id); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func Reconnect(ctx context.Context, target *DialTarget, e *Engine) {
@@ -164,10 +242,10 @@ func reconnect(ctx context.Context, target *DialTarget, e *Engine,
 	for ctx.Err() == nil {
 		peerID := target.PeerID()
 		_, trusted := e.Peers.Get(peerID)
-		if !trusted && (wasTrusted || (peerID != "" && peerID != initialID)) {
+		if !trusted && (wasTrusted || (peerID != "" && peerID != initialID)) && !target.hasTrusted(e) {
 			return
 		}
-		wasTrusted = wasTrusted || trusted
+		wasTrusted = wasTrusted || trusted || target.hasTrusted(e)
 		if e.Connected() {
 			backoff = time.Second
 			if !pause(ctx, 500*time.Millisecond) {
@@ -175,26 +253,43 @@ func reconnect(ctx context.Context, target *DialTarget, e *Engine,
 			}
 			continue
 		}
-		candidates := target.Endpoints()
+		candidates := target.Candidates()
 		if first {
-			candidates = target.firstEndpoints()
+			candidates = target.firstCandidates()
 			first = false
 		}
 		for ep := range blocked {
-			if !slices.Contains(candidates, ep) {
+			keep := false
+			for _, c := range candidates {
+				if c.Endpoint == ep {
+					keep = true
+					break
+				}
+			}
+			if !keep {
 				delete(blocked, ep)
 			}
 		}
-		for _, ep := range candidates {
+		for _, cand := range candidates {
 			if ctx.Err() != nil || e.Connected() {
 				break
+			}
+			ep := cand.Endpoint
+			id := cand.PeerID
+			if id == "" {
+				id = peerID
+			}
+			if id != "" {
+				if _, ok := e.Peers.Get(id); !ok && wasTrusted {
+					continue
+				}
 			}
 			if blocked[ep] {
 				continue
 			}
 			e.notify(Notice{Kind: NoticeDial, Message: "正在通过" + ep.Route.Label() + "连接 " + ep.Addr,
-				PeerID: peerID, Addr: ep.Addr, Route: ep.Route, DialSeq: target.Sequence})
-			err := attempt(ctx, ep, peerID, e)
+				PeerID: id, Addr: ep.Addr, Route: ep.Route, DialSeq: target.Sequence})
+			err := attempt(ctx, ep, id, e)
 			if ctx.Err() != nil {
 				return
 			}
@@ -202,14 +297,14 @@ func reconnect(ctx context.Context, target *DialTarget, e *Engine,
 				backoff = time.Second
 				break
 			}
-			e.notify(Notice{Kind: NoticeDial, Message: err.Error(), PeerID: peerID,
+			e.notify(Notice{Kind: NoticeDial, Message: err.Error(), PeerID: id,
 				Addr: ep.Addr, Route: ep.Route, DialSeq: target.Sequence})
 			if errors.Is(err, ErrPairingStopped) {
 				return
 			}
 			if errors.Is(err, ErrWrongPeer) || errors.Is(err, ErrFingerprintMismatch) {
 				blocked[ep] = true
-				if peerID == "" {
+				if id == "" {
 					return
 				}
 			}
