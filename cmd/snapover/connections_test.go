@@ -88,7 +88,7 @@ func TestEditingTailscaleOnlyAddressDoesNotInventLAN(t *testing.T) {
 	a.allowTailscale, a.targetPeerID = true, "device"
 	a.dialProposed = lan.Endpoint{Addr: "100.65.1.99:49000", Route: lan.RouteTailscale}
 	paths := a.connectionCandidates()
-	if len(paths) != 1 || paths[0] != a.dialProposed {
+	if len(paths) != 1 || paths[0].Endpoint != a.dialProposed || paths[0].PeerID != "device" {
 		t.Fatalf("editing invented a LAN path: %+v", paths)
 	}
 	if p, _ := a.engine.Peers.Get("device"); p.LANAddress() != "" || p.TailscaleAddr != old.Addr {
@@ -225,5 +225,96 @@ func TestTailscaleControlsAndSavedAddressesAreAvailableInNativeUI(t *testing.T) 
 	tt.Frame()
 	if !tt.HasText("允许通过 Tailscale 连接") {
 		t.Fatal("Tailscale setting missing")
+	}
+}
+
+func twoPeerApp(t *testing.T) *app {
+	t.Helper()
+	a := interfaceTestApp(t)
+	if _, err := a.engine.Peers.Allow("home", "aaaa", "家里", "windows", "192.168.1.20:47821"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.engine.Peers.Allow("work", "bbbb", "公司", "macos", "192.168.1.30:47821"); err != nil {
+		t.Fatal(err)
+	}
+	a = newApp(a.engine, a.hist, a.cfg, &identity.Identity{}, ":47821", nil, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	a.root = ctx
+	return a
+}
+
+func candidateAddrs(cands []clipsync.DialCandidate) map[string]string {
+	out := map[string]string{}
+	for _, c := range cands {
+		out[c.PeerID] = c.Endpoint.Addr
+	}
+	return out
+}
+
+func TestAutoConnectQueuesAllPairedDevices(t *testing.T) {
+	a := twoPeerApp(t)
+	a.connect()
+	defer a.stopDial()
+	got := candidateAddrs(a.dialTarget.Candidates())
+	if got["home"] != "192.168.1.20:47821" || got["work"] != "192.168.1.30:47821" {
+		t.Fatalf("auto candidates: %+v", a.dialTarget.Candidates())
+	}
+	if a.dialTarget.PeerID() == "" || a.dialPinned {
+		t.Fatalf("auto dial pinned or missing preferred: %q %v", a.dialTarget.PeerID(), a.dialPinned)
+	}
+}
+
+func TestConnectButtonPinsOnePairedDevice(t *testing.T) {
+	a := twoPeerApp(t)
+	a.connectDevice("home", "192.168.1.20:47821")
+	defer a.stopDial()
+	cands := a.dialTarget.Candidates()
+	if !a.dialPinned || a.dialTarget.PeerID() != "home" || len(cands) != 1 || cands[0].Endpoint.Addr != "192.168.1.20:47821" {
+		t.Fatalf("pinned: pinned=%v id=%s %+v", a.dialPinned, a.dialTarget.PeerID(), cands)
+	}
+}
+
+func TestDiscoveryAddsOtherPairedDeviceWithoutRetargeting(t *testing.T) {
+	a := twoPeerApp(t)
+	a.connect()
+	defer a.stopDial()
+	preferred := a.targetPeerID
+	a.applyDiscovery(discovery.Snapshot{Devices: []discovery.Device{
+		{ID: "home", Addr: "192.168.8.20:47821"},
+	}})
+	if a.targetPeerID != preferred {
+		t.Fatalf("discovery retargeted %s -> %s", preferred, a.targetPeerID)
+	}
+	found := false
+	for _, c := range a.dialTarget.Candidates() {
+		if c.PeerID == "home" && c.Endpoint.Addr == "192.168.8.20:47821" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("other paired discovery not queued: %+v", a.dialTarget.Candidates())
+	}
+}
+
+func TestExplicitPeerDoesNotQueueOtherPairedDevice(t *testing.T) {
+	a := twoPeerApp(t)
+	a = newApp(a.engine, a.hist, a.cfg, &identity.Identity{}, ":47821", nil, "192.168.1.20:47821")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	a.root = ctx
+	a.connect()
+	defer a.stopDial()
+	cands := a.dialTarget.Candidates()
+	if !a.dialPinned || len(cands) != 1 || cands[0].PeerID != "home" || cands[0].Endpoint.Addr != "192.168.1.20:47821" {
+		t.Fatalf("explicit queued others: pinned=%v %+v", a.dialPinned, cands)
+	}
+	a.applyDiscovery(discovery.Snapshot{Devices: []discovery.Device{
+		{ID: "work", Addr: "192.168.8.30:47821"},
+	}})
+	for _, c := range a.dialTarget.Candidates() {
+		if c.PeerID == "work" {
+			t.Fatalf("pinned discovery queued work: %+v", a.dialTarget.Candidates())
+		}
 	}
 }

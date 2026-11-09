@@ -315,23 +315,29 @@ func TestPairedDevicesRevealSearchOnlyWhenAdding(t *testing.T) {
 	}
 }
 
-func TestNetworkPermissionReminderAppearsWhenAdding(t *testing.T) {
+func TestNetworkPermissionReminderAppearsBeforeAdding(t *testing.T) {
 	previous := currentNetworkGuideKind
 	t.Cleanup(func() { currentNetworkGuideKind = previous })
 	currentNetworkGuideKind = guideMacLocalNetwork
 	a := interfaceTestApp(t)
 	tt := ui.NewTester(a.view, 960, 640)
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	if !tt.HasText("打开本地网络设置") || !tt.HasText("本地网络权限") {
+		t.Fatal("unpaired devices page should offer local network access before adding")
+	}
+	if !tt.HasText("同步文字、图片和文件，不保留字体和颜色。") || !tt.HasText("手填地址") {
+		t.Fatal("unpaired empty devices page should state the sync contract and offer a manual address")
+	}
 	if tt.HasText("查看连接指引") {
-		t.Fatal("permission instructions should wait until the user adds a device")
+		t.Fatal("first-run should not send people to the guide before the system permission")
 	}
 	clickInterface(t, tt, "添加设备")
-	if !tt.HasText("查看连接指引") || !tt.HasText("本地网络权限") {
-		t.Fatal("adding should explain the network permission before pairing")
+	if !tt.HasText("打开本地网络设置") {
+		t.Fatal("adding should keep the permission action visible")
 	}
 	clickInterface(t, tt, "取消添加")
-	if tt.HasText("查看连接指引") || !tt.HasText("连接帮助") {
-		t.Fatal("canceling should hide the reminder and preserve manual help")
+	if !tt.HasText("打开本地网络设置") || !tt.HasText("连接帮助") {
+		t.Fatal("canceling add should keep the unpaired permission action")
 	}
 }
 
@@ -511,6 +517,9 @@ func TestPickerPaddingDragMovesTheWindow(t *testing.T) {
 	restore := pickerCursor
 	pickerCursor = func() mygo.Point { return cursor }
 	t.Cleanup(func() { pickerCursor = restore })
+	restoreDisplay := pickerDisplayAt
+	pickerDisplayAt = func(mygo.Point) (mygo.Rectangle, float64) { return a.pickArea, 1 }
+	t.Cleanup(func() { pickerDisplayAt = restoreDisplay })
 	tt := ui.NewTester(a.pickerView, 380, 440)
 
 	tt.Press(5, 220)
@@ -532,6 +541,39 @@ func TestPickerPaddingDragMovesTheWindow(t *testing.T) {
 	}
 }
 
+func TestPickerDragMovesToAnotherDisplay(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.pickSizeW, a.pickSizeH = 380, 440
+	a.pickPlaced = true
+	a.pickRect = mygo.Rectangle{X: 100, Y: 100, Width: 380, Height: 440}
+	left := mygo.Rectangle{X: 0, Y: 0, Width: 1440, Height: 900}
+	right := mygo.Rectangle{X: 1440, Y: 0, Width: 1920, Height: 1080}
+	a.pickArea = left
+	cursor := mygo.Point{X: 105, Y: 320}
+	restore := pickerCursor
+	pickerCursor = func() mygo.Point { return cursor }
+	t.Cleanup(func() { pickerCursor = restore })
+	restoreDisplay := pickerDisplayAt
+	pickerDisplayAt = func(p mygo.Point) (mygo.Rectangle, float64) {
+		if p.X >= right.X {
+			return right, 1
+		}
+		return left, 1
+	}
+	t.Cleanup(func() { pickerDisplayAt = restoreDisplay })
+	tt := ui.NewTester(a.pickerView, 380, 440)
+	tt.Press(5, 220)
+	cursor = mygo.Point{X: 1600, Y: 400}
+	tt.Move(200, 300)
+	tt.Release(200, 300)
+	if a.pickArea != right {
+		t.Fatalf("pickArea = %+v, want the destination display", a.pickArea)
+	}
+	if a.pickRect.X != 1595 || a.pickRect.Y != 180 || a.pickRect.Width != 380 || a.pickRect.Height != 440 {
+		t.Fatalf("drag onto the other display gave %+v, want 1595,180 at 380x440", a.pickRect)
+	}
+}
+
 // A window that follows the pointer must follow its place on the screen, not
 // the movements of a press: a press measured in a window that moved already
 // counted them, and adding them up shakes the window.
@@ -545,6 +587,9 @@ func TestPickerDragFollowsThePointer(t *testing.T) {
 	restore := pickerCursor
 	pickerCursor = func() mygo.Point { return cursor }
 	t.Cleanup(func() { pickerCursor = restore })
+	restoreDisplay := pickerDisplayAt
+	pickerDisplayAt = func(mygo.Point) (mygo.Rectangle, float64) { return a.pickArea, 1 }
+	t.Cleanup(func() { pickerDisplayAt = restoreDisplay })
 	tt := ui.NewTester(a.pickerView, 380, 440)
 
 	// Each frame of the drag moves the pointer and the window by the same

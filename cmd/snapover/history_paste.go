@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/paste"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -54,17 +56,6 @@ func (a *app) startHistoryPasteMode(id string, picker *mygo.Window, copyOnly boo
 	}
 	if a.historyPaste != nil {
 		return
-	}
-	for _, entry := range a.entries {
-		if entry.ID == id && entry.Kind == string(clip.KindFiles) {
-			msg := "文件内容未保存在历史中，请重新复制后再粘贴"
-			if picker != nil {
-				a.pickFlash = msg
-			} else {
-				a.flash = msg
-			}
-			return
-		}
 	}
 	parent := a.root
 	if parent == nil {
@@ -173,6 +164,9 @@ func (a *app) completeHistoryPaste(r *pasteRequest) {
 		}
 	}
 	message := "读历史失败"
+	if errors.Is(result.err, history.ErrFilesUnavailable) {
+		message = history.ErrFilesUnavailable.Error()
+	}
 	if !found {
 		message = "记录已删除，请重新选择"
 	} else if result.err == nil {

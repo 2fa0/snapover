@@ -46,6 +46,19 @@ type app struct {
 	cfg                       *settings.File
 	systemLang                string
 	languageError             string
+	privacyMode               bool
+	excludedAppsText          string
+	privacyError              string
+	backupBusy                bool
+	backupFirst               string
+	backupLast                string
+	showBackup                bool
+	fileAvailability          map[string]fileAvailabilityResult
+	fileAvailabilityPending   chan fileAvailabilityResult
+	fileAvailabilityChecking  string
+	backupMessage             string
+	diagnosticSummary         string
+	showPrivacy               bool
 	paused                    bool
 	textOnly                  bool
 	maxImageText              string
@@ -92,6 +105,8 @@ type app struct {
 	status              string
 	syncStatus          string
 	syncFailure         string
+	rdpWatchSeq         uint64
+	clipboardOwner      func() string
 	syncSessionID       string
 	flash               string
 	pendingToast        string
@@ -119,6 +134,7 @@ type app struct {
 	editTailscaleID   string
 	editTailscaleAddr string
 	dialTarget        *clipsync.DialTarget
+	dialPinned        bool
 	dialProposed      lan.Endpoint
 	probeCancel       context.CancelFunc
 	probeSeq          uint64
@@ -167,6 +183,9 @@ type app struct {
 	pickRestoreID       string
 	pickRestoreIndex    int
 	pickMutationPending bool
+	editNoteID          string
+	editNoteText        string
+	editNotePicker      bool
 	pickList            ui.ListState
 	pickFlash           string
 	pickBusy            bool
@@ -176,37 +195,40 @@ type app struct {
 	// resize is heading for, before rounding. pickPlaced says the record was
 	// read back from the window. A move starts at the place the window had
 	// then, pickX and pickY, and the pointer's, pickGrab.
-	pickSizeW          int
-	pickSizeH          int
-	pickDragW          float32
-	pickDragH          float32
-	pickResizing       bool
-	pickPlaced         bool
-	pickMoving         bool
-	pickGrab           mygo.Point
-	pickX              int
-	pickY              int
-	pickRect           mygo.Rectangle
-	pickScale          float64
-	pickArea           mygo.Rectangle
-	pasteTo            paste.Target
-	dialCancel         context.CancelFunc
-	dialAddr           string
-	fileWin            *mygo.Window
-	networkGuide       *networkGuide
-	filePaths          []string
-	fileSize           int64
-	fileBusy           bool
-	fileChoosing       bool
-	fileSent           bool
-	fileRecipient      string
-	fileDone           int64
-	fileMessage        string
-	receiveMessage     string
-	fileCommandHint    string
-	fileWaiting        bool
-	pendingFileRequest *fileRequest
-	sendToBusy         bool
+	pickSizeW              int
+	pickSizeH              int
+	pickDragW              float32
+	pickDragH              float32
+	pickResizing           bool
+	pickPlaced             bool
+	pickMoving             bool
+	pickGrab               mygo.Point
+	pickX                  int
+	pickY                  int
+	pickRect               mygo.Rectangle
+	pickScale              float64
+	pickArea               mygo.Rectangle
+	pasteTo                paste.Target
+	dialCancel             context.CancelFunc
+	dialAddr               string
+	fileWin                *mygo.Window
+	transferWin            *mygo.Window
+	transfer               transferProgress
+	networkGuide           *networkGuide
+	openingNetworkSettings bool
+	filePaths              []string
+	fileSize               int64
+	fileBusy               bool
+	fileChoosing           bool
+	fileSent               bool
+	fileRecipient          string
+	fileDone               int64
+	fileMessage            string
+	receiveMessage         string
+	fileCommandHint        string
+	fileWaiting            bool
+	pendingFileRequest     *fileRequest
+	sendToBusy             bool
 }
 
 func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id *identity.Identity, listen string, addrs []string, peer string) *app {
@@ -247,6 +269,9 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		listen:              listen,
 		addrs:               addrs,
 		paused:              cfg.Values.Paused,
+		privacyMode:         cfg.Values.PrivacyMode,
+		clipboardOwner:      clip.OwnerProcess,
+		excludedAppsText:    strings.Join(cfg.Values.ExcludedApps, "; "),
 		textOnly:            cfg.Values.TextOnly,
 		keepAwake:           cfg.Values.KeepAwake,
 		allowTailscale:      cfg.Values.AllowTailscale,
@@ -351,6 +376,13 @@ func (a *app) open(ctx context.Context) {
 	a.restoreKeepAwake()
 	a.initSendTo()
 	a.startTray()
+	mygo.Screen.OnDisplaysChanged(func() {
+		a.update(func() {
+			if !a.quitting {
+				a.clampWindowsToDisplays()
+			}
+		})
+	})
 	if (!mygo.App.WasOpenedAtLogin() && !a.sendToColdLaunch && a.pendingFileRequest == nil) || a.tray == nil {
 		a.openMainWindow()
 	}
@@ -402,6 +434,7 @@ func (a *app) openMainWindow() {
 		Content:              ui.View(a.view),
 	})
 	a.win = win
+	a.syncTransferHUD()
 	win.OnBlur(func() { a.cancelShortcutRecording(); win.Invalidate() })
 	win.OnClosed(func() {
 		a.cancelShortcutRecording()
@@ -410,12 +443,16 @@ func (a *app) openMainWindow() {
 			a.closePickPreview()
 		}
 		a.win = nil
+		a.syncTransferHUD()
 		a.menuBarPreviews = [3]*ui.Bitmap{}
 		a.historySearch.reset()
 		a.shownSource, a.shownEntries = nil, nil
 		// ListState holds its window host, including the closed UI's resources.
 		a.histList = ui.ListState{Key: a.histList.Key, Label: a.histList.Label, Selected: &a.histSel}
 		a.confirm, a.confirmClear = false, false
+		if !a.editNotePicker {
+			a.cancelEditNote()
+		}
 		a.pendingToast = ""
 		if r := a.historyPaste; r != nil && r.picker == nil {
 			a.cancelHistoryPaste()
@@ -439,6 +476,9 @@ func (a *app) update(fn func()) {
 		}
 		if a.fileWin != nil {
 			a.fileWin.Invalidate()
+		}
+		if a.transferWin != nil {
+			a.transferWin.Invalidate()
 		}
 		a.refreshNetworkGuide()
 	})
@@ -465,7 +505,7 @@ func (a *app) onNotice(n clipsync.Notice) error {
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			entry, err = a.hist.AddFiles(ctx, dir, peer, n.Item, a.engine.FileLimit())
+			entry, err = a.hist.AddFiles(ctx, dir, peer, n.Item)
 		} else {
 			entry, err = a.hist.Add(dir, peer, n.Item)
 		}
@@ -514,10 +554,17 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 		a.page = pageDevices
 	case clipsync.NoticeStatus, clipsync.NoticeError:
 		if n.Kind == clipsync.NoticeStatus {
+			if _, skip := syncStageFromStatus(n.Message); skip {
+				a.applySyncStage(n)
+				break
+			}
 			a.clearSyncFailure()
 			if link, up := a.engine.Link(); up && link.SessionID != a.syncSessionID {
 				a.syncStatus = ""
 			}
+		}
+		if n.Kind == clipsync.NoticeError {
+			a.applySyncStage(n)
 		}
 		a.status = n.Message
 		a.devices = a.engine.Peers.List()
@@ -543,8 +590,13 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 			}
 		}
 	case clipsync.NoticeLocal, clipsync.NoticeRemote:
-		if n.Message != "" {
+		if n.Kind == clipsync.NoticeLocal {
+			a.applySyncStage(n)
+		} else if n.Message != "" {
 			a.flash = n.Message
+		}
+		if n.Kind == clipsync.NoticeRemote && n.Written {
+			a.watchRDPOverwrite()
 		}
 	case clipsync.NoticeSync:
 		if n.SessionID != "" {
@@ -553,17 +605,26 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 				return
 			}
 		}
-		a.clearSyncFailure()
+		if n.ClipboardState == "cancelled" {
+			a.applySyncStage(n)
+			a.clearTransfer()
+			break
+		}
 		a.syncSessionID = n.SessionID
 		a.syncStatus = n.Message
 		if n.ClipboardState == "complete" {
 			a.syncStatus = "已确认写入对端剪贴板"
 		}
-		if n.ClipboardState != "complete" && n.ClipboardState != "sending" {
-			a.flash = n.Message
-			a.syncFailure = n.Message
-		}
+		a.applySyncStage(n)
+		a.applyClipboardTransfer(n)
 	case clipsync.NoticeFile:
+		a.applyFileTransfer(n)
+		if n.FileClipboard {
+			if n.FileState == "error" && n.Message != "" {
+				a.applySyncStage(n)
+			}
+			break
+		}
 		a.receiveMessage = receivedMessage(n)
 		if n.FileState == "complete" || n.FileState == "error" {
 			a.flash = a.receiveMessage
@@ -574,6 +635,9 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 	}
 	if a.fileWin != nil {
 		a.fileWin.Invalidate()
+	}
+	if a.transferWin != nil {
+		a.transferWin.Invalidate()
 	}
 	a.refreshTray()
 }
@@ -587,6 +651,7 @@ func (a *app) view(c *ui.Context) {
 		a.pendingToast = ""
 	}
 	a.windowShortcuts(c)
+	a.pumpTransfer(c)
 	a.pollHistoryStorage()
 	if a.historyCleanupPending != nil {
 		c.After(50 * time.Millisecond)
@@ -627,6 +692,9 @@ func (a *app) view(c *ui.Context) {
 				if a.paused {
 					label = "同步已暂停"
 				}
+				if a.privacyMode {
+					label = "隐私模式"
+				}
 				ui.Text(c, a.tr(label)).FontSize(12).Bold().SingleLine().ContentTransition(ui.ContentTransition{})
 				if up {
 					name := a.displayName(link.Name, link.ID)
@@ -639,8 +707,13 @@ func (a *app) view(c *ui.Context) {
 				// Pairing copy is already on the devices page; don't repeat it under the sidebar.
 				if status != "" && status != "未连接" && status != "已连接" && status != "已连接 "+link.Name && !(a.page == pageDevices && repeatsDevicesPage(status)) {
 					shownStatus := a.tr(status)
-					ui.Text(c, shownStatus).FontSize(11).TextColor(t.TextMuted).MaxLines(3).Tooltip(shownStatus).ContentTransition(ui.ContentTransition{})
+					color := t.TextMuted
+					if a.syncFailure != "" && status == a.syncFailure {
+						color = t.Danger
+					}
+					ui.Text(c, shownStatus).FontSize(11).TextColor(color).MaxLines(3).Tooltip(shownStatus).ContentTransition(ui.ContentTransition{})
 				}
+				a.sidebarTransfer(c, t)
 			})
 		})
 		ui.Column(c.Key("page-host")).Grow(1).FillHeight().Children(func() {
@@ -668,11 +741,16 @@ func (a *app) view(c *ui.Context) {
 	if a.page != pageHistory && a.pickPreview.parent == a.win {
 		a.closePickPreview()
 	}
+	if a.page != pageHistory && !a.editNotePicker {
+		a.cancelEditNote()
+	}
 }
 
 func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
 	settingsGroup(c, a.tr("剪贴板同步"), func() {
+		a.privacySettings(c)
+		ui.Divider(c)
 		a.syncModeSettings(c)
 		ui.Divider(c)
 		if settingSwitch(c, &a.paused, a.tr("暂停同步"), "") {
@@ -682,8 +760,6 @@ func (a *app) settingsPage(c *ui.Context) {
 		if settingSwitch(c, &a.textOnly, a.tr("只同步文本"), "") {
 			a.saveSettings()
 		}
-		ui.Divider(c)
-		a.ignoreNextCopySettings(c)
 		ui.Divider(c)
 		ui.Collapsible(c, a.tr("大小限制"), &a.showSyncLimits, func() {
 			ui.Column(c).Gap(14).Padding(12, 0).Children(func() {
@@ -736,37 +812,39 @@ func (a *app) settingsPage(c *ui.Context) {
 				}
 			})
 		})
+		ui.Divider(c)
+		ui.Collapsible(c, a.tr("接收文件夹"), &a.showReceiveFolder, func() {
+			ui.Column(c).Padding(12, 0).Gap(10).Children(func() { a.receiveSettings(c) })
+		})
 	})
 	ui.Row(c).Gap(16).AlignItems(ui.Stretch).Children(func() {
 		settingsGroup(c, a.tr("复制并同步快捷键"), func() { a.copyShortcutSettings(c) }).Grow(1).Basis(0).MinWidth(0)
 		settingsGroup(c, a.tr("快速历史快捷键"), func() { a.shortcutSettings(c) }).Grow(1).Basis(0).MinWidth(0)
 	})
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		title := "菜单栏图标"
-		if runtime.GOOS == "windows" {
-			title = "托盘图标"
-		}
-		settingsGroup(c, a.tr(title), func() { a.menuBarIconSettings(c) })
-	}
 	settingsGroup(c, a.tr("历史存储"), func() { a.historyStorageSettings(c) })
-	ui.Column(c.Key("开机启动")).Padding(16).Radius(12).Background(c.Theme().Surface).Children(func() {
+	settingsGroup(c, a.tr("通用与外观"), func() {
+		a.languageSettings(c)
+		if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+			ui.Divider(c)
+			title := "菜单栏图标"
+			if runtime.GOOS == "windows" {
+				title = "托盘图标"
+			}
+			ui.Text(c, a.tr(title)).Bold()
+			a.menuBarIconSettings(c)
+		}
+		ui.Divider(c)
 		if settingSwitch(c, &a.openAtLogin, a.tr("开机启动"), "") {
 			a.setOpenAtLogin(a.openAtLogin)
 		}
-	})
-	if keepawake.Supported {
-		ui.Column(c.Key("防止自动锁屏")).Padding(16).Radius(12).Background(c.Theme().Surface).Children(func() {
+		if keepawake.Supported {
+			ui.Divider(c)
 			a.keepAwakeSettings(c)
-		})
-	}
-	settingsGroup(c, a.tr("语言"), func() { a.languageSettings(c) })
-	settingsGroup(c, a.tr("跨网络连接"), func() { a.tailscaleSettings(c) })
-	settingsGroup(c, a.tr("文件同步"), func() {
-		ui.Collapsible(c, a.tr("接收文件夹"), &a.showReceiveFolder, func() {
-			ui.Column(c).Padding(12, 0).Gap(10).Children(func() { a.receiveSettings(c) })
-		})
+		}
 	})
 	settingsGroup(c, a.tr("本机与诊断"), func() {
+		a.tailscaleSettings(c)
+		ui.Divider(c)
 		ui.Collapsible(c, a.tr("设备信息"), &a.showIdentity, func() {
 			ui.Column(c).Padding(12, 0).Gap(10).Children(func() {
 				kv(c, a.tr("名称"), a.name)
@@ -788,6 +866,7 @@ func (a *app) settingsPage(c *ui.Context) {
 		})
 		ui.Collapsible(c, a.tr("连接诊断"), &a.showDiagnostics, func() {
 			ui.Column(c).Padding(12, 0).Children(func() {
+				a.diagnosticSettings(c)
 				if ui.Button(c, a.tr("测试连接")).Clicked() {
 					a.probe()
 				}
@@ -805,6 +884,7 @@ func (a *app) historyPage(c *ui.Context) {
 	if a.historyUnavailable(c) {
 		return
 	}
+	a.backupSettings(c)
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 		if ui.TextInput(c.Key("query"), &a.query).Label(a.tr("搜索复制历史")).Placeholder(a.tr("搜索内容或来源")).Grow(1).Changed() {
 			a.closePickPreview()
@@ -857,6 +937,10 @@ func (a *app) historyPage(c *ui.Context) {
 				entry := shown[i]
 				sel := i == a.histSel
 				row := ui.Row(c).Padding(12, 10).Gap(12).AlignItems(ui.Center)
+				row.ContextMenu(func(m *ui.Menu) {
+					a.histSel = i
+					a.historyEntryMenu(m, entry)
+				})
 				var title ui.Element
 				titleText := a.entryTitle(entry)
 				row.Children(func() {
@@ -868,12 +952,20 @@ func (a *app) historyPage(c *ui.Context) {
 							if entry.Pinned {
 								ui.Icon(c, pinIcon).FontSize(12).TextColor(rowMetaColor(t, sel)).Shrink(0)
 							}
+							if entry.Pinned && entry.PinKey > 0 && entry.PinKey <= 9 {
+								ui.Text(c, pinShortcutLabel(entry.PinKey)).FontSize(11).TextColor(rowMetaColor(t, sel)).Shrink(0).
+									Tooltip(a.tr("在快速历史内直接粘贴此条记录"))
+							}
 							a.historySource(c, entry, rowMetaColor(t, sel), 12)
 						})
 					})
 					ui.Column(c).Gap(5).AlignItems(ui.End).Shrink(0).Children(func() {
 						ui.Text(c, a.tr(relTime(entry.At))).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
-						ui.Text(c, formatSize(entry.Size)).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
+						size := formatSize(entry.Size)
+						if entry.Kind == string(clip.KindFiles) && (entry.Folder || entry.FileCount > 1) {
+							size = fmt.Sprintf(a.tr("%d 项"), entry.FileCount)
+						}
+						ui.Text(c, size).FontSize(11).TextColor(rowMetaColor(t, sel)).SingleLine()
 					})
 				})
 				if row.Hovered() && rowNeedsPreview(c, entry, titleText, title) {
@@ -884,19 +976,30 @@ func (a *app) historyPage(c *ui.Context) {
 			}
 		}
 	})
+	a.noteEditorRow(c, false)
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		if press(ui.PrimaryButton(c, a.tr("复制")).Disabled(a.histSel < 0 || a.historyPaste != nil || a.pasteWorker != nil || a.historyCleanupPending != nil)).Clicked() {
 			a.pasteHistory()
 		}
 		ui.Toolbar(c, func() {
+			selectedEntry, hasSelected := a.selected()
 			label := "置顶"
-			if entry, ok := a.selected(); ok && entry.Pinned {
+			if hasSelected && selectedEntry.Pinned {
 				label = "取消置顶"
 			}
-			if press(ui.Button(c, a.tr(label)).Label(a.tr(label + "当前记录")).Disabled(a.histSel < 0 || a.historyCleanupPending != nil)).Clicked() {
+			if press(ui.Button(c, a.tr(label)).Label(a.tr(label + "当前记录")).Disabled(!hasSelected || a.historyCleanupPending != nil)).Clicked() {
 				a.pinSelected()
 			}
-			if press(ui.Button(c, a.tr("删除")).Disabled(a.histSel < 0 || a.historyCleanupPending != nil)).Clicked() {
+			if hasSelected && selectedEntry.Pinned {
+				noteLabel := "设置备注"
+				if selectedEntry.Note != "" {
+					noteLabel = "修改备注"
+				}
+				if press(ui.Button(c, a.tr(noteLabel)).Label(a.tr("设置当前记录备注")).Disabled(a.historyCleanupPending != nil)).Clicked() {
+					a.beginEditNote(selectedEntry, false)
+				}
+			}
+			if press(ui.Button(c, a.tr("删除")).Disabled(!hasSelected || a.historyCleanupPending != nil)).Clicked() {
 				a.deleteSelected()
 			}
 		}).Label(a.tr("记录操作"))
@@ -940,6 +1043,7 @@ func (a *app) stopDial() {
 	}
 	a.dialAddr = ""
 	a.dialTarget = nil
+	a.dialPinned = false
 	a.dialProposed = lan.Endpoint{}
 }
 
@@ -1222,6 +1326,9 @@ func (a *app) clearSyncFailure() {
 }
 
 func (a *app) displayStatus() string {
+	if a.privacyMode {
+		return "隐私模式：不记录、不收发剪贴板"
+	}
 	if a.syncFailure != "" && !a.paused {
 		return a.syncFailure
 	}

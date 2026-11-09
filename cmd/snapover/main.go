@@ -186,6 +186,7 @@ func main() {
 	engine.Board = clip.MyGoBoard{TextLimit: engine.TextLimit}
 	engine.SetPolicy(cfg.Values.Paused, cfg.Values.TextOnly, cfg.Values.MaxImageMB<<20)
 	engine.SetManualSync(cfg.Values.ManualSync)
+	engine.SetPrivacyPolicy(cfg.Values.PrivacyMode, cfg.Values.ExcludedApps)
 	receiveDir := cfg.Values.ReceiveDir
 	if receiveDir == "" {
 		receiveDir = defaultReceiveDir()
@@ -232,17 +233,19 @@ func main() {
 			return
 		}
 		go engine.MaintainClipboardCache(ctx)
-		uiApp.open(ctx)
-		if _, err := control.Start(ctx, dataDir, uiApp.handleCLI); err != nil {
-			log.Error("CLI 服务启动失败", "err", err)
-			uiApp.onNotice(clipsync.Notice{Kind: clipsync.NoticeError, Message: "CLI 服务启动失败：" + err.Error()})
-		}
+		// Listen before the window so Windows can show the firewall prompt while
+		// the unpaired devices page is explaining that prompt.
 		go func() {
 			if err := clipsync.Listen(ctx, *listen, engine); err != nil && ctx.Err() == nil {
 				log.Error("监听失败", "addr", *listen, "err", err)
 				uiApp.onNotice(clipsync.Notice{Kind: clipsync.NoticeError, Message: "监听失败：" + err.Error()})
 			}
 		}()
+		uiApp.open(ctx)
+		if _, err := control.Start(ctx, dataDir, uiApp.handleCLI); err != nil {
+			log.Error("CLI 服务启动失败", "err", err)
+			uiApp.onNotice(clipsync.Notice{Kind: clipsync.NoticeError, Message: "CLI 服务启动失败：" + err.Error()})
+		}
 		engine.StartLocalQueue(ctx)
 		go clip.Watch(ctx, engine.Board, clip.PollEvery, func(seq uint64, item clip.Item) {
 			if item.Kind != "" && !item.Sensitive && item.Skip == "" && item.SourceApp == "" {

@@ -90,7 +90,7 @@ func TestMacNetworkGuideReminderCanBeDismissedWithoutLoadingWindow(t *testing.T)
 	a := interfaceTestApp(t)
 	currentNetworkGuideKind = guideMacLegacy
 	tt := ui.NewTester(a.networkSetupHint, 600, 260)
-	if tt.HasText("查看连接指引") {
+	if tt.HasText("查看连接指引") || tt.HasText("打开本地网络设置") {
 		t.Fatal("older Mac versions should not show the permission reminder")
 	}
 	currentNetworkGuideKind = guideMacLocalNetwork
@@ -99,7 +99,7 @@ func TestMacNetworkGuideReminderCanBeDismissedWithoutLoadingWindow(t *testing.T)
 		t.Fatal("first setup should explain local network access")
 	}
 	clickInterface(t, tt, "不再提示")
-	if tt.HasText("查看连接指引") || a.networkGuide != nil || !a.cfg.Values.MacNetworkGuideDismissed {
+	if tt.HasText("打开本地网络设置") || a.networkGuide != nil || !a.cfg.Values.MacNetworkGuideDismissed {
 		t.Fatal("dismissal should remove the reminder without allocating a guide window")
 	}
 	cfg, err := settings.Load(filepath.Dir(a.cfg.Path))
@@ -112,6 +112,24 @@ func TestMacNetworkGuideReminderCanBeDismissedWithoutLoadingWindow(t *testing.T)
 	}
 }
 
+func TestNetworkSetupHintOffersSystemPermissionWithoutGuide(t *testing.T) {
+	previous := currentNetworkGuideKind
+	t.Cleanup(func() { currentNetworkGuideKind = previous })
+	for _, tc := range []struct {
+		kind   networkGuideKind
+		action string
+	}{
+		{guideWindows, "打开防火墙设置"},
+		{guideMacLocalNetwork, "打开本地网络设置"},
+	} {
+		currentNetworkGuideKind = tc.kind
+		a := interfaceTestApp(t)
+		tt := ui.NewTester(a.networkSetupHint, 600, 260)
+		if !tt.HasText(tc.action) || !tt.HasText("连接帮助") || tt.HasText("查看连接指引") || a.networkGuide != nil {
+			t.Fatalf("kind %v should offer %s without opening the guide", tc.kind, tc.action)
+		}
+	}
+}
 func TestNetworkGuideRetryUsesExistingDiscoveryAndDoesNotBlock(t *testing.T) {
 	a := interfaceTestApp(t)
 	a.discoveryWake = make(chan struct{}, 1)

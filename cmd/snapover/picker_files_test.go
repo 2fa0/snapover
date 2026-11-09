@@ -96,29 +96,72 @@ func TestFileTreePreviewUsesOnlyOneLevelAndSignalsMore(t *testing.T) {
 	}
 }
 
-func TestFileHistoryPasteKeepsNamesWithoutPublishingBodies(t *testing.T) {
+func TestFileHistoryPasteWritesExistingFilesAndExplainsWhenRemoved(t *testing.T) {
 	a := interfaceTestApp(t)
 	entry := historyFileEntry(t, a, true)
 	board := &pasteTestBoard{}
 	a.board = board
 	a.startHistoryPaste(entry.ID, nil)
+	r := a.historyPaste
+	if r == nil {
+		t.Fatal("existing file history paste did not start")
+	}
+	select {
+	case result := <-r.result:
+		r.result <- result
+	case <-time.After(3 * time.Second):
+		t.Fatal("background file paste read did not finish")
+	}
+	a.completeHistoryPaste(r)
+	if len(board.writes) != 1 || board.writes[0].Kind != clip.KindFiles || len(board.writes[0].Files) != 1 {
+		t.Fatalf("existing file history did not write back files: %+v", board.writes)
+	}
+	for _, p := range entry.FilePaths {
+		if err := os.RemoveAll(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	board.writes = nil
+	a.startHistoryPaste(entry.ID, nil)
+	finishFilePaste(t, a)
 	if a.historyPaste != nil || len(board.writes) != 0 {
-		t.Fatal("file history paste started a body copy")
+		t.Fatal("removed file history paste started a body copy")
 	}
 	if a.flash != "文件内容未保存在历史中，请重新复制后再粘贴" {
 		t.Fatalf("missing explanation: %q", a.flash)
 	}
 }
 
-func TestFileHistoryPasteFromPickerExplainsMissingBody(t *testing.T) {
+func TestFileHistoryPasteFromPickerAndRevealInFolder(t *testing.T) {
 	a := interfaceTestApp(t)
 	entry := historyFileEntry(t, a, false)
+	revealed := make(chan string, 1)
+	restore := revealFileInFolder
+	revealFileInFolder = func(path string) { revealed <- path }
+	t.Cleanup(func() { revealFileInFolder = restore })
+
+	a.revealHistoryFile(entry)
+	select {
+	case path := <-revealed:
+		if path != entry.FilePaths[0] {
+			t.Fatal(path)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reveal worker did not finish")
+	}
+
+	for _, p := range entry.FilePaths {
+		if err := os.RemoveAll(p); err != nil {
+			t.Fatal(err)
+		}
+	}
 	a.picker = &mygo.Window{}
 	board := &pasteTestBoard{}
 	a.board = board
 	a.startHistoryPaste(entry.ID, a.picker)
+	finishFilePaste(t, a)
 	if a.historyPaste != nil || a.pickBusy || len(board.writes) != 0 {
-		t.Fatal("file history paste started a body copy")
+		t.Fatal("removed file history paste started a body copy")
 	}
 	if a.pickFlash != "文件内容未保存在历史中，请重新复制后再粘贴" {
 		t.Fatalf("missing picker explanation: %q", a.pickFlash)
@@ -220,4 +263,19 @@ func TestNativeQuickHistoryFolderPreviewAndFileNotices(t *testing.T) {
 			t.Error("closing preview retained resources")
 		}
 	})
+}
+
+func finishFilePaste(t *testing.T, a *app) {
+	t.Helper()
+	r := a.historyPaste
+	if r == nil {
+		t.Fatal("background validation did not start")
+	}
+	select {
+	case result := <-r.result:
+		r.result <- result
+	case <-time.After(3 * time.Second):
+		t.Fatal("file validation did not finish")
+	}
+	a.completeHistoryPaste(r)
 }

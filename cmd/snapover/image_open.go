@@ -21,16 +21,3 @@ func previewFlyoutSize(contentW, contentH, workW, workH int) (int, int) {
 	}
 	return max(160, w), max(80, h)
 }
-
-func previewWorkSize() (int, int) {
-	w, h := 0, 0
-	for _, display := range mygoScreenDisplays() {
-		if display.WorkArea.Width > w {
-			w = display.WorkArea.Width
-		}
-		if display.WorkArea.Height > h {
-			h = display.WorkArea.Height
-		}
-	}
-	return w, h
-}

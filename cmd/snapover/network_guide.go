@@ -65,7 +65,9 @@ func (a *app) networkSetupHint(c *ui.Context) {
 	}
 	t := c.Theme()
 	ui.Column(c).Gap(8).Padding(14).Background(t.Surface).Radius(8).Children(func() {
+		access := a.tr("打开本地网络设置")
 		if kind == guideWindows {
+			access = a.tr("打开防火墙设置")
 			ui.Text(c, a.tr("允许 Snapover 连接另一台电脑")).Bold()
 			ui.Text(c, a.tr("出现防火墙提示时，允许 Snapover 在可信的专用网络上通信。")).FontSize(12).TextColor(t.TextMuted)
 		} else {
@@ -73,7 +75,10 @@ func (a *app) networkSetupHint(c *ui.Context) {
 			ui.Text(c, a.tr("系统询问本地网络权限时，选择「允许」。")).FontSize(12).TextColor(t.TextMuted)
 		}
 		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, a.tr("查看连接指引")).Clicked() {
+			if ui.PrimaryButton(c, access).Disabled(a.openingNetworkSettings).Clicked() {
+				a.openNetworkAccessSettings()
+			}
+			if ui.Button(c, a.tr("连接帮助")).Clicked() {
 				a.openNetworkGuide()
 			}
 			if ui.Button(c, a.tr("不再提示")).Clicked() {
@@ -81,6 +86,28 @@ func (a *app) networkSetupHint(c *ui.Context) {
 			}
 		})
 	})
+}
+
+func (a *app) openNetworkAccessSettings() {
+	if a.openingNetworkSettings {
+		return
+	}
+	a.openingNetworkSettings = true
+	parent := a.root
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	go func() {
+		defer cancel()
+		err := openNetworkGuideSettings(ctx, true)
+		a.update(func() {
+			a.openingNetworkSettings = false
+			if err != nil {
+				a.status = "打开系统设置失败，请按连接帮助中的步骤手动打开"
+			}
+		})
+	}()
 }
 
 func (a *app) networkHelp(c *ui.Context) {
@@ -119,10 +146,10 @@ func (a *app) openNetworkGuide() {
 	ctx, cancel := context.WithCancel(context.Background())
 	kind := currentNetworkGuideKind
 	g := &networkGuide{app: a, kind: kind, ctx: ctx, cancel: cancel, searchStarted: time.Now()}
-	win := mygo.NewWindow(mygo.WindowOptions{
+	win := mygo.NewWindow(a.placeOnWorkingDisplay(mygo.WindowOptions{
 		Title: a.tr("连接指引 · Snapover"), Width: 600, Height: 620,
 		MinWidth: 500, MinHeight: 480, Content: ui.View(g.view),
-	})
+	}))
 	g.win, a.networkGuide = win, g
 	offFocus := win.OnFocus(g.retry)
 	win.OnClosed(func() {

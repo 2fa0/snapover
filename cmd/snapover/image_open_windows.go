@@ -14,5 +14,3 @@ func openSystemImageWithOS(ctx context.Context, path string) error {
 	}
 	return mygo.Shell.OpenPath(path)
 }
-
-func mygoScreenDisplays() []mygo.Display { return mygo.Screen.Displays() }

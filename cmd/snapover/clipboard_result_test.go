@@ -1,8 +1,9 @@
 package main
 
 import (
-	clipsync "github.com/2fa0/snapover/internal/sync"
 	"testing"
+
+	clipsync "github.com/2fa0/snapover/internal/sync"
 )
 
 func TestClipboardResultSuccessIsQuietAndDoesNotDuplicateHistory(t *testing.T) {
@@ -13,7 +14,7 @@ func TestClipboardResultSuccessIsQuietAndDoesNotDuplicateHistory(t *testing.T) {
 		t.Fatal("success interrupted UI or duplicated history")
 	}
 	a.apply(clipsync.Notice{Kind: clipsync.NoticeSync, ClipboardState: "history", Message: "已存入对端历史，未覆盖剪贴板"}, nil)
-	if a.flash == "" || a.displayStatus() != a.flash || a.syncStatus != a.flash || len(a.entries) != 0 {
+	if a.displayStatus() != syncStageHistory || a.syncFailure != syncStageHistory || len(a.entries) != 0 {
 		t.Fatal("history-only result was silent or duplicated history")
 	}
 }
@@ -23,7 +24,7 @@ func TestClipboardSuccessClearsOnlySyncFailureAndIgnoresOldSession(t *testing.T)
 	a.status = "已连接"
 	failure := clipsync.Notice{Kind: clipsync.NoticeSync, ClipboardState: "error", Message: "写入失败"}
 	a.apply(failure, nil)
-	if a.displayStatus() != failure.Message || a.status != "已连接" {
+	if a.displayStatus() != "对方未写入剪贴板" || a.status != "已连接" {
 		t.Fatal("failure overwrote connection status")
 	}
 	a.apply(clipsync.Notice{Kind: clipsync.NoticeSync, ClipboardState: "complete"}, nil)

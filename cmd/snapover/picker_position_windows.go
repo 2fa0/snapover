@@ -22,39 +22,100 @@ var (
 
 type pickerNativeRect struct{ Left, Top, Right, Bottom int32 }
 
-func pickerScreenBounds(target paste.Target, width, height int) (mygo.Rectangle, float64) {
-	var point struct{ X, Y int32 }
-	pickerCursorPos.Call(uintptr(unsafe.Pointer(&point)))
-	anchor := mygo.Rectangle{X: int(point.X), Y: int(point.Y)}
-	if rect, ok := target.CaretBounds(); ok {
-		anchor = mygo.Rectangle{X: rect.X, Y: rect.Y, Width: rect.Width, Height: rect.Height}
-	}
-	// Select the monitor in physical coordinates; monitors with different
-	// scales can overlap after each one's coordinates are converted to DIPs.
-	r := pickerNativeRect{int32(anchor.X), int32(anchor.Y), int32(anchor.X + max(anchor.Width, 1)), int32(anchor.Y + max(anchor.Height, 1))}
-	monitor, _, _ := pickerMonitorFromRect.Call(uintptr(unsafe.Pointer(&r)), 2)
+func pickerMonitorAt(x, y int) (monitor uintptr, area mygo.Rectangle, scale float64, ok bool) {
+	r := pickerNativeRect{int32(x), int32(y), int32(x + 1), int32(y + 1)}
+	monitor, _, _ = pickerMonitorFromRect.Call(uintptr(unsafe.Pointer(&r)), 2)
 	info := struct {
 		Size          uint32
 		Monitor, Work pickerNativeRect
 		Flags         uint32
 	}{}
 	info.Size = uint32(unsafe.Sizeof(info))
-	if ok, _, _ := pickerMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); ok == 0 {
-		// Screen APIs normally succeed; retain mouse positioning on failure.
-		point := mygo.Screen.CursorScreenPoint()
-		display := mygo.Screen.DisplayNearestPoint(point)
-		return pickerBounds(mygo.Rectangle{X: point.X, Y: point.Y}, display.WorkArea, width, height), display.ScaleFactor
+	if got, _, _ := pickerMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); got == 0 {
+		return 0, mygo.Rectangle{}, 1, false
 	}
 	xDPI, yDPI := uint32(96), uint32(96)
 	if hr, _, _ := pickerMonitorDPI.Call(monitor, 0, uintptr(unsafe.Pointer(&xDPI)), uintptr(unsafe.Pointer(&yDPI))); hr != 0 {
 		xDPI = 96
 	}
-	scale := float64(xDPI) / 96
+	scale = float64(xDPI) / 96
+	if scale <= 0 {
+		scale = 1
+	}
 	toDIP := func(n int) int { return int(math.Round(float64(n) / scale)) }
 	work := info.Work
-	area := mygo.Rectangle{X: toDIP(int(work.Left)), Y: toDIP(int(work.Top)), Width: toDIP(int(work.Right - work.Left)), Height: toDIP(int(work.Bottom - work.Top))}
-	anchor = mygo.Rectangle{X: toDIP(anchor.X), Y: toDIP(anchor.Y), Width: toDIP(anchor.Width), Height: toDIP(anchor.Height)}
-	return pickerBounds(anchor, area, width, height), scale
+	area = mygo.Rectangle{X: toDIP(int(work.Left)), Y: toDIP(int(work.Top)), Width: toDIP(int(work.Right - work.Left)), Height: toDIP(int(work.Bottom - work.Top))}
+	return monitor, area, scale, true
+}
+
+func pickerToDIP(r mygo.Rectangle, scale float64) mygo.Rectangle {
+	toDIP := func(n int) int { return int(math.Round(float64(n) / scale)) }
+	return mygo.Rectangle{X: toDIP(r.X), Y: toDIP(r.Y), Width: toDIP(r.Width), Height: toDIP(r.Height)}
+}
+
+func pickerScreenBounds(target paste.Target, width, height int) (mygo.Rectangle, float64) {
+	var point struct{ X, Y int32 }
+	pickerCursorPos.Call(uintptr(unsafe.Pointer(&point)))
+	mousePhys := mygo.Rectangle{X: int(point.X), Y: int(point.Y)}
+	mouseMon, mouseArea, mouseScale, mouseOK := pickerMonitorAt(mousePhys.X, mousePhys.Y)
+	if !mouseOK {
+		point := mygo.Screen.CursorScreenPoint()
+		display := mygo.Screen.DisplayNearestPoint(point)
+		return pickerBounds(mygo.Rectangle{X: point.X, Y: point.Y}, display.WorkArea, width, height), display.ScaleFactor
+	}
+
+	workMon, workArea, workScale := mouseMon, mouseArea, mouseScale
+	mouseOnWork := true
+	var winPhys mygo.Rectangle
+	hasWindow := false
+	if rect, ok := target.WindowBounds(); ok && rect.Width > 0 && rect.Height > 0 {
+		winPhys = mygo.Rectangle{X: rect.X, Y: rect.Y, Width: rect.Width, Height: rect.Height}
+		if mon, area, scale, ok := pickerMonitorAt(winPhys.X+winPhys.Width/2, winPhys.Y+winPhys.Height/2); ok {
+			hasWindow = true
+			workMon, workArea, workScale = mon, area, scale
+			mouseOnWork = workMon == mouseMon
+		}
+	}
+
+	var caret mygo.Rectangle
+	hasCaret := false
+	if !(hasWindow && mouseOnWork) {
+		if rect, ok := target.CaretBounds(); ok {
+			caretPhys := mygo.Rectangle{X: rect.X, Y: rect.Y, Width: rect.Width, Height: rect.Height}
+			if caretMon, caretArea, caretScale, ok := pickerMonitorAt(caretPhys.X, caretPhys.Y); ok {
+				caretDIP := pickerToDIP(caretPhys, caretScale)
+				if hasWindow {
+					if caretMon == workMon && trustworthyPickerCaret(caretDIP) {
+						caret, hasCaret = caretDIP, true
+					}
+				} else if caretMon != mouseMon && trustworthyPickerCaret(caretDIP) {
+					mouseOnWork = false
+					caret, hasCaret = caretDIP, true
+					workMon, workArea, workScale = caretMon, caretArea, caretScale
+				}
+			}
+		}
+	}
+
+	scale := mouseScale
+	if !mouseOnWork {
+		scale = workScale
+	}
+	in := pickerPlaceInput{
+		width: width, height: height,
+		mouse:       pickerToDIP(mousePhys, mouseScale),
+		mouseArea:   mouseArea,
+		mouseOnWork: mouseOnWork,
+		workArea:    workArea,
+	}
+	if hasCaret {
+		in.caret, in.hasCaret = caret, true
+	}
+	if hasWindow {
+		in.window = pickerToDIP(winPhys, workScale)
+		in.hasWindow = true
+	}
+	return placeShortcutPicker(in), scale
 }
 
 func setPickerBounds(win *mygo.Window, bounds mygo.Rectangle, scale float64) {
