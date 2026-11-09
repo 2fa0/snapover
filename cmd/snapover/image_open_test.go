@@ -15,14 +15,11 @@ import (
 	"github.com/egoist/mygo"
 )
 
-func imageOpenTestApp(t *testing.T) (*app, string, *mygo.Window) {
+// imageViewerTestApp stores one image and returns the viewer state that would
+// show it, without opening a window: the system handoff does not need one.
+func imageViewerTestApp(t *testing.T) (*app, *imageViewerState) {
 	t.Helper()
-	if os.Getenv("SNAPOVER_TEST_UI") != "1" {
-		t.Skip("requires a desktop session; set SNAPOVER_TEST_UI=1")
-	}
 	a := interfaceTestApp(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	a.root = ctx
 	var raw bytes.Buffer
 	if err := png.Encode(&raw, image.NewNRGBA(image.Rect(0, 0, 8, 4))); err != nil {
 		t.Fatal(err)
@@ -35,27 +32,10 @@ func imageOpenTestApp(t *testing.T) (*app, string, *mygo.Window) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var parent *mygo.Window
-	mygo.RunOnMain(func() {
-		parent = mygo.NewWindow(mygo.WindowOptions{Title: "Image opening test", Width: 200, Height: 100, Hidden: true})
-		a.picker = parent
-		a.pickPreview.hover.id = entry.ID
-		parent.OnClosed(func() {
-			if a.picker == parent {
-				a.picker = nil
-			}
-		})
-	})
-	t.Cleanup(func() {
-		cancel()
-		mygo.RunOnMain(func() {
-			a.closePicker()
-			parent.Close()
-		})
-	})
-	return a, entry.ID, parent
+	return a, &imageViewerState{app: a, id: entry.ID, scale: 1, dpi: 1}
 }
 
+// waitForImageOpen waits for the picker's preview load to finish.
 func waitForImageOpen(t *testing.T, a *app) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -70,110 +50,82 @@ func waitForImageOpen(t *testing.T, a *app) {
 	t.Fatal("image opening did not finish")
 }
 
-func TestPickerImageOpeningKeepsUIResponsive(t *testing.T) {
-	for _, outcome := range []string{"success", "failure", "dismiss", "quit"} {
-		t.Run(outcome, func(t *testing.T) {
-			a, id, parent := imageOpenTestApp(t)
-			ctx, cancel := context.WithCancel(a.root)
-			defer cancel()
-			a.root = ctx
-			started, resume := make(chan struct{}), make(chan struct{}, 1)
-			defer close(resume)
-			original := openSystemImage
-			openSystemImage = func(ctx context.Context, path string) error {
-				if _, err := os.Stat(path); err != nil {
-					t.Errorf("viewer received a missing copy: %v", err)
-				}
-				if _, ok := ctx.Deadline(); !ok {
-					t.Error("viewer launch has no deadline")
-				}
-				close(started)
-				select {
-				case <-resume:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-				if outcome == "failure" {
-					return errors.New("viewer unavailable")
-				}
-				return nil
-			}
-			t.Cleanup(func() { openSystemImage = original })
-			mygo.RunOnMain(func() { a.loadPickImage(id, parent) })
-			select {
-			case <-started:
-			case <-time.After(3 * time.Second):
-				t.Fatal("viewer did not start")
-			}
-			responsive := make(chan struct{})
-			go func() {
-				mygo.RunOnMain(func() {
-					if !a.pickLoading {
-						t.Error("opening stopped tracking the pending launch")
-					}
-					if outcome == "dismiss" {
-						a.closePicker()
-						a.picker = mygo.NewWindow(mygo.WindowOptions{Title: "Replacement picker", Width: 200, Height: 100, Hidden: true})
-					}
-					if outcome == "quit" {
-						a.quitting = true
-						cancel()
-						a.hist.CleanOpened()
-					}
-				})
-				close(responsive)
-			}()
-			select {
-			case <-responsive:
-			case <-time.After(time.Second):
-				t.Fatal("viewer launch blocked the UI thread")
-			}
-			// Let the viewer return before checking success and error handling.
-			if outcome != "quit" {
-				resume <- struct{}{}
-			}
-			waitForImageOpen(t, a)
-			mygo.RunOnMain(func() {
-				switch outcome {
-				case "success":
-					if a.picker != nil || !parent.IsDestroyed() {
-						t.Error("successful opening did not close the picker")
-					}
-				case "failure":
-					if a.picker != parent || a.pickFlash == "" {
-						t.Error("failed opening did not keep the picker and show an error")
-					}
-				case "dismiss":
-					if a.picker == nil || a.picker.IsDestroyed() || a.pickFlash != "" {
-						t.Error("late opening affected the replacement picker")
-					}
-				case "quit":
-					if a.pickFlash != "" || a.picker != parent || parent.IsDestroyed() {
-						t.Error("canceled opening changed the UI during quit")
-					}
-				}
-			})
-		})
+func waitForViewer(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var ok bool
+		mygo.RunOnMain(func() { ok = condition() })
+		if ok {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
+	t.Fatal("the viewer did not settle")
 }
 
-func TestPickerImageDismissedBeforeLoadDoesNotLaunchViewer(t *testing.T) {
-	a, id, parent := imageOpenTestApp(t)
-	opened := make(chan struct{}, 1)
+// The handoff stages the original and gives the system viewer a deadline,
+// which is what the old preview's launch did before the picture had a window
+// of its own.
+func TestViewerHandsTheOriginalToTheSystemViewer(t *testing.T) {
+	_, v := imageViewerTestApp(t)
+	var path string
 	original := openSystemImage
-	openSystemImage = func(context.Context, string) error {
-		opened <- struct{}{}
+	openSystemImage = func(ctx context.Context, staged string) error {
+		if _, err := os.Stat(staged); err != nil {
+			t.Errorf("the viewer received a missing copy: %v", err)
+		}
+		if _, ok := ctx.Deadline(); !ok {
+			t.Error("the launch has no deadline")
+		}
+		path = staged
 		return nil
 	}
 	t.Cleanup(func() { openSystemImage = original })
-	mygo.RunOnMain(func() {
-		a.loadPickImage(id, parent)
-		a.closePicker()
-	})
-	waitForImageOpen(t, a)
-	select {
-	case <-opened:
-		t.Fatal("dismissed picker launched the viewer")
-	default:
+	if err := v.stageAndOpenSystem(); err != nil {
+		t.Fatalf("staging and opening failed: %v", err)
+	}
+	if path == "" {
+		t.Fatal("the original never reached the system viewer")
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+}
+
+func TestViewerReportsAFailedSystemOpen(t *testing.T) {
+	_, v := imageViewerTestApp(t)
+	original := openSystemImage
+	openSystemImage = func(context.Context, string) error { return errors.New("viewer unavailable") }
+	t.Cleanup(func() { openSystemImage = original })
+	request := &struct{}{}
+	v.openRequest, v.opening = request, true
+	v.finishSystemOpen(request, v.stageAndOpenSystem())
+	if v.opening {
+		t.Fatal("a finished launch still counts as pending")
+	}
+	if v.note != "用系统应用打开失败，请重试" {
+		t.Fatalf("a failed launch reported %q", v.note)
+	}
+}
+
+func TestViewerDoesNotLaunchAfterItCloses(t *testing.T) {
+	_, v := imageViewerTestApp(t)
+	v.closed = true
+	v.openInSystem()
+	if v.opening {
+		t.Fatal("a closed viewer started a launch")
+	}
+	if v.openRequest != nil {
+		t.Fatal("a closed viewer kept a launch request")
+	}
+}
+
+// A result for a launch the window has moved on from changes nothing.
+func TestViewerIgnoresAStaleSystemOpen(t *testing.T) {
+	_, v := imageViewerTestApp(t)
+	current := &struct{}{}
+	v.openRequest, v.opening = current, true
+	v.finishSystemOpen(&struct{}{}, errors.New("viewer unavailable"))
+	if !v.opening || v.note != "" || v.openRequest != current {
+		t.Fatal("a stale launch result ended the current one or reported it")
 	}
 }

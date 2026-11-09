@@ -174,6 +174,10 @@ func (a *app) refreshLanguageUI() {
 		a.pickOriginal.SetTitle(a.tr("文本全文"))
 		a.pickOriginal.Invalidate()
 	}
+	if v := a.imageViewer; v != nil && v.win != nil {
+		v.win.SetTitle(a.tr("图片预览"))
+		v.win.Invalidate()
+	}
 	if a.picker != nil {
 		a.picker.Invalidate()
 	}
@@ -986,8 +990,20 @@ var enStrings = map[string]string{
 	"图片预览加载失败，请重新悬停重试":                                    "Failed to load image preview; hover again to retry",
 	"文本预览加载失败，请重新悬停重试":                                    "Failed to load text preview; hover again to retry",
 	"文件预览加载失败，请重新悬停重试":                                    "Failed to load file preview; hover again to retry",
-	"查看原图":  "View Original",
-	"查看全文":  "Full Text",
+	"查看全文":      "Full Text",
+	"图片预览":      "Image Preview",
+	"放大查看":      "View Larger",
+	"缩小":        "Zoom Out",
+	"放大":        "Zoom In",
+	"适应窗口":      "Fit to Window",
+	"实际大小":      "Actual Size",
+	"用系统应用打开":   "Open in Default App",
+	"用系统应用打开原图": "Open Original in Default App",
+	"相对图片原始像素":  "Relative to the image's own pixels",
+	"正在加载图片…":   "Loading image…",
+	"图片读取失败，请重新复制后再试": "Failed to read the image; copy it again and retry",
+	"用系统应用打开失败，请重试":   "Could not open the default app; try again",
+	"关闭":    "Close",
 	"正在加载…": "Loading…",
 	"原图打开失败，请重新选择图片后重试":     "Failed to open original image; select the image and try again",
 	"原图查看缓存已满，请等待 15 分钟后重试": "Image preview cache is full; please wait 15 minutes and try again",
@@ -1005,6 +1021,8 @@ var enStrings = map[string]string{
 	"路径":                     "Path",
 	"内容":                     "Content",
 	"来源":                     "Source",
+	"来源：":                    "Source:",
+	"按来源筛选：":                 "Search this source: ",
 	"备注":                     "Note",
 	"置顶备注":                   "Pinned Note",
 	"输入备注或别名，便于搜索":           "Enter a note or alias for quick search",

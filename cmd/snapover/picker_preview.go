@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -233,7 +231,7 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 						}
 						ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
 							meta := fmt.Sprintf("%d × %d", entry.Width, entry.Height)
-							label := a.tr("查看原图")
+							label := a.tr("放大查看")
 							if isText {
 								label, meta = a.tr("查看全文"), formatSize(entry.Size)
 								if more {
@@ -250,7 +248,10 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 										if isText {
 											a.loadPickText(id, parent)
 										} else {
-											a.loadPickImage(id, parent)
+											// The window that opens can zoom the picture
+											// itself, which the card cannot.
+											a.finishPreview(parent)
+											a.openImageViewer(entry)
 										}
 									}
 								})
@@ -283,64 +284,6 @@ func previewBitmap(store *history.Store, id string) (*ui.Bitmap, error) {
 		return nil, err
 	}
 	return ui.NewBitmap(imageForDisplay(img)), nil
-}
-
-func (a *app) loadPickImage(id string, parent *mygo.Window) {
-	if a.pickLoading || !a.previewParentActive(parent) || a.pickPreview.hover.id != id {
-		return
-	}
-	a.pickLoading = true
-	request := a.pickPreview.request
-	if a.pickPreview.win != nil {
-		a.pickPreview.win.Invalidate()
-	}
-	go func() {
-		path, err := a.hist.StageImage(id)
-		mygo.RunOnMain(func() {
-			// Opening is terminal for this image. A dismissed preview must not
-			// launch the viewer afterwards.
-			if a.pickPreview.request != request {
-				a.finishPreviewLoad()
-				return
-			}
-			if err != nil || !a.previewParentActive(parent) {
-				a.finishPickImage(parent, err)
-				return
-			}
-			ctx := a.root
-			if ctx == nil {
-				ctx = context.Background()
-			}
-			ctx, cancel := context.WithTimeout(ctx, imageOpenTimeout)
-			go func() {
-				defer cancel()
-				err := openSystemImage(ctx, path)
-				mygo.RunOnMain(func() {
-					if a.pickPreview.request != request {
-						a.finishPreviewLoad()
-						return
-					}
-					a.finishPickImage(parent, err)
-				})
-			}()
-		})
-	}()
-}
-
-func (a *app) finishPickImage(parent *mygo.Window, err error) {
-	a.finishPreviewLoad()
-	if !a.previewParentActive(parent) {
-		return
-	}
-	if err != nil {
-		message := "原图打开失败，请重新选择图片后重试"
-		if errors.Is(err, history.ErrOpenedCacheFull) {
-			message = err.Error()
-		}
-		a.previewError(parent, message)
-		return
-	}
-	a.finishPreview(parent)
 }
 
 func (a *app) finishPreview(parent *mygo.Window) {

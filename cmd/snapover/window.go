@@ -109,6 +109,7 @@ type app struct {
 	clipboardOwner      func() string
 	syncSessionID       string
 	flash               string
+	sourceApps          []string
 	pendingToast        queuedToast
 	confirm             bool
 	confirmClear        bool
@@ -174,6 +175,7 @@ type app struct {
 	pickPreview         pickerPreview
 	pickLoading         bool
 	pickOriginal        *mygo.Window
+	imageViewer         *imageViewerState
 	quitting            bool
 	sendToColdLaunch    bool
 	openAtLogin         bool
@@ -903,6 +905,13 @@ func (a *app) historyPage(c *ui.Context) {
 		ui.Text(c, a.trf("%d 条记录", "%d items", len(a.shown()))).FontSize(12).TextColor(t.TextMuted).
 			ContentTransition(ui.ContentTransition{Numeric: true})
 	})
+	a.sourceSuggestionChips(c, a.query, func(name string) {
+		a.query = name
+		a.closePickPreview()
+		a.histSel = -1
+		a.histList.ScrollTo(0, ui.Start)
+		searchField.Focus()
+	})
 	shown := a.shown()
 	if a.histSel >= len(shown) {
 		a.histSel = -1
@@ -1093,6 +1102,9 @@ func (a *app) refreshEntries() {
 	a.historyUsageValid = false
 	a.historyUsageVersion++
 	a.entries = a.hist.List()
+	// The search field suggests these while a query is typed, so they are
+	// rebuilt with the entries instead of scanned on every keystroke.
+	a.sourceApps = recentSourceApps(a.entries)
 	if a.pickPreview.hover.id != "" {
 		found := false
 		for _, entry := range a.entries {
