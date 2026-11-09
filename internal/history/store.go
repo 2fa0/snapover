@@ -155,6 +155,7 @@ func Open(dir string) (*Store, error) {
 	if err := s.replayJournal(); err != nil {
 		return nil, err
 	}
+	s.relocateFileSnapshots()
 	if err := s.dropFileBundles(); err != nil {
 		return nil, err
 	}

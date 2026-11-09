@@ -311,6 +311,25 @@ func (s *Store) pinFilesDir(id string) string {
 	return filepath.Join(s.dir, "pinned-files", id)
 }
 
+// Snapshot paths in older indexes and journals are absolute. Resolve their
+// generated location against this store, including after a portable move.
+func (s *Store) relocateFileSnapshots() {
+	for i := range s.entries {
+		entry := &s.entries[i]
+		if entry.Kind != string(clip.KindFiles) {
+			continue
+		}
+		for _, paths := range [][]string{entry.PinFiles, entry.FilePaths} {
+			for j, p := range paths {
+				parent := filepath.Dir(p)
+				if filepath.Base(parent) == entry.ID && filepath.Base(filepath.Dir(parent)) == "pinned-files" {
+					paths[j] = filepath.Join(s.pinFilesDir(entry.ID), filepath.Base(p))
+				}
+			}
+		}
+	}
+}
+
 // HasFileSnapshot reports whether the entry has a saved pin copy.
 func HasFileSnapshot(entry Entry) bool {
 	if len(entry.PinFiles) > 0 {
@@ -391,7 +410,7 @@ func copyFileTree(src, dst string, depth int, budget *pinCopyBudget) error {
 		return errors.New("历史容量不足，未保存本条内容，请提高上限或清理置顶记录")
 	}
 	budget.remaining -= info.Size()
-	return copyRegularFile(src, dst, 0o600)
+	return copyRegularFile(src, dst, 0o600|info.Mode().Perm()&0o100)
 }
 
 func copyDirTree(src, dst string, depth int, budget *pinCopyBudget) error {

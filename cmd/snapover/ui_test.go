@@ -518,7 +518,7 @@ func TestPickerPaddingDragMovesTheWindow(t *testing.T) {
 	pickerCursor = func() mygo.Point { return cursor }
 	t.Cleanup(func() { pickerCursor = restore })
 	restoreDisplay := pickerDisplayAt
-	pickerDisplayAt = func(mygo.Point) (mygo.Rectangle, float64) { return a.pickArea, 1 }
+	pickerDisplayAt = func(mygo.Point) mygo.Rectangle { return a.pickArea }
 	t.Cleanup(func() { pickerDisplayAt = restoreDisplay })
 	tt := ui.NewTester(a.pickerView, 380, 440)
 
@@ -554,11 +554,11 @@ func TestPickerDragMovesToAnotherDisplay(t *testing.T) {
 	pickerCursor = func() mygo.Point { return cursor }
 	t.Cleanup(func() { pickerCursor = restore })
 	restoreDisplay := pickerDisplayAt
-	pickerDisplayAt = func(p mygo.Point) (mygo.Rectangle, float64) {
+	pickerDisplayAt = func(p mygo.Point) mygo.Rectangle {
 		if p.X >= right.X {
-			return right, 1
+			return right
 		}
-		return left, 1
+		return left
 	}
 	t.Cleanup(func() { pickerDisplayAt = restoreDisplay })
 	tt := ui.NewTester(a.pickerView, 380, 440)
@@ -588,7 +588,7 @@ func TestPickerDragFollowsThePointer(t *testing.T) {
 	pickerCursor = func() mygo.Point { return cursor }
 	t.Cleanup(func() { pickerCursor = restore })
 	restoreDisplay := pickerDisplayAt
-	pickerDisplayAt = func(mygo.Point) (mygo.Rectangle, float64) { return a.pickArea, 1 }
+	pickerDisplayAt = func(mygo.Point) mygo.Rectangle { return a.pickArea }
 	t.Cleanup(func() { pickerDisplayAt = restoreDisplay })
 	tt := ui.NewTester(a.pickerView, 380, 440)
 

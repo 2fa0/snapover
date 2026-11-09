@@ -12,5 +12,12 @@ func openSystemImageWithOS(ctx context.Context, path string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return mygo.Shell.OpenPath(path)
+	err := context.Canceled
+	mygo.RunOnMain(func() {
+		err = ctx.Err()
+		if err == nil {
+			err = mygo.Shell.OpenPath(path)
+		}
+	})
+	return err
 }

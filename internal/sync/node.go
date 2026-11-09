@@ -235,7 +235,7 @@ func reconnect(ctx context.Context, target *DialTarget, e *Engine,
 	pause func(context.Context, time.Duration) bool) {
 	ctx = context.WithValue(ctx, dialSequenceKey{}, target.Sequence)
 	backoff := time.Second
-	blocked := map[lan.Endpoint]bool{}
+	blocked := map[DialCandidate]bool{}
 	first := true
 	initialID := target.PeerID()
 	_, wasTrusted := e.Peers.Get(initialID)
@@ -258,16 +258,14 @@ func reconnect(ctx context.Context, target *DialTarget, e *Engine,
 			candidates = target.firstCandidates()
 			first = false
 		}
-		for ep := range blocked {
-			keep := false
-			for _, c := range candidates {
-				if c.Endpoint == ep {
-					keep = true
-					break
-				}
+		for i := range candidates {
+			if candidates[i].PeerID == "" {
+				candidates[i].PeerID = peerID
 			}
-			if !keep {
-				delete(blocked, ep)
+		}
+		for candidate := range blocked {
+			if !slices.Contains(candidates, candidate) {
+				delete(blocked, candidate)
 			}
 		}
 		for _, cand := range candidates {
@@ -284,7 +282,7 @@ func reconnect(ctx context.Context, target *DialTarget, e *Engine,
 					continue
 				}
 			}
-			if blocked[ep] {
+			if blocked[cand] {
 				continue
 			}
 			e.notify(Notice{Kind: NoticeDial, Message: "正在通过" + ep.Route.Label() + "连接 " + ep.Addr,
@@ -303,7 +301,7 @@ func reconnect(ctx context.Context, target *DialTarget, e *Engine,
 				return
 			}
 			if errors.Is(err, ErrWrongPeer) || errors.Is(err, ErrFingerprintMismatch) {
-				blocked[ep] = true
+				blocked[cand] = true
 				if id == "" {
 					return
 				}

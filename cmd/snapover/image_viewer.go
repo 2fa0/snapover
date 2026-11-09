@@ -37,9 +37,11 @@ const (
 )
 
 type imageViewerState struct {
-	app *app
-	id  string
-	win *mygo.Window
+	app    *app
+	id     string
+	win    *mygo.Window
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	bmp     *ui.Bitmap
 	width   int
@@ -70,6 +72,15 @@ type imageViewerState struct {
 	closed      bool
 }
 
+func newImageViewer(a *app, id string) *imageViewerState {
+	parent := a.root
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	return &imageViewerState{app: a, id: id, ctx: ctx, cancel: cancel, scale: 1, dpi: 1}
+}
+
 // openImageViewer shows an image at the size the user asks for, in a window
 // of its own, and hands the system viewer the original on request.
 func (a *app) openImageViewer(entry history.Entry) {
@@ -77,7 +88,7 @@ func (a *app) openImageViewer(entry history.Entry) {
 	// shows the picture now.
 	a.closePickPreview()
 	a.closeImageViewer()
-	v := &imageViewerState{app: a, id: entry.ID, scale: 1, dpi: 1}
+	v := newImageViewer(a, entry.ID)
 	var win *mygo.Window
 	win = mygo.NewWindow(a.placeOnWorkingDisplay(mygo.WindowOptions{
 		Title:    a.tr("图片预览"),
@@ -117,19 +128,40 @@ func (a *app) closeImageViewer() {
 // release drops the pixels and turns away anything still on its way: a closed
 // viewer holds no image and launches nothing.
 func (v *imageViewerState) release() {
+	if v.cancel != nil {
+		v.cancel()
+	}
 	v.bmp = nil
+	v.request = nil
 	v.closed, v.openRequest = true, nil
 }
 
 func (a *app) loadViewerImage(v *imageViewerState) {
-	if v.bmp != nil || v.request != nil {
+	if v.closed || v.bmp != nil || v.request != nil {
 		return
+	}
+	if a.viewerWork == nil {
+		a.viewerWork = make(chan struct{}, 1)
 	}
 	request := &struct{ id string }{v.id}
 	v.request = request
-	store := a.hist
+	store, work, ctx := a.hist, a.viewerWork, v.ctx
 	go func() {
+		// A canceled decode may still be returning from disk or PNG decoding.
+		// A replacement waits for it instead of starting another full decode.
+		select {
+		case work <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
+		defer func() { <-work }()
+		if ctx.Err() != nil {
+			return
+		}
 		img, err := store.Image(v.id)
+		if ctx.Err() != nil {
+			return
+		}
 		var bmp *ui.Bitmap
 		message := ""
 		if err == nil {
@@ -139,19 +171,23 @@ func (a *app) loadViewerImage(v *imageViewerState) {
 			message = "图片读取失败，请重新复制后再试"
 		}
 		mygo.RunOnMain(func() {
-			if v.request != request {
-				return
-			}
-			v.request = nil
-			v.bmp, v.err = bmp, message
-			if bmp != nil {
-				v.width, v.height = bmp.Size()
-			}
-			if v.win != nil {
-				v.win.Invalidate()
-			}
+			v.finishImageLoad(request, bmp, message)
 		})
 	}()
+}
+
+func (v *imageViewerState) finishImageLoad(request *struct{ id string }, bmp *ui.Bitmap, message string) {
+	if v.closed || v.ctx.Err() != nil || v.request != request {
+		return
+	}
+	v.request = nil
+	v.bmp, v.err = bmp, message
+	if bmp != nil {
+		v.width, v.height = bmp.Size()
+	}
+	if v.win != nil {
+		v.win.Invalidate()
+	}
 }
 
 // boundedViewerImage scales a picture down to viewerMaxPixels. The decode of
@@ -480,15 +516,17 @@ func (v *imageViewerState) finishSystemOpen(request *struct{}, err error) {
 // the system viewer, which has imageOpenTimeout to take it. Both steps read
 // the disk and leave the process, so they run off the UI thread.
 func (v *imageViewerState) stageAndOpenSystem() error {
+	ctx, cancel := context.WithTimeout(v.ctx, imageOpenTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	path, err := v.app.hist.StageImage(v.id)
 	if err != nil {
 		return err
 	}
-	ctx := v.app.root
-	if ctx == nil {
-		ctx = context.Background()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, imageOpenTimeout)
-	defer cancel()
 	return openSystemImage(ctx, path)
 }

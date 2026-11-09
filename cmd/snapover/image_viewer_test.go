@@ -161,7 +161,10 @@ func TestViewerReleasesItsPixelsWhenClosed(t *testing.T) {
 	a, v := imageViewerTestApp(t)
 	v.bmp = ui.NewBitmap(image.NewNRGBA(image.Rect(0, 0, 4, 4)))
 	a.imageViewer = v
+	request := &struct{ id string }{v.id}
+	v.request = request
 	a.closeImageViewer()
+	v.finishImageLoad(request, ui.NewBitmap(image.NewNRGBA(image.Rect(0, 0, 4, 4))), "")
 	if v.bmp != nil {
 		t.Fatal("the closed viewer kept its pixels")
 	}
@@ -170,5 +173,8 @@ func TestViewerReleasesItsPixelsWhenClosed(t *testing.T) {
 	}
 	if a.imageViewer != nil {
 		t.Fatal("the app still points at the closed viewer")
+	}
+	if v.ctx.Err() == nil || v.request != nil {
+		t.Fatal("closing did not cancel the viewer's pending work")
 	}
 }

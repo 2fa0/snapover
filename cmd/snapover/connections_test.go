@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"io"
+	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +18,75 @@ import (
 	clipsync "github.com/2fa0/snapover/internal/sync"
 	"github.com/egoist/mygo/ui"
 )
+
+func TestAutomaticFallbackKeepsItsLiveController(t *testing.T) {
+	a, b := interfaceTestApp(t), interfaceTestApp(t)
+	left, err := identity.LoadOrCreate(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := identity.LoadOrCreate(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, engine := range []*clipsync.Engine{a.engine, b.engine} {
+		id := []*identity.Identity{left, right}[i]
+		engine.LocalID, engine.Fingerprint = id.DeviceID, id.Fingerprint
+		engine.TLS = identity.TLSConfig(id)
+		engine.Board = &pasteTestBoard{}
+		engine.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if _, err := a.engine.Peers.Allow(right.DeviceID, right.Fingerprint, "B", "macos", "192.168.1.30:47821"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.engine.Peers.Allow(left.DeviceID, left.Fingerprint, "A", "macos", "192.168.1.10:47821"); err != nil {
+		t.Fatal(err)
+	}
+	rawA, rawB := net.Pipe()
+	done := make(chan error, 2)
+	go func() { done <- a.engine.Attach(tls.Client(rawA, a.engine.TLS), true) }()
+	go func() { done <- b.engine.Attach(tls.Server(rawB, b.engine.TLS), false) }()
+	t.Cleanup(func() {
+		rawA.Close()
+		rawB.Close()
+		for range 2 {
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Error("test connection did not stop")
+			}
+		}
+	})
+	deadline := time.Now().Add(3 * time.Second)
+	for !a.engine.Connected() || !b.engine.Connected() {
+		if time.Now().After(deadline) {
+			t.Fatal("test peers did not connect")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, err := a.engine.Peers.Allow(right.DeviceID, right.Fingerprint, "B", "macos", "192.168.1.30:47821"); err != nil {
+		t.Fatal(err)
+	}
+	// Prevent an erroneous replacement controller from dialing a real network.
+	root, stop := context.WithCancel(context.Background())
+	stop()
+	a.root = root
+	dial, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a.targetPeerID = "selected"
+	a.dialTarget = clipsync.NewDialTarget("selected", a.dialSeq, nil)
+	a.dialCancel = cancel
+	target := a.dialTarget
+	link, _ := a.engine.Link()
+	a.apply(clipsync.Notice{Kind: clipsync.NoticeStatus, PeerID: right.DeviceID, Message: "已连接 B", SessionID: link.SessionID}, nil)
+	defer a.stopDial()
+	if dial.Err() != nil || a.dialTarget != target {
+		t.Fatal("fallback success restarted the controller owning the live connection")
+	}
+	if a.targetPeerID != right.DeviceID {
+		t.Fatal("the UI did not adopt the connected candidate")
+	}
+}
 
 func dualAddressApp(t *testing.T) *app {
 	t.Helper()

@@ -1,11 +1,25 @@
 package main
 
 import (
+	"math"
 	"runtime"
 
 	"github.com/2fa0/snapover/internal/paste"
 	"github.com/egoist/mygo"
 )
+
+func screenRectToDIP(r mygo.Rectangle, pixelOrigin mygo.Point, display mygo.Display) mygo.Rectangle {
+	scale := display.ScaleFactor
+	if scale <= 0 {
+		scale = 1
+	}
+	toDIP := func(n int) int { return int(math.Floor(float64(n)/scale + 0.5)) }
+	return mygo.Rectangle{
+		X:     display.Bounds.X + toDIP(r.X-pixelOrigin.X),
+		Y:     display.Bounds.Y + toDIP(r.Y-pixelOrigin.Y),
+		Width: toDIP(r.Width), Height: toDIP(r.Height),
+	}
+}
 
 func visibleOnDisplays(r mygo.Rectangle, displays []mygo.Display) bool {
 	for _, d := range displays {
@@ -79,7 +93,7 @@ func (a *app) workingWorkArea() mygo.Rectangle {
 		return a.pickArea
 	}
 	if live := paste.Capture(); live.Valid() {
-		placed, _ := pickerScreenBounds(live, 80, 80)
+		placed := pickerScreenBounds(live, 80, 80)
 		if area := pickerAreaAt(placed); area.Width > 0 && area.Height > 0 {
 			return area
 		}
@@ -148,7 +162,7 @@ func (a *app) clampWindowsToDisplays() {
 	a.pickRect = next
 	a.pickSizeW, a.pickSizeH = next.Width, next.Height
 	a.pickArea = pickerAreaAt(next)
-	setPickerBounds(a.picker, next, a.pickScale)
+	a.picker.SetBounds(next)
 }
 
 func windowWorkArea(win *mygo.Window) mygo.Rectangle {

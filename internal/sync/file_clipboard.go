@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,9 +14,6 @@ import (
 )
 
 var errFileClipboardSuperseded = errors.New("已有新的复制内容，已停止旧文件同步")
-
-// largeProgressHint matches the UI threshold for showing file transfer progress.
-const largeProgressHint int64 = 20 << 20
 
 func filePathsSize(paths []string) int {
 	n := 0
@@ -155,33 +151,6 @@ func fileClipboardTitle(paths []string) string {
 	return fmt.Sprintf("%s 等 %d 项", name, len(paths))
 }
 
-func estimateFilesSize(paths []string, stopAt int64) int64 {
-	var total int64
-	for _, p := range paths {
-		_ = filepath.WalkDir(p, func(_ string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
-			info, infoErr := d.Info()
-			if infoErr != nil || !info.Mode().IsRegular() {
-				return nil
-			}
-			total += info.Size()
-			if stopAt > 0 && total >= stopAt {
-				return fs.SkipAll
-			}
-			return nil
-		})
-		if stopAt > 0 && total >= stopAt {
-			return total
-		}
-	}
-	return total
-}
-
 func (s *Session) reportFileClipboard(item queuedItem, name, state string, done, total int64, message string) {
 	if s.onFile != nil {
 		s.onFile(Notice{
@@ -213,7 +182,6 @@ func (s *Session) reportFileClipboard(item queuedItem, name, state string, done,
 
 func (s *Session) sendFileClipboard(item queuedItem) error {
 	title := fileClipboardTitle(item.Files)
-	estimated := estimateFilesSize(item.Files, largeProgressHint)
 	report := func(state string, done, total int64, err error) {
 		message := ""
 		switch state {
@@ -239,10 +207,10 @@ func (s *Session) sendFileClipboard(item queuedItem) error {
 			return nil
 		}
 		if errors.Is(err, errFileClipboardSuperseded) {
-			s.reportFileClipboard(item, title, "cancelled", 0, estimated, "")
+			s.reportFileClipboard(item, title, "cancelled", 0, 0, "")
 			return err
 		}
-		report("error", 0, estimated, err)
+		report("error", 0, 0, err)
 		return err
 	}
 	if !s.fileClipboardSupported {
@@ -257,7 +225,7 @@ func (s *Session) sendFileClipboard(item queuedItem) error {
 	if err := check(); err != nil {
 		return finish(err)
 	}
-	report("packing", 0, estimated, nil)
+	report("packing", 0, 0, nil)
 	if s.fileCache == nil {
 		return finish(errors.New("文件剪贴板缓存未初始化"))
 	}

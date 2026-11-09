@@ -62,8 +62,8 @@ func (a *app) openPicker(atPointer bool) {
 	// in the front window so a leftover pointer on another screen is ignored.
 	if atPointer && (runtime.GOOS == "darwin" || runtime.GOOS == "windows") {
 		paste.Prompt()
-		bounds, scale := pickerScreenBounds(a.pasteTo, width, height)
-		a.pickPlaced, a.pickRect, a.pickScale = true, bounds, scale
+		bounds := pickerScreenBounds(a.pasteTo, width, height)
+		a.pickPlaced, a.pickRect = true, bounds
 		// The flyout cannot grow past the work area it opens in.
 		a.pickArea = pickerAreaAt(bounds)
 		a.picker = mygo.NewFlyout(mygo.FlyoutOptions{
@@ -76,13 +76,13 @@ func (a *app) openPicker(atPointer bool) {
 			// full-screen Space without activating Snapover and switching Spaces.
 			a.picker.SetVisibleOnAllWorkspaces(true)
 		}
-		setPickerBounds(a.picker, bounds, scale)
+		a.picker.SetBounds(bounds)
 	} else {
 		// The platform places this one next to the tray icon; the first
 		// frame reads back where it landed.
 		a.pickArea = mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint()).WorkArea
 		a.pickPlaced = false
-		a.pickRect, a.pickScale = mygo.Rectangle{}, 1
+		a.pickRect = mygo.Rectangle{}
 		opts := mygo.FlyoutOptions{
 			Tray:      a.tray,
 			Placement: mygo.PlacementBottom,
@@ -276,7 +276,6 @@ func (a *app) syncPickerPlacement() {
 	a.pickPlaced, a.pickRect = true, bounds
 	a.pickSizeW, a.pickSizeH = bounds.Width, bounds.Height
 	a.pickArea = pickerAreaAt(bounds)
-	a.pickScale = float64(mygo.Screen.DisplayNearestPoint(mygo.Point{X: bounds.X, Y: bounds.Y}).ScaleFactor)
 }
 
 // pickerAreaAt is the work area of the display the picker is on.
@@ -288,9 +287,8 @@ func pickerAreaAt(bounds mygo.Rectangle) mygo.Rectangle {
 // bounds are in. A test moves it to drive a drag.
 var pickerCursor = func() mygo.Point { return mygo.Screen.CursorScreenPoint() }
 
-var pickerDisplayAt = func(p mygo.Point) (mygo.Rectangle, float64) {
-	d := mygo.Screen.DisplayNearestPoint(p)
-	return d.WorkArea, d.ScaleFactor
+var pickerDisplayAt = func(p mygo.Point) mygo.Rectangle {
+	return mygo.Screen.DisplayNearestPoint(p).WorkArea
 }
 
 // dragPickerMove moves the window with the pointer. The picker has no title
@@ -334,19 +332,16 @@ func (a *app) dragPickerMove(handle ui.Element) {
 	}
 	a.pickRect = rect
 	if a.picker != nil {
-		setPickerBounds(a.picker, rect, a.pickScale)
+		a.picker.SetBounds(rect)
 	}
 }
 
 func (a *app) followPickerDisplay(at mygo.Point) {
-	area, scale := pickerDisplayAt(at)
+	area := pickerDisplayAt(at)
 	if area.Width <= 0 || area.Height <= 0 {
 		return
 	}
 	a.pickArea = area
-	if scale > 0 {
-		a.pickScale = scale
-	}
 	if a.pickSizeW > area.Width {
 		a.pickSizeW = area.Width
 	}
@@ -373,7 +368,7 @@ func (a *app) applyPickerSize(width, height int) {
 	}
 	a.pickRect = rect
 	if a.picker != nil {
-		setPickerBounds(a.picker, rect, a.pickScale)
+		a.picker.SetBounds(rect)
 	}
 }
 

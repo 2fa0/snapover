@@ -1,8 +1,7 @@
 package sync
 
 import (
-	"os"
-	"path/filepath"
+	"errors"
 	"testing"
 )
 
@@ -18,24 +17,16 @@ func TestFileClipboardTitle(t *testing.T) {
 	}
 }
 
-func TestEstimateFilesSizeStopsAtHint(t *testing.T) {
-	dir := t.TempDir()
-	big := filepath.Join(dir, "big.bin")
-	if err := os.WriteFile(big, make([]byte, 3<<20), 0o600); err != nil {
-		t.Fatal(err)
+func TestSupersededFileClipboardStopsBeforePacking(t *testing.T) {
+	s := newSession(nil, "peer", true, discardLog(), nil)
+	s.fileClipboardSupported = true
+	s.fileClipboardCheck = func(queuedItem) error { return errFileClipboardSuperseded }
+	var states []string
+	s.onFile = func(n Notice) { states = append(states, n.FileState) }
+	if err := s.sendFileClipboard(queuedItem{}); !errors.Is(err, errFileClipboardSuperseded) {
+		t.Fatalf("superseded copy: %v", err)
 	}
-	small := filepath.Join(dir, "small.bin")
-	if err := os.WriteFile(small, make([]byte, 100), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := estimateFilesSize([]string{small}, largeProgressHint); got != 100 {
-		t.Fatalf("small total %d", got)
-	}
-	got := estimateFilesSize([]string{big, small}, 2<<20)
-	if got < 2<<20 {
-		t.Fatalf("did not reach stop hint: %d", got)
-	}
-	if got > 3<<20 {
-		t.Fatalf("walked past the first file: %d", got)
+	if len(states) != 1 || states[0] != "cancelled" {
+		t.Fatalf("a canceled copy started packing: %v", states)
 	}
 }

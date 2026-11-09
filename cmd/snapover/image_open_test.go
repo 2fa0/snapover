@@ -32,7 +32,9 @@ func imageViewerTestApp(t *testing.T) (*app, *imageViewerState) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return a, &imageViewerState{app: a, id: entry.ID, scale: 1, dpi: 1}
+	v := newImageViewer(a, entry.ID)
+	t.Cleanup(v.release)
+	return a, v
 }
 
 // waitForImageOpen waits for the picker's preview load to finish.
@@ -109,7 +111,7 @@ func TestViewerReportsAFailedSystemOpen(t *testing.T) {
 
 func TestViewerDoesNotLaunchAfterItCloses(t *testing.T) {
 	_, v := imageViewerTestApp(t)
-	v.closed = true
+	v.release()
 	v.openInSystem()
 	if v.opening {
 		t.Fatal("a closed viewer started a launch")
@@ -117,6 +119,66 @@ func TestViewerDoesNotLaunchAfterItCloses(t *testing.T) {
 	if v.openRequest != nil {
 		t.Fatal("a closed viewer kept a launch request")
 	}
+	// A worker queued before Close may not start until after it.
+	if err := v.stageAndOpenSystem(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("closed viewer staged and launched an original: %v", err)
+	}
+}
+
+func TestViewerCloseCancelsSystemOpenInProgress(t *testing.T) {
+	_, v := imageViewerTestApp(t)
+	original := openSystemImage
+	t.Cleanup(func() { openSystemImage = original })
+	started := make(chan struct{})
+	openSystemImage = func(ctx context.Context, _ string) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	done := make(chan error, 1)
+	go func() { done <- v.stageAndOpenSystem() }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("system launch never started")
+	}
+	v.release()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("launch was not canceled: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("closing did not cancel the system launch")
+	}
+}
+
+func TestViewerReplacementWaitsForCanceledLoad(t *testing.T) {
+	if os.Getenv("SNAPOVER_TEST_UI") != "1" {
+		t.Skip("requires a desktop session; set SNAPOVER_TEST_UI=1")
+	}
+	a, old := imageViewerTestApp(t)
+	var next *imageViewerState
+	mygo.RunOnMain(func() {
+		// Hold the decode slot while a closed viewer and its replacement queue.
+		a.viewerWork = make(chan struct{}, 1)
+		a.viewerWork <- struct{}{}
+		a.loadViewerImage(old)
+		old.release()
+		next = newImageViewer(a, old.id)
+		a.loadViewerImage(next)
+		<-a.viewerWork
+	})
+	t.Cleanup(func() { mygo.RunOnMain(next.release) })
+	waitForViewer(t, func() bool { return next.request == nil })
+	mygo.RunOnMain(func() {
+		if next.bmp == nil || next.err != "" {
+			t.Errorf("replacement failed to load: %s", next.err)
+		}
+		if old.bmp != nil || old.request != nil || old.ctx.Err() == nil {
+			t.Error("closed viewer accepted work after its replacement loaded")
+		}
+	})
 }
 
 // A result for a launch the window has moved on from changes nothing.
