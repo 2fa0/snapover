@@ -231,6 +231,7 @@ func (s *Session) sendFileMode(ctx context.Context, path string, progress func(i
 			return "", err
 		}
 		begin.Clipboard = true
+		begin.Name = fileClipboardTitle(clipboard.Files)
 		begin.SourceApp = clip.CleanSource(clipboard.SourceApp)
 	}
 	results := make(chan wire.FileResult, 4)
@@ -349,9 +350,10 @@ type fileReceive struct {
 }
 
 func (s *Session) fileNotice(f *fileReceive, state, path, message string) {
-	if f.clipboard == nil && s.onFile != nil {
-		s.onFile(Notice{Kind: NoticeFile, FileName: f.name, FileState: state, FilePath: path, FileDone: f.file.Written, FileTotal: f.file.Size, Message: message})
+	if s.onFile == nil || f == nil || f.file == nil {
+		return
 	}
+	s.onFile(Notice{Kind: NoticeFile, FileName: f.name, FileState: state, FilePath: path, FileDone: f.file.Written, FileTotal: f.file.Size, Message: message, FileClipboard: f.clipboard != nil})
 }
 
 func (s *Session) rejectFile(id, message string) {
@@ -395,9 +397,17 @@ func (s *Session) receiveFileFrame(frame fileFrame, current *fileReceive) *fileR
 				return nil
 			}
 			clipboard = &clipboardReceive{lease: lease, publish: publish, source: b.SourceApp, limit: limit}
-			dir, b.Name, limit = lease.Dir, "contents.zip", filetransfer.BundleLimit(limit)
+			dir, limit = lease.Dir, filetransfer.BundleLimit(limit)
 		}
-		f, err := filetransfer.Begin(dir, b.Name, b.TotalSize, limit)
+		fsName := b.Name
+		displayName := b.Name
+		if clipboard != nil {
+			fsName = "contents.zip"
+			if displayName == "" {
+				displayName = "文件"
+			}
+		}
+		f, err := filetransfer.Begin(dir, fsName, b.TotalSize, limit)
 		if err != nil {
 			if clipboard != nil {
 				clipboard.lease.Release(false)
@@ -405,7 +415,7 @@ func (s *Session) receiveFileFrame(frame fileFrame, current *fileReceive) *fileR
 			s.rejectFile(b.ItemID, err.Error())
 			return nil
 		}
-		current = &fileReceive{id: b.ItemID, name: b.Name, file: f, clipboard: clipboard, updated: time.Now(), notified: time.Now()}
+		current = &fileReceive{id: b.ItemID, name: displayName, file: f, clipboard: clipboard, updated: time.Now(), notified: time.Now()}
 		s.fileNotice(current, "receiving", "", "正在接收文件")
 		s.respond(wire.TypeFileResult, wire.FileResult{ItemID: b.ItemID, State: "ready"})
 		return current
@@ -445,12 +455,15 @@ func (s *Session) receiveFileFrame(frame fileFrame, current *fileReceive) *fileR
 			path, err = current.file.Finish(end.Hash)
 			if err == nil {
 				if current.clipboard != nil {
+					s.fileNotice(current, "unpacking", "", "正在整理文件")
 					err = s.finishFileClipboard(current, path)
 					current.clipboard.lease.Release(err == nil || current.clipboard.prepared)
 					if err != nil {
 						s.rejectFile(end.ItemID, err.Error())
+						s.fileNotice(current, "error", "", err.Error())
 					} else {
 						s.respond(wire.TypeFileResult, wire.FileResult{ItemID: end.ItemID, State: "complete"})
+						s.fileNotice(current, "complete", "", "已可粘贴")
 					}
 					return nil
 				}
