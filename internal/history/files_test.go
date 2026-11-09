@@ -54,7 +54,7 @@ func TestFileHistoryKeepsNamesAfterSourceRemovalAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.FileName != "项目资料" || !entry.Folder || entry.FileCount != 1 || entry.Size != 8 || Title(entry) != "项目资料" || entry.FileBundle != "" {
+	if entry.FileName != "项目资料" || !entry.Folder || entry.FileCount != 1 || entry.Size != 0 || Title(entry) != "项目资料" || entry.FileBundle != "" {
 		t.Fatalf("incorrect metadata: %+v", entry)
 	}
 	files, err := os.ReadDir(filepath.Join(s.dir, "files"))
@@ -114,7 +114,7 @@ func TestFileHistoryPreviewOneLevelAndTwentyItemLimit(t *testing.T) {
 					t.Fatal("preview recursed", item)
 				}
 			}
-			if count > 0 && (!p.Items[0].Directory || p.Items[0].Name != "00-child") {
+			if count > 0 && count <= MaxFilePreviewItems && (!p.Items[0].Directory || p.Items[0].Name != "00-child") {
 				t.Fatal("child folder should be visible without expansion")
 			}
 		})
@@ -153,48 +153,71 @@ func TestFileHistoryNamesMultiSelectionAndSearch(t *testing.T) {
 	}
 }
 
-func TestFileHistoryDoesNotCountBodiesTowardCapacity(t *testing.T) {
+func TestFileHistoryDoesNotCountUnpinnedBodiesTowardCapacity(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := writeHistoryFile(t, t.TempDir(), "file.txt", strings.Repeat("payload", 1000))
-	pinned, err := s.Add(DirLocal, "", fileItem(t, p))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SetPinned(pinned.ID, true); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := s.Add(DirLocal, "", fileItem(t, p)); err != nil {
 		t.Fatal(err)
 	}
 	usage, err := s.Usage()
-	if err != nil || usage.ContentBytes >= int64(pinned.Size) || usage.PinnedBytes >= int64(pinned.Size) {
-		t.Fatalf("file bodies counted as history content: %+v size=%d", usage, pinned.Size)
+	if err != nil || usage.ContentBytes >= int64(len(strings.Repeat("payload", 1000))) {
+		t.Fatalf("unpinned file bodies counted as history content: %+v", usage)
 	}
-	if err := s.SetCapacity(1); err != nil {
+}
+
+func TestPinnedFilesStayPasteableAfterSourceRemoved(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if list := s.List(); len(list) != 2 {
-		t.Fatal("metadata-only file history was pruned", list)
-	}
-	orphan := filepath.Join(s.dir, "files", ulid.Make().String()+".zip")
-	if err := os.WriteFile(orphan, []byte("orphan"), 0600); err != nil {
+	dir := t.TempDir()
+	p := writeHistoryFile(t, dir, "file.txt", "keep-me")
+	entry, err := s.Add(DirLocal, "", fileItem(t, p))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Clear(); err != nil {
+	if err := s.SetPinned(entry.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
-		t.Fatal("orphan not removed", err)
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
 	}
-	if len(s.List()) != 1 {
-		t.Fatal("clear removed pin")
+	list := s.List()
+	var pinned Entry
+	for _, e := range list {
+		if e.ID == entry.ID {
+			pinned = e
+		}
 	}
-	files, err := os.ReadDir(filepath.Join(s.dir, "files"))
-	if err != nil || len(files) != 0 {
-		t.Fatalf("file history left bodies: %v %v", files, err)
+	if !HasFileSnapshot(pinned) || !FilesAvailable(pinned) {
+		t.Fatalf("pin did not snapshot: %+v", pinned)
+	}
+	item, err := s.PasteItem(entry.ID)
+	if err != nil || len(item.Files) != 1 {
+		t.Fatalf("paste after delete: %v %+v", err, item)
+	}
+	body, err := os.ReadFile(item.Files[0])
+	if err != nil || string(body) != "keep-me" {
+		t.Fatalf("snapshot body: %s %v", body, err)
+	}
+	reopened, err := Open(s.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err = reopened.PasteItem(entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err = os.ReadFile(item.Files[0])
+	if err != nil || string(body) != "keep-me" {
+		t.Fatalf("reopened snapshot: %s %v", body, err)
+	}
+	usage, err := reopened.Usage()
+	if err != nil || usage.PinnedBytes < int64(len("keep-me")) {
+		t.Fatalf("pinned snapshot not counted: %+v", usage)
 	}
 }
 
@@ -247,7 +270,7 @@ func TestFileHistoryFailuresLeaveNoPartialAssets(t *testing.T) {
 	p := writeHistoryFile(t, t.TempDir(), "file.txt", "payload")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := s.AddFiles(ctx, DirLocal, "", fileItem(t, p), 100); !errors.Is(err, context.Canceled) {
+	if _, err := s.AddFiles(ctx, DirLocal, "", fileItem(t, p)); !errors.Is(err, context.Canceled) {
 		t.Fatal("cancel ignored", err)
 	}
 	if err := os.Mkdir(s.journalPath(), 0700); err != nil {
@@ -310,7 +333,7 @@ func TestClearRevokesFileSnapshotStillBeingRead(t *testing.T) {
 	p := writeHistoryFile(t, t.TempDir(), "file.txt", "snapshot")
 	ctx := &pausedFileContext{Context: context.Background(), started: make(chan struct{}), release: make(chan struct{})}
 	result := make(chan error, 1)
-	go func() { _, err := s.AddFiles(ctx, DirLocal, "", fileItem(t, p), 100); result <- err }()
+	go func() { _, err := s.AddFiles(ctx, DirLocal, "", fileItem(t, p)); result <- err }()
 	<-ctx.started
 	cleared := make(chan error, 1)
 	go func() { cleared <- s.Clear() }()
@@ -330,5 +353,72 @@ func TestClearRevokesFileSnapshotStillBeingRead(t *testing.T) {
 	files, err := os.ReadDir(filepath.Join(s.dir, "files"))
 	if err != nil || len(files) != 0 || len(s.List()) != 0 {
 		t.Fatal("revoked snapshot left files", files, err)
+	}
+}
+
+func TestFileHistoryDoesNotScanDescendantsOrLoseSelectedRoots(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	folder := t.TempDir()
+	writeHistoryFile(t, folder, "child/deep/hidden.txt", "not scanned")
+	// Removing access to descendants must not prevent recording the parent.
+	if err := os.Chmod(filepath.Join(folder, "child"), 0); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(filepath.Join(folder, "child"), 0700)
+	item := fileItem(t, folder)
+	entry, err := s.Add(DirLocal, "", item)
+	if err != nil || entry.Size != 0 || len(entry.FileTree) != 1 {
+		t.Fatal(entry, err)
+	}
+	second := writeHistoryFile(t, t.TempDir(), "second.txt", "hello")
+	entry, err = s.Add(DirLocal, "", fileItem(t, folder, second))
+	if err != nil || entry.FileCount != 2 || len(entry.FilePaths) != 2 || len(entry.FileTree) != 2 || entry.Size != 5 {
+		t.Fatal(entry, err)
+	}
+}
+
+func TestPinnedFilesPreserveRevealPathRemoveSnapshotOnUnpinAndEnforceBudget(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	p := writeHistoryFile(t, dir, "spec.txt", "pinned-payload")
+	entry, err := s.Add(DirLocal, "", fileItem(t, p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPinned(entry.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	pinned := s.List()[0]
+	if got, ok := RevealFilePath(pinned); !ok || got != p {
+		t.Fatalf("reveal path should prefer live original %q, got %q (%v)", p, got, ok)
+	}
+	if len(pinned.FilePaths) != 1 || pinned.FilePaths[0] != p || len(pinned.PinFiles) != 1 {
+		t.Fatalf("original FilePaths should stay intact: %+v", pinned)
+	}
+
+	// Unpinning must remove the copied snapshot directory and clear PinFiles.
+	if err := s.SetPinned(entry.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	unpinned := s.List()[0]
+	if HasFileSnapshot(unpinned) || len(unpinned.PinFiles) != 0 {
+		t.Fatalf("unpin left snapshot references: %+v", unpinned)
+	}
+	if _, err := os.Stat(s.pinFilesDir(entry.ID)); !os.IsNotExist(err) {
+		t.Fatalf("unpin did not remove snapshot dir: %v", err)
+	}
+
+	// Pinning a file larger than remaining capacity must fail cleanly without leaving partial files.
+	if err := s.SetCapacity(4); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPinned(entry.ID, true); err == nil {
+		t.Fatal("pinning file exceeding capacity succeeded")
+	}
+	if _, err := os.Stat(s.pinFilesDir(entry.ID)); !os.IsNotExist(err) {
+		t.Fatalf("failed pin left snapshot dir: %v", err)
 	}
 }

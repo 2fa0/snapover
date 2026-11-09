@@ -47,8 +47,11 @@ type Entry struct {
 	ThumbFile  string            `json:"thumb,omitempty"`
 	Pinned     bool              `json:"pinned,omitempty"`
 	PinKey     int               `json:"pin_key,omitempty"`
+	Note       string            `json:"note,omitempty"`
 	SourceApp  string            `json:"source_app,omitempty"`
 	FileBundle string            `json:"file_bundle,omitempty"`
+	FilePaths  []string          `json:"file_paths,omitempty"`
+	PinFiles   []string          `json:"pin_files,omitempty"`
 	FileName   string            `json:"file_name,omitempty"`
 	FileCount  int               `json:"file_count,omitempty"`
 	Folder     bool              `json:"folder,omitempty"`
@@ -178,14 +181,15 @@ func Open(dir string) (*Store, error) {
 
 // Add stores a clipboard snapshot. dir is DirLocal or DirRemote.
 func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
+	return s.add(dir, peer, item, false, "")
+}
+
+func (s *Store) add(dir, peer string, item clip.Item, pinned bool, note string) (Entry, error) {
 	if err := s.errDisabled(); err != nil {
 		return Entry{}, err
 	}
 	if item.Kind == clip.KindFiles {
-		s.mu.Lock()
-		limit := s.capacity
-		s.mu.Unlock()
-		return s.AddFiles(context.Background(), dir, peer, item, limit)
+		return s.AddFiles(context.Background(), dir, peer, item)
 	}
 	if item.Kind != clip.KindText && item.Kind != clip.KindImage {
 		return Entry{}, errors.New("没有可记录的内容")
@@ -209,6 +213,10 @@ func (s *Store) Add(dir, peer string, item clip.Item) (Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer s.publishLocked()
+	entry.Pinned, entry.Note = pinned, CleanNote(note)
+	if pinned {
+		entry.PinKey = s.freePinKey()
+	}
 	if err := s.offloadText(&entry); err != nil {
 		return Entry{}, err
 	}
@@ -329,7 +337,12 @@ func (s *Store) readItem(id string, forPaste bool) (clip.Item, error) {
 		return clip.Item{}, os.ErrNotExist
 	}
 	if entry.Kind == string(clip.KindFiles) {
-		return clip.Item{}, errors.New("文件内容未保存在历史中，请重新复制后再粘贴")
+		if paths := ActiveFilePaths(entry); len(paths) > 0 {
+			if item, err := clip.FromFiles(paths); err == nil {
+				return item, nil
+			}
+		}
+		return clip.Item{}, ErrFilesUnavailable
 	}
 	if entry.Kind == string(clip.KindText) {
 		if entry.TextFile != "" {
@@ -384,26 +397,165 @@ func (s *Store) findLocked(id string) (Entry, bool) {
 	return Entry{}, false
 }
 
+func (s *Store) otherPinnedBytesLocked(excludeID string) (int64, error) {
+	var total int64
+	for _, existing := range s.entries {
+		if existing.Pinned && existing.ID != excludeID {
+			size, err := s.entryBytesLocked(existing)
+			if err != nil {
+				return 0, err
+			}
+			total += size
+		}
+	}
+	return total, nil
+}
+
 // SetPinned keeps an item out of age and count cleanup.
 func (s *Store) SetPinned(id string, on bool) error {
 	if err := s.errDisabled(); err != nil {
 		return err
 	}
+	var snapshot []string
+	if on {
+		s.mu.Lock()
+		entry, ok := s.findLocked(id)
+		var budget int64 = DefaultMaxBytes
+		var budgetErr error
+		if ok && s.capacity > 0 {
+			pinnedBytes, err := s.otherPinnedBytesLocked(id)
+			if err != nil {
+				budgetErr = err
+			} else if rem := s.capacity - pinnedBytes; rem <= 0 {
+				budgetErr = errors.New("历史容量不足，未保存本条内容，请提高上限或清理置顶记录")
+			} else if rem < budget {
+				budget = rem
+			}
+		}
+		s.mu.Unlock()
+		if !ok {
+			return os.ErrNotExist
+		}
+		if budgetErr != nil {
+			return budgetErr
+		}
+		if entry.Kind == string(clip.KindFiles) && !HasFileSnapshot(entry) {
+			copied, err := s.snapshotPinnedFiles(id, ActiveFilePaths(entry), budget)
+			if err != nil {
+				return err
+			}
+			snapshot = copied
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	defer s.publishLocked()
+	for i := range s.entries {
+		if s.entries[i].ID != id {
+			continue
+		}
+		beforeEntries := append([]Entry(nil), s.entries...)
+		hadSnapshot := HasFileSnapshot(s.entries[i])
+		s.entries[i].Pinned = on
+		if !on {
+			s.entries[i].PinKey = 0
+			s.entries[i].Note = ""
+			s.entries[i].PinFiles = nil
+			delete(s.contentSizes, id)
+		} else if s.entries[i].PinKey == 0 && (s.entries[i].Kind == string(clip.KindText) || s.entries[i].Kind == string(clip.KindImage)) {
+			s.entries[i].PinKey = s.freePinKey()
+		}
+		if len(snapshot) > 0 {
+			s.entries[i].PinFiles = snapshot
+			delete(s.contentSizes, id)
+		}
+		var drop []Entry
+		if on && s.capacity > 0 {
+			size, err := s.entryBytesLocked(s.entries[i])
+			if err == nil {
+				var other int64
+				other, err = s.otherPinnedBytesLocked(id)
+				if err == nil && size+other > s.capacity {
+					err = errors.New("历史容量不足，未保存本条内容，请提高上限或清理置顶记录")
+				}
+			}
+			if err == nil {
+				drop, err = s.trimLocked()
+			}
+			if err != nil {
+				s.entries = beforeEntries
+				delete(s.contentSizes, id)
+				if len(snapshot) > 0 {
+					_ = os.RemoveAll(s.pinFilesDir(id))
+				}
+				return err
+			}
+		}
+		updated, ok := s.findLocked(id)
+		if !ok {
+			s.entries = beforeEntries
+			if len(snapshot) > 0 {
+				_ = os.RemoveAll(s.pinFilesDir(id))
+			}
+			return os.ErrNotExist
+		}
+		change := historyChange{
+			Op:       "pin",
+			ID:       id,
+			Pinned:   on,
+			PinKey:   updated.PinKey,
+			Note:     updated.Note,
+			PinFiles: updated.PinFiles,
+			Drop:     entryIDs(drop),
+		}
+		if err := s.persistLocked(change); err != nil {
+			s.entries = beforeEntries
+			delete(s.contentSizes, id)
+			if len(snapshot) > 0 {
+				_ = os.RemoveAll(s.pinFilesDir(id))
+			}
+			return err
+		}
+		if !on && hadSnapshot {
+			_ = os.RemoveAll(s.pinFilesDir(id))
+		}
+		if len(drop) > 0 {
+			return s.removeFiles(drop)
+		}
+		return nil
+	}
+	if len(snapshot) > 0 {
+		_ = os.RemoveAll(s.pinFilesDir(id))
+	}
+	return os.ErrNotExist
+}
+
+func (s *Store) SetNote(id, note string) error {
+	if err := s.errDisabled(); err != nil {
+		return err
+	}
+	note = CleanNote(note)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer s.publishLocked()
 	for i := range s.entries {
 		if s.entries[i].ID == id {
-			before, beforeKey := s.entries[i].Pinned, s.entries[i].PinKey
-			s.entries[i].Pinned = on
-			if !on {
-				s.entries[i].PinKey = 0
-			} else if beforeKey == 0 && (s.entries[i].Kind == string(clip.KindText) || s.entries[i].Kind == string(clip.KindImage)) {
-				s.entries[i].PinKey = s.freePinKey()
+			if !s.entries[i].Pinned {
+				return errors.New("请先置顶记录后再设置备注")
 			}
-			if err := s.persistLocked(historyChange{Op: "pin", ID: id, Pinned: on, PinKey: s.entries[i].PinKey}); err != nil {
-				s.entries[i].Pinned = before
-				s.entries[i].PinKey = beforeKey
+			before := s.entries[i].Note
+			if before == note {
+				return nil
+			}
+			s.entries[i].Note = note
+			if err := s.persistLocked(historyChange{
+				Op:     "pin",
+				ID:     id,
+				Pinned: s.entries[i].Pinned,
+				PinKey: s.entries[i].PinKey,
+				Note:   note,
+			}); err != nil {
+				s.entries[i].Note = before
 				return err
 			}
 			return nil
@@ -543,6 +695,11 @@ func (s *Store) removeFiles(entries []Entry) error {
 	}
 	for _, entry := range entries {
 		delete(s.contentSizes, entry.ID)
+		if HasFileSnapshot(entry) {
+			if err := os.RemoveAll(s.pinFilesDir(entry.ID)); err != nil && !os.IsNotExist(err) {
+				failures = append(failures, err)
+			}
+		}
 		if entry.FileBundle != "" {
 			path, err := s.bundlePath(entry.FileBundle)
 			if err != nil {

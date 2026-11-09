@@ -1,6 +1,7 @@
 package history
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"testing"
@@ -129,5 +130,64 @@ func TestPinKeySaveFailureRollsBack(t *testing.T) {
 	}
 	if _, ok := persisted["MatchText"]; ok {
 		t.Fatal("search decoration entered persistent format")
+	}
+}
+
+func TestPinnedNotePersistenceAndSearch(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, _ := clip.FromText("ssh root@10.0.0.8")
+	entry, err := s.Add(DirLocal, "", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNote(entry.ID, "未置顶备注"); err == nil {
+		t.Fatal("SetNote succeeded on unpinned entry")
+	}
+	if err := s.SetPinned(entry.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNote(entry.ID, "  生产跳板机\nSSH 登录  "); err != nil {
+		t.Fatal(err)
+	}
+	got := s.List()[0]
+	if got.Note != "生产跳板机 SSH 登录" || got.PinKey != 1 {
+		t.Fatalf("unexpected note or pin key: %+v", got)
+	}
+
+	// Verify journal replay and snapshot persistence.
+	reopened, err := Open(s.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.List()[0]; got.Note != "生产跳板机 SSH 登录" || !got.Pinned || got.PinKey != 1 {
+		t.Fatalf("note lost after journal replay: %+v", got)
+	}
+	if err := reopened.saveLocked(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err = Open(s.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.List()[0]; got.Note != "生产跳板机 SSH 登录" {
+		t.Fatalf("note lost after snapshot reload: %+v", got)
+	}
+
+	// Verify Search and SearchPreview match the note with MatchField == "备注".
+	results, err := reopened.Search(context.Background(), "跳板机")
+	if err != nil || len(results) != 1 || results[0].ID != entry.ID || results[0].MatchField != "备注" {
+		t.Fatalf("search by note failed: err=%v results=%+v", err, results)
+	}
+
+	// Unpinning clears the note.
+	if err := reopened.SetPinned(entry.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	results, err = reopened.Search(context.Background(), "跳板机")
+	if err != nil || reopened.List()[0].Note != "" || len(results) != 0 {
+		t.Fatalf("unpinned entry retained note: err=%v entry=%+v results=%+v", err, reopened.List()[0], results)
 	}
 }

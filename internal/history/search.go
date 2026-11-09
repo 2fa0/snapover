@@ -122,7 +122,15 @@ func searchTextFile(ctx context.Context, path string, q, buf []byte, overlap int
 
 // SearchPreview decorates a copy of an entry, without loading its disk body.
 func SearchPreview(entry Entry, query string) Entry {
-	fields := []struct{ name, text string }{{"", entry.Text}, {"来源应用", entry.SourceApp}, {"来源设备", entry.Peer}, {"文件名", entry.FileName}}
+	fields := []struct{ name, text string }{{"", entry.Text}}
+	if entry.Pinned && entry.Note != "" {
+		fields = append(fields, struct{ name, text string }{"备注", entry.Note})
+	}
+	fields = append(fields,
+		struct{ name, text string }{"来源应用", entry.SourceApp},
+		struct{ name, text string }{"来源设备", entry.Peer},
+		struct{ name, text string }{"文件名", entry.FileName},
+	)
 	for _, item := range entry.FileTree {
 		fields = append(fields, struct{ name, text string }{"目录", item.Name})
 	}

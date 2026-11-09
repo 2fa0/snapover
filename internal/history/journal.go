@@ -20,13 +20,16 @@ const (
 )
 
 type historyChange struct {
-	Sequence uint64   `json:"sequence"`
-	Op       string   `json:"op"`
-	Entry    *Entry   `json:"entry,omitempty"`
-	ID       string   `json:"id,omitempty"`
-	Pinned   bool     `json:"pinned,omitempty"`
-	PinKey   int      `json:"pin_key,omitempty"`
-	Drop     []string `json:"drop,omitempty"`
+	Sequence  uint64   `json:"sequence"`
+	Op        string   `json:"op"`
+	Entry     *Entry   `json:"entry,omitempty"`
+	ID        string   `json:"id,omitempty"`
+	Pinned    bool     `json:"pinned,omitempty"`
+	PinKey    int      `json:"pin_key,omitempty"`
+	Note      string   `json:"note,omitempty"`
+	PinFiles  []string `json:"pin_files,omitempty"`
+	FilePaths []string `json:"file_paths,omitempty"`
+	Drop      []string `json:"drop,omitempty"`
 }
 
 func entryIDs(entries []Entry) []string {
@@ -214,6 +217,14 @@ func (s *Store) applyChange(change historyChange) error {
 			if s.entries[i].ID == change.ID {
 				s.entries[i].Pinned = change.Pinned
 				s.entries[i].PinKey = change.PinKey
+				s.entries[i].Note = CleanNote(change.Note)
+				if !change.Pinned {
+					s.entries[i].PinFiles = nil
+				} else if len(change.PinFiles) > 0 {
+					s.entries[i].PinFiles = change.PinFiles
+				} else if len(change.FilePaths) > 0 {
+					s.entries[i].PinFiles = change.FilePaths
+				}
 				found = true
 				break
 			}
