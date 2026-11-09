@@ -1,5 +1,3 @@
-//go:build !windows
-
 package main
 
 import (
@@ -7,7 +5,7 @@ import (
 	"github.com/egoist/mygo"
 )
 
-func pickerScreenBounds(target paste.Target, width, height int) (mygo.Rectangle, float64) {
+func pickerScreenBounds(target paste.Target, width, height int) mygo.Rectangle {
 	point := mygo.Screen.CursorScreenPoint()
 	in := pickerPlaceInput{
 		width: width, height: height,
@@ -17,15 +15,19 @@ func pickerScreenBounds(target paste.Target, width, height int) (mygo.Rectangle,
 	}
 	in.workArea = in.mouseArea
 	if rect, ok := target.WindowBounds(); ok && rect.Width > 0 && rect.Height > 0 {
-		in.window = mygo.Rectangle{X: rect.X, Y: rect.Y, Width: rect.Width, Height: rect.Height}
-		in.hasWindow = true
+		in.window, in.hasWindow = pickerTargetRectangle(rect)
+	}
+	if in.hasWindow {
 		center := mygo.Point{X: in.window.X + in.window.Width/2, Y: in.window.Y + in.window.Height/2}
 		in.workArea = mygo.Screen.DisplayNearestPoint(center).WorkArea
 		in.mouseOnWork = in.workArea == in.mouseArea
 	}
 	if !(in.hasWindow && in.mouseOnWork) {
 		if rect, ok := target.CaretBounds(); ok {
-			caret := mygo.Rectangle{X: rect.X, Y: rect.Y, Width: rect.Width, Height: rect.Height}
+			caret, ok := pickerTargetRectangle(rect)
+			if !ok {
+				return placeShortcutPicker(in)
+			}
 			caretArea := mygo.Screen.DisplayNearestPoint(mygo.Point{X: caret.X, Y: caret.Y}).WorkArea
 			if in.hasWindow {
 				if caretArea == in.workArea && trustworthyPickerCaret(caret) {
@@ -38,9 +40,5 @@ func pickerScreenBounds(target paste.Target, width, height int) (mygo.Rectangle,
 			}
 		}
 	}
-	return placeShortcutPicker(in), 1
-}
-
-func setPickerBounds(win *mygo.Window, bounds mygo.Rectangle, _ float64) {
-	win.SetBounds(bounds)
+	return placeShortcutPicker(in)
 }

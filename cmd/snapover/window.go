@@ -176,6 +176,7 @@ type app struct {
 	pickLoading         bool
 	pickOriginal        *mygo.Window
 	imageViewer         *imageViewerState
+	viewerWork          chan struct{}
 	quitting            bool
 	sendToColdLaunch    bool
 	openAtLogin         bool
@@ -208,7 +209,6 @@ type app struct {
 	pickX                  int
 	pickY                  int
 	pickRect               mygo.Rectangle
-	pickScale              float64
 	pickArea               mygo.Rectangle
 	pasteTo                paste.Target
 	dialCancel             context.CancelFunc
@@ -580,7 +580,9 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 			if a.dialTarget != nil && a.dialTarget.PeerID() == "" {
 				a.dialTarget.BindPeer(link.ID)
 			}
-			if a.dialTarget == nil || a.dialTarget.PeerID() != link.ID {
+			// An automatic controller may have connected another candidate.
+			// Canceling it here would also close that newly adopted connection.
+			if a.dialTarget == nil || (a.dialPinned && a.dialTarget.PeerID() != link.ID) {
 				a.connect()
 			} else {
 				a.dialProposed = lan.Endpoint{}

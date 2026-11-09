@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +16,103 @@ import (
 	"github.com/2fa0/snapover/internal/filetransfer"
 	"github.com/oklog/ulid/v2"
 )
+
+func TestPinnedFileKeepsOwnerExecutePermission(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix execute permissions")
+	}
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := writeHistoryFile(t, t.TempDir(), "run.sh", "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(p, 0755); err != nil {
+		t.Fatal(err)
+	}
+	e, err := s.Add(DirLocal, "", fileItem(t, p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPinned(e.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	item, err := s.PasteItem(e.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(item.Files[0])
+	if err != nil || info.Mode().Perm() != 0700 {
+		t.Fatalf("snapshot should remain private and executable: %v, %v", info, err)
+	}
+}
+
+func TestPinnedFilesFollowMovedOrCopiedStore(t *testing.T) {
+	for _, format := range []string{"journal", "snapshot", "legacy"} {
+		for _, copyStore := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/copy=%t", format, copyStore), func(t *testing.T) {
+				base := t.TempDir()
+				s, err := Open(filepath.Join(base, "old"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				source := writeHistoryFile(t, t.TempDir(), "document.txt", "saved snapshot")
+				e, err := s.Add(DirLocal, "", fileItem(t, source))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := s.SetPinned(e.ID, true); err != nil {
+					t.Fatal(err)
+				}
+				oldCopy := s.List()[0].PinFiles[0]
+				if format == "legacy" {
+					s.entries[0].FilePaths = s.entries[0].PinFiles
+					s.entries[0].PinFiles = nil
+				}
+				if format != "journal" {
+					if err := s.saveLocked(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.Remove(source); err != nil {
+					t.Fatal(err)
+				}
+				moved := filepath.Join(base, "moved")
+				if copyStore {
+					err = os.CopyFS(moved, os.DirFS(s.dir))
+					if err == nil {
+						err = os.WriteFile(oldCopy, []byte("stale original store"), 0600)
+					}
+				} else {
+					err = os.Rename(s.dir, moved)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				for range 2 {
+					next, err := Open(moved)
+					if err != nil {
+						t.Fatal(err)
+					}
+					item, err := next.PasteItem(e.ID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					want := filepath.Join(next.pinFilesDir(e.ID), "document.txt")
+					if len(item.Files) != 1 || item.Files[0] != want {
+						t.Fatalf("snapshot still refers to the old store: %v", item.Files)
+					}
+					body, err := os.ReadFile(item.Files[0])
+					if err != nil || string(body) != "saved snapshot" {
+						t.Fatalf("read the wrong store: %q, %v", body, err)
+					}
+				}
+			})
+		}
+	}
+}
 
 func fileItem(t *testing.T, paths ...string) clip.Item {
 	t.Helper()

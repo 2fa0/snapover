@@ -266,3 +266,28 @@ func TestReconnectContinuesOtherPeerAfterSelectedIsRevoked(t *testing.T) {
 		t.Fatalf("attempts: %v", attempts)
 	}
 }
+
+func TestReconnectIsolatesIdentityMismatchPerCandidate(t *testing.T) {
+	e := reconnectEngine(t)
+	if _, err := e.Peers.Allow("other", "ccdd", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	ep := lan.Endpoint{Addr: "192.168.1.10:47821", Route: lan.RouteLAN}
+	target := NewDialTarget("selected", 0, nil)
+	target.UpdateCandidates([]DialCandidate{{PeerID: "selected", Endpoint: ep}, {PeerID: "other", Endpoint: ep}})
+	var attempts []string
+	rounds := 0
+	reconnect(context.Background(), target, e, func(_ context.Context, _ lan.Endpoint, id string, _ *Engine) error {
+		attempts = append(attempts, id)
+		if id == "selected" {
+			return ErrWrongPeer
+		}
+		return errors.New("offline")
+	}, func(context.Context, time.Duration) bool {
+		rounds++
+		return rounds < 3
+	})
+	if !reflect.DeepEqual(attempts, []string{"selected", "other", "other", "other"}) {
+		t.Fatalf("one stale identity blocked the valid candidate: %v", attempts)
+	}
+}
