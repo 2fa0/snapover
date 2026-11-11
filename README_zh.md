@@ -5,27 +5,26 @@
 <h1 align="center">Snapover</h1>
 
 <p align="center">
-  <strong>两台电脑共用一块剪贴板。</strong><br>
-  文字、图片、文件和文件夹，复制即到；macOS 与 Windows 原生应用，走局域网，不进云。
+  <strong>在这台复制，去那台粘贴。</strong><br><br>
+  让 Mac 和 Windows 共用一块剪贴板。<br>
+  文字、截图、文件、整个文件夹，都能通过加密直连送到另一台电脑。<br>
+  不用账号，不经云端，不再给自己发文件。
 </p>
 
 <p align="center">
+  <a href="https://github.com/2fa0/snapover/releases"><strong>⬇ 下载 Snapover</strong></a> •
   <a href="#-亮点">亮点</a> •
-  <a href="#-安装">安装</a> •
-  <a href="#-首次配对">首次配对</a> •
-  <a href="#-常用快捷键">快捷键</a> •
+  <a href="#-快速开始">快速开始</a> •
   <a href="#-命令行">命令行</a> •
-  <a href="#-从源码构建">构建</a> •
-  <a href="#-隐私与安全">隐私与安全</a> •
-  <a href="#-许可证">许可证</a>
+  <a href="#-从源码构建">构建</a>
 </p>
 
 <p align="center">
   <a href="https://github.com/2fa0/snapover/releases"><img src="https://img.shields.io/github/v/release/2fa0/snapover?style=flat-square&color=blue" alt="Release" /></a>
-  <img src="https://img.shields.io/badge/Go-1.27+-00ADD8.svg?style=flat-square&logo=go" alt="Go" />
-  <img src="https://img.shields.io/badge/Platform-macOS%2013%2B%20%7C%20Windows%2010%2F11-brightgreen.svg?style=flat-square" alt="Platform" />
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License" />
-  <img src="https://img.shields.io/badge/Built%20with-MyGo-6E4AFF.svg?style=flat-square" alt="MyGo" />
+  <img src="https://img.shields.io/badge/macOS%2013%2B-000000?style=flat-square&logo=apple" alt="macOS 13+" />
+  <img src="https://img.shields.io/badge/Windows%2010%2F11-0078D4?style=flat-square&logo=windows" alt="Windows 10/11" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="MIT 许可证" />
+  <img src="https://img.shields.io/badge/Go-1.27+-00ADD8.svg?style=flat-square&logo=go" alt="Go 1.27+" />
 </p>
 
 <p align="center">
@@ -34,146 +33,134 @@
 
 ---
 
-## 💡 为什么是 Snapover
+<table align="center">
+  <tr>
+    <td align="center" width="33%">
+      <strong>1 · 复制</strong><br><br>
+      💻 <strong>A 电脑</strong><br>
+      <code>⌘C</code> 或 <code>Ctrl+C</code>
+    </td>
+    <td align="center" width="33%">
+      <strong>2 · 直连</strong><br><br>
+      ⚡ <strong>Snapover</strong><br>
+      设备之间加密传输
+    </td>
+    <td align="center" width="33%">
+      <strong>3 · 粘贴</strong><br><br>
+      🖥️ <strong>B 电脑</strong><br>
+      <code>⌘V</code> 或 <code>Ctrl+V</code>
+    </td>
+  </tr>
+</table>
 
-把 A 电脑复制的东西，在 B 电脑直接粘贴。不用云盘、不用登录、不进公网。
+<p align="center">
+  <strong>文字 · 图片 · 文件 · 文件夹</strong><br>
+  不用上传，不用聊天软件，不用 U 盘。复制，然后粘贴。
+</p>
 
-两台电脑在同一局域网里互相发现，配对后用自签 TLS 1.3 直连。首次配对要核对与本次握手绑定的六位校验码，双方各自确认后才保存证书指纹；之后每次连接都按指纹验证，指纹变了就拒绝。没有账号，没有云端留存，也没有需要维护的服务端。
+## ✨ 亮点
 
----
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📋 能复制的，不只是文字</h3>
+      代码片段、截图、文件或整个文件夹，在 A 电脑复制，到 B 电脑直接粘贴。支持 Finder 和资源管理器多选，保留目录结构，不用压缩，也不用打开发送窗口。
+    </td>
+    <td width="50%" valign="top">
+      <h3>⚡ 找回来，再贴一次</h3>
+      macOS 按 <code>⌥⌘V</code>，Windows 按 <code>Alt+V</code>，搜索复制历史，回车直接粘到刚才使用的应用。常用内容可以置顶，前 9 条还能用数字快捷键直接粘贴。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📤 大文件直接送进文件夹</h3>
+      通过 Finder「服务」、Windows「发送到」或命令行，把文件保存到对端接收文件夹，不占用剪贴板。支持暂停、继续和断线续传，软件不设文件大小上限。
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔒 私密，是默认设置</h3>
+      设备通过 TLS 1.3 直连。首次配对核对六位校验码，并在两台电脑上分别确认；之后按保存的证书指纹验证。没有账号、云端存储和遥测。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🎛️ 同不同步，你说了算</h3>
+      自动或手动同步，随时暂停，只同步文字，排除指定应用，或只忽略下一次复制。密码管理器标记过的内容既不进入历史，也不会发送。
+    </td>
+    <td width="50%" valign="top">
+      <h3>🪶 原生应用，也懂终端</h3>
+      使用 Go + MyGo 绘制原生控件，不内嵌浏览器。附带的 <code>snapover-cli</code> 可以把文字、图片和文件发送接入脚本与终端工作流。
+    </td>
+  </tr>
+</table>
 
-## ⚡ 亮点
-
-- 📋 **复制即同步**：文字默认 1 MB 上限，可在设置里调到 20 MB；换行跨平台对齐（内部 LF，写入 Windows 用 CRLF），空行、缩进和末尾换行都保留，换行格式差异不算新内容。远端写回本地不会再被同步回去。
-- 🖼️ **图片**：读出来统一转成 PNG 传输，上限 20 MB、4000 万像素；超限只跳过并写日志，不进历史也不收发。
-- 📁 **文件和文件夹**：在 Finder／资源管理器里正常复制，到另一台直接粘贴，不需要打开发送窗口。保留目录结构、空目录，无需手动压缩；剪切也只按复制处理，不删源文件。整批默认上限 20 MB，可调。
-- 🔗 **没有中间人**：局域网内直连，同一时间只对一个设备活动；默认不走虚拟网卡，避免把 VPN 地址记成下次要连的地址。
-- 🔒 **配对是双向确认**：拒绝、取消或超时都不会自动信任；解除配对立即断开、撤销信任，对端保留旧记录也必须重新获得本机确认。
-- ⚡ **快速历史**：`⌥⌘V`（Windows `Alt+V`）弹出搜索式历史，方向键选择、回车或双击直接粘到刚才的光标处；前 9 条置顶自动分配 `⌘1`–`⌘9`。
-- 🗂️ **复制历史**：后台全文搜索并高亮命中，支持置顶、备注、图片悬停预览与放大查看、文本全文窗口；未置顶保留 1000 条或 30 天，容量上限默认 2 GB；置顶可导出／导入 ZIP 备份。
-- 🎯 **自动或手动同步**：手动模式下普通复制只进本机历史，按「复制并同步」（`⌥⌘C` / `Ctrl+Alt+C`）才发送。
-- 🕵️ **隐私可控**：密码管理器标记过的内容不记录、不同步；可暂停、只同步文本、按来源应用排除；隐私模式重启后仍保持。
-- 🌐 **跨网络（可选）**：两端连上 Tailscale 后单独开启，局域网地址与 Tailscale 地址分别保存，局域网恢复时不会抢占已建立的隧道连接。
-- 📤 **主动发送文件**：Windows 右键「发送到」、macOS Finder「服务」、命令行三个入口，直接存到对端接收文件夹而不动剪贴板；不设软件大小上限，支持暂停、继续和断线续传。
-- 💻 **命令行**：`snapover-cli` 复用后台应用已建立的配对与连接，适合脚本和终端工作流。
-- 🔄 **内置更新**：发布物用 Ed25519 签名，公钥编译进程序；支持增量下载，增量失败自动改下完整包。
-- 🌍 **中英文界面**，可跟随系统；Windows 另有「保持唤醒」开关。
-- 🪶 **原生应用**：Go + MyGo 直接画原生控件，不是套壳浏览器，空闲时也不占几百 MB 内存。
-
-细节、边界和实测记录都在 [功能与行为细节](docs/features_zh.md)。
-
----
-
-## 📦 安装
-
-### macOS（Apple Silicon & Intel）
-
-1. 到 [**Releases**](https://github.com/2fa0/snapover/releases) 下载对应架构的 `.dmg`：
-   - **Apple Silicon（M1/M2/M3/M4）**：`snapover-<版本>-arm64.dmg`
-   - **Intel x86_64**：`snapover-<版本>-amd64.dmg`
-2. 打开磁盘映像，把 **Snapover** 拖进「应用程序」。
+**还有这些：**自定义快捷键、历史全文搜索、图片预览与缩放、置顶文字／图片备份、自动更新、中英文界面，以及可选的 Tailscale 跨网络连接。
 
 > [!NOTE]
-> **首次打开**：目前是 ad-hoc 签名、未做 Apple 公证，首次启动请右键（或 Control-点击）`Snapover.app` 选 **打开**，或执行：
-> ```sh
-> xattr -cr /Applications/Snapover.app
-> ```
-> 没有 Developer ID 时，包只能在打包那台 Mac 上直接双击打开。
+> 通过剪贴板复制文件／文件夹时，整批默认上限为 20 MB，可在设置中调整；**主动发送文件不受此限制**。完整限制与边界见[功能与行为细节](docs/features_zh.md)。
 
-### Windows（10 / 11 x64）
+## 🚀 快速开始
 
-- **ZIP 便携版**：下载 `Snapover-<版本>-windows11-x64.zip`，解压后运行文件夹里的 `Snapover.exe`，同目录的资源文件要一起保留。
-- **便携数据**：在 `Snapover.exe` 旁边放一个空文件 `portable.flag`，数据会写到同目录的 `data/`，不写进用户目录。
-- Windows 版没有代码签名，SmartScreen 可能提示拦截，选择「更多信息 → 仍要运行」。
-- 防火墙要放行入站 TCP `47821`；自动发现还需要 UDP `5353`。尚未配对时，「连接设备」页会直接给出防火墙放行入口。
+### 1. 在两台电脑上安装 Snapover
+
+从 [**Releases**](https://github.com/2fa0/snapover/releases) 下载最新安装包：
+
+- **macOS 13+**：Apple Silicon 选择 `snapover-<版本>-arm64.dmg`，Intel 选择 `snapover-<版本>-amd64.dmg`，打开后把 Snapover 拖进「应用程序」。
+- **Windows 10/11 x64**：解压 `Snapover-<版本>-windows11-x64.zip`，保留同目录文件并运行 `Snapover.exe`。在 exe 旁放一个空的 `portable.flag`，数据就会保存到同目录的 `data/` 文件夹。
 
 > [!IMPORTANT]
-> **Releases 里的最新版本可能落后于默认分支。** 本 README 描述的是默认分支（`0.10.1`）的行为，其中文件剪贴板、主动发送文件、Tailscale、暂停续传等功能尚未发版。想立刻用上，请按[从源码构建](#-从源码构建)自行编译。
+> **Releases 可能落后于 `main`。** 本 README 描述的是 `main`（`0.10.1`），其中文件／文件夹剪贴板同步、主动发送文件、Tailscale 和断线续传尚未发版。想立刻使用这些功能，请[从源码构建](#-从源码构建)。
 
----
+<details>
+<summary><strong>首次打开须知：Gatekeeper、SmartScreen 与防火墙</strong></summary>
 
-## 🚀 首次配对
+<br>
 
-1. 两台电脑都装好并启动。托盘／菜单栏常驻，关掉窗口不会退出。
-2. 打开「连接设备」→「添加设备」，选择发现的电脑。找不到就手填地址，只写 IP 时端口默认 `47821`。
-3. 核对两边显示的**六位校验码**相同，然后在两台电脑上各自确认。
-4. 连上后会记住设备和地址，下次启动自动连接最近一台；那台拨不通时，同一轮会继续尝试其他已配对设备。
+- **macOS：**目前使用 ad-hoc 签名，尚未公证。右键 `Snapover.app` 选择「打开」，或执行 `xattr -cr /Applications/Snapover.app`。没有 Developer ID 时，安装包只能在打包那台 Mac 上直接打开。系统请求「本地网络」权限时请允许。
+- **Windows：**尚未进行代码签名，SmartScreen 可能需要选择「更多信息 → 仍要运行」。防火墙需放行入站 TCP `47821`，自动发现还需要 UDP `5353`；配对前可在「连接设备」页添加防火墙规则。
 
-补充：
+</details>
 
-- 添加窗口开放 2 分钟，单次确认最多等 90 秒；拒绝、取消或超时都不会自动信任，完成确认前不同步剪贴板、也不接收文件。
-- macOS 15 及以上首次启动发现时会请求「本地网络」权限，选择允许；macOS 13/14 没有这个入口。辅助功能权限只在第一次使用快捷粘贴时询问。
-- 广播被网络隔离、VPN 或系统权限挡住时，可以手填地址；「连接设备」里还能勾选参与发现和搜索的网段。
-- 「测试连接」只验证 TCP 端口通不通，不验证 TLS 与配对。
+### 2. 配对一次
 
-跨网络、多设备、地址优先级等细节见 [功能与行为细节](docs/features_zh.md#tailscale-跨网络连接)。
+1. 在两台电脑上打开「连接设备 → 添加设备」。
+2. 选择另一台电脑；发现不到时手动填写地址，默认端口为 `47821`。
+3. 核对两边显示相同的**六位校验码**，然后在**两台电脑上分别确认**。
 
----
+Snapover 会记住已配对设备并自动重连。双方确认前不会同步任何内容。
+
+### 3. 复制。切到另一台。粘贴。
+
+日常用法就只有这一步。Snapover 常驻菜单栏或系统托盘，关闭窗口不会停止同步。
+
+手动同步、网段选择、多设备与连接排查见[功能与行为细节](docs/features_zh.md)。
 
 ## ⌘ 常用快捷键
 
 | 动作 | macOS | Windows |
 | --- | --- | --- |
 | 打开快速历史 | `⌥⌘V` 或 `Cmd+Shift+V` | `Alt+V` |
-| 复制并同步（手动模式） | `⌥⌘C` | `Ctrl+Alt+C` |
-| 粘贴前 9 条置顶 | `⌘1`–`⌘9` | `Ctrl+1`–`Ctrl+9` |
-| 只写入剪贴板、不直接粘贴 | `⌥Enter` | `Alt+Enter` |
-| 切换当前记录置顶 | `⌘⇧P` | `Ctrl+Shift+P` |
+| 手动模式下复制并同步 | `⌥⌘C` | `Ctrl+Alt+C` |
+| 粘贴前 9 条置顶内容 | `⌘1`–`⌘9` | `Ctrl+1`–`Ctrl+9` |
+| 只写入剪贴板，不直接粘贴 | `⌥Enter` | `Alt+Enter` |
+| 置顶／取消置顶当前记录 | `⌘⇧P` | `Ctrl+Shift+P` |
 | 删除当前记录 | `⌘⇧⌫` | `Ctrl+Shift+Backspace` |
 
-快速历史里按 Enter 或双击直接粘贴，普通 Backspace 仍编辑搜索词。所有快捷键都能在设置里按键录制、保存或恢复默认；组合被占用时保留原键位。第一次粘贴需要在系统设置 → 隐私与安全性 → 辅助功能里允许 Snapover。
-
----
+所有快捷键都能在设置中修改。macOS 的快捷粘贴需要在「系统设置 → 隐私与安全性 → 辅助功能」中授权。
 
 ## 💻 命令行
 
-`snapover-cli` 复用本机后台已经建立好的配对和当前连接，不需要重新配对，也不打开发送窗口。**先启动 Snapover 并连上设备**，再运行：
+附带的 `snapover-cli` 复用桌面应用已经建立的配对和连接，不用重新配置，也不弹发送窗口。把它加入 `PATH`，或设置别名为 `snapover`，然后运行：
 
 ```sh
-# macOS：为已安装的应用设置别名
-alias snapover='/Applications/Snapover.app/Contents/Resources/snapover-cli'
-
 snapover send file './报告.pdf' './截图.png'
 snapover send text '你好'
 snapover send image './截图.jpg'
 cat ./notes.txt | snapover send text --stdin
 ```
 
-```powershell
-# Windows PowerShell：把解压目录加入 PATH，或设别名
-Set-Alias snapover "C:\Apps\Snapover\snapover-cli.exe"
+文件进入对端接收文件夹，文字和图片进入对端剪贴板。没有在线设备时会立即报错，不会排队等待。
 
-snapover send file "C:\Users\me\Documents\报告.pdf"
-Get-Content -Raw -Encoding UTF8 .\notes.txt | snapover send text --stdin
-```
-
-背下来就够用：文件存到对端接收文件夹，文字和图片进对端剪贴板；成功返回 `0`，发送或连接失败返回 `1`，参数错误返回 `2`；没有在线设备时立即报错，不会排队等下次连接。
-
-完整参数、编码注意事项、退出码和超时规则见 [命令行发送](docs/cli_zh.md)。
-
----
-
-## 🔄 内置升级
-
-设置 → 关于与更新里可以手动「检查更新」，默认每 24 小时后台检查一次；有新版本时弹出更新窗口，显示版本说明、安装、稍后提醒、跳过此版本。托盘菜单也有「检查更新…」。
-
-发布物用 Ed25519 私钥签名，公钥编译进程序，签名不符或大小不对就不安装，应用保持原样。支持增量更新（从最近 3 个已发布版本生成），增量失败自动改为下载完整包。macOS 退出后替换整个 `.app`，Windows 就地替换并在下次启动清理旧文件，`portable.flag`、`data/` 和同目录其他文件不会被删除。
-
-不能自动更新的情况会说明原因，而不是静默失败：直接从磁盘映像运行的应用、放在不可写目录的程序、以及源码构建（`go run` / `go build`）都需要手动装新版。macOS 目前是 ad-hoc 签名，更新后如果提示没有辅助功能权限，到系统设置里重新允许一次即可。
-
-维护者的打包与发版流程，以及签名私钥的保管要求，见 [构建与发布](docs/build_zh.md)；方案与待办见 [内置升级方案](docs/update-plan.md)。
-
----
-
-## 🚧 已知限制
-
-- **图片格式**：MyGo 的 `WriteImage` 写出 PNG。Windows 会再带一份 24 位、自下而上的 `CF_DIB`，不是 `CF_DIBV5`；macOS 不会同时写 TIFF。系统截图和普通文本是验收标准，贴进微信、Word、Photoshop、飞书时透明通道可能丢。
-- **远程桌面**：通过 RDP 使用 Windows 时，请关闭该连接的剪贴板共享／重定向。`rdpclip.exe` 可能在 Snapover 写入成功后覆盖剪贴板，导致 `Ctrl+V` 无反应而历史回贴正常；检测到这种情况时侧栏会提示关掉剪贴板共享，不会重复写入。已实机确认关闭 RDP 剪贴板同步可以解决。
-- **网络切换**：换 Wi-Fi 后会重新绑定物理网卡并更新已配对设备的地址；网络禁用组播时需要在「连接设备」里手填地址。
-- **签名**：没有 Developer ID 时 macOS 包只能在打包那台机器上直接打开；Windows 没有代码签名，SmartScreen 可能拦截。
-- **不做**：内置跨公网发现或中继、富文本同步。跨公网请自行用 Tailscale 等外部网络，再在设置里允许通过它连接。
-
----
+macOS 与 Windows 的配置方法、PowerShell 示例、完整参数和退出码见[命令行指南](docs/cli_zh.md)。
 
 ## 🔧 从源码构建
 
@@ -182,77 +169,34 @@ Get-Content -Raw -Encoding UTF8 .\notes.txt | snapover send text --stdin
 ```sh
 git clone https://github.com/2fa0/snapover.git
 cd snapover
-
 go test ./...
 go run ./cmd/snapover
 ```
 
-也可以只编译二进制：
+源码构建不能自动更新；Finder「服务」等系统集成功能需要打包后的应用。打包与发布步骤见[构建与发布](docs/build_zh.md)。
 
-```sh
-go build -o bin/snapover ./cmd/snapover     # Windows 把输出名改成 bin/Snapover.exe
-```
+## 🚧 已知限制
 
-这样得到的是开发版：不包含正式更新配置，不能自动升级；Finder 服务等系统集成功能需要应用包。
+- **远程桌面：**Windows RDP 会话请关闭剪贴板共享，否则 `rdpclip.exe` 可能在 Snapover 接收成功后覆盖内容。
+- **图片：**传输使用 PNG；粘贴到部分第三方应用时透明通道可能丢失，详细格式说明见功能文档。
+- **不内置：**公网发现／中继和富文本同步。跨网络使用时，请让两台电脑接入 Tailscale，再在 Snapover 中开启支持。
 
-一键打包三个平台（仅维护者需要，要求官方更新签名私钥）：
-
-```sh
-./build.command
-```
-
-产物：`dist/Snapover-<版本>-windows11-x64.zip`、`dist/darwin-arm64/` 与 `dist/darwin-amd64/` 下的 `.app` 和 `.dmg`，以及 `dist/releases/` 里的更新包与清单。本地测试用 `./build-dev.command`，跳过增量差集、产物放 `dist/dev/`。
-
-单独打某个平台：
-
-```sh
-go tool mygo build -platform darwin/universal -o dist     # Universal .app + .dmg
-go tool mygo build -platform windows/amd64 -o dist        # 交叉编译 Windows x64
-```
-
-局域网发现的实机测试会使用真实网络，只在需要验证发现功能时运行：
-
-```sh
-SNAPOVER_TEST_LAN=1 go test -count=1 ./internal/discovery -run TestLANDiscovery -v
-```
-
-> [!NOTE]
-> 跨编译只能证明目标平台能编过，不能替代实机验证。Mac 上编出来的 Windows 程序无法验证剪贴板，`Win+Shift+S` 和记事本粘贴必须在 Windows 上试。macOS 从桌面宿主应用跑测试时，本地网络权限归属于宿主，`no route to host` 不能单独证明路由故障。
-
-打包细节、签名密钥和发版步骤见 [构建与发布](docs/build_zh.md)。
-
----
+当前行为、完整限制与故障排查见[功能与行为细节](docs/features_zh.md)。
 
 ## 🔐 隐私与安全
 
-- **数据都在本机**：macOS 在 `~/Library/Application Support/Snapover`，Windows 在 `%AppData%\Snapover`。里面有本机证书、`peers.json`、历史和日志。**不要把 `identity/` 拷到另一台机器。**
-- **日志不含正文**：`logs/snapover.log` 是运行日志，`logs/crash.log` 是崩溃记录；两者约 1 MB 轮转、只保留上一份，最早记录超过 7 天的会清理。日志不写剪贴板正文、图片字节或私钥。
-- **没有遥测**：不做自动上报，不上传日志。「连接诊断」生成的摘要包含平台、连接状态和结果分类，不含剪贴板正文、路径、设备名、地址或证书。
-- **报告安全问题**：请用 GitHub 的[私密漏洞报告](https://github.com/2fa0/snapover/security/advisories/new)，不要开公开 issue；在日志或样例里附上前请先删掉凭据和隐私内容。
+- 剪贴板数据、配对记录和历史都保存在自己的电脑上：macOS 为 `~/Library/Application Support/Snapover`，Windows 为 `%AppData%\Snapover`。
+- 没有遥测，不自动上传日志；日志不记录剪贴板正文、图片字节或私钥。
+- 安全漏洞请通过 [GitHub 私密漏洞报告](https://github.com/2fa0/snapover/security/advisories/new)提交，不要发公开 issue。
 
-历史容量、缓存和崩溃排查的细节见 [功能与行为细节](docs/features_zh.md)。
+## 🤝 参与贡献
 
----
+欢迎 issue 和 pull request。涉及协议、持久化、并发或配对安全的改动，请先说明方案；提交前运行相关 `go test`，界面改动请在 Mac 或 Windows 实机检查。
 
-## 🤝 贡献
+代码目录与项目约束见 [AGENTS.md](AGENTS.md)。
 
-欢迎 issue 和 pull request。
-
-1. Fork 本仓库，从 `main` 拉分支（`git checkout -b feat/your-feature`）
-2. 小改动直接提 PR；涉及协议、持久化、并发或配对安全，请先在 issue 里说清关键约束
-3. 提交前跑相关的 `go test`，涉及界面的改动请在 macOS 或 Windows 实机上看一眼
-4. 不要提交更新签名私钥、构建产物（`bin/`、`dist/`）或含真实剪贴板内容的日志
-
-代码结构、必须保留的行为约束和验证命令见 [AGENTS.md](AGENTS.md)。
-
----
+如果 Snapover 让你的两台电脑更像一个工作区，欢迎点个 **⭐ Star**，让更多人发现它。
 
 ## 📄 许可证
 
-Snapover 以 [MIT 许可证](LICENSE)发布，版权归 2fa0 所有。
-
-简单说：可以自由使用、复制、修改、合并、发布、再许可和销售，商用或个人用都行，只要在所有副本里保留版权与许可声明；软件按「现状」提供，不含任何担保。
-
-欢迎个人和公司免费使用、换图标改名后分发，也希望改过的版本能开源回来。作者不鼓励把 Snapover 重新包装成收费产品出售；采用 MIT 后这不再是许可禁止的行为，所以这里只是期望，不是附加条件。
-
-第三方组件与图标保留各自的许可，不因本项目采用 MIT 而改变：图标见 `cmd/snapover/icons/LICENSE*` 与 `cmd/snapover/licenses/`，完整清单见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。`LICENSE` 和 `THIRD_PARTY_NOTICES.txt` 也随安装包分发——macOS 在 `Snapover.app/Contents/Resources/`，Windows 在 exe 同目录。
+基于 [MIT 许可证](LICENSE)，个人与商业使用均免费，但需保留版权和许可声明。第三方组件遵循各自许可证，完整清单见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。
