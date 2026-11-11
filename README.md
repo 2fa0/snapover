@@ -252,19 +252,30 @@ macOS 目前是 ad-hoc 签名，更新只替换程序本身：更新后如果快
 
 图标嵌入代码与图片位于 `internal/resources/`；`resources/` 只放随包发布的文件，避免将源码复制进安装包。
 
-发布仓库为 `2fa0/snapover`，需保持公开，只放介绍和 Release 附件；源码继续留在私有仓库，不要把本地源码仓库推送到发布仓库。更新地址会编译进程序，更换发布仓库后必须重新打包；已安装的旧包仍使用旧地址，需要手动安装新包一次。
+源码和 Release 都放在 `2fa0/snapover`，源代码以 [MIT 许可证](LICENSE)公开。更新地址会编译进程序，更换发布仓库后必须重新打包；已安装的旧包仍使用旧地址，需要手动安装新包一次。
 
 1. 改 `mygo.json` 的 `version`，并在 `docs/CHANGELOG.md` 加上对应的 `## x.y.z` 小节（更新窗口里的版本说明取自这里，缺了会构建失败）。
 2. 运行 `./build.command`。它会检查更新签名私钥（`updates.privateKey`，或环境变量 `MYGO_UPDATER_PRIVATE_KEY`），缺了直接停止；构建出的 `*.tar.gz`、`*.delta`、`update-*.json`、`install.sh` 会集中到 `dist/releases/`，不会混进 Windows ZIP。
-3. 在 `updates.github` 指向的公开仓库创建与版本匹配的草稿 Release，标签为 `v<version>`（例如 `v0.8.1`）。上传 `dist/releases/` 里的文件，以及 `dist/` 下的 Windows ZIP、`dist/darwin-arm64/` 和 `dist/darwin-amd64/` 下的 DMG，最后再传 `update-*.json`；三个目标的文件齐全后再发布。清单中的下载地址包含这个标签，不能使用其他标签。旧版本的文件要保留：增量更新要从它们生成。
+3. 在 `updates.github` 指向的公开仓库创建与版本匹配的草稿 Release，标签为 `v<version>`（例如 `v0.8.1`）。上传 `dist/releases/` 中本版本的归档、增量和安装脚本，以及 `dist/` 下的 Windows ZIP、`dist/darwin-arm64/` 和 `dist/darwin-amd64/` 下的 DMG，最后再传本次生成的 `update-*.json`；目录中可能保留旧版本文件，不要混传。三个目标的文件齐全后再发布。清单中的下载地址包含这个标签，不能使用其他标签。旧版本的已发布文件要保留：增量更新要从它们生成。
 
-签名私钥已通过 `go tool mygo keygen -o ~/.config/snapover/update-keys` 生成，文件留在本机，不进仓库；首次发布前请确认已备份到密码管理器。私钥丢失后，已安装的用户再也收不到更新；泄漏则相当于交出发布权，只能换新密钥并重新发布一版带新公钥的版本。
+官方更新签名私钥由维护者保管，不进仓库，也不需要提供给贡献者；首次发布前请确认已备份到密码管理器。私钥丢失后，已安装的用户再也收不到更新；泄漏则相当于交出发布权，只能换新密钥并重新发布一版带新公钥的版本。
+
+第三方组件和图标的版权、许可及源码地址见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)，该文件也随安装包和更新包分发。升级依赖或更换第三方素材时应同步更新；这些组件继续遵守各自许可，不因本项目采用 MIT 而改变。
 
 方案与待办见 [内置升级方案](docs/update-plan.md)。
 
 ## 编译
 
-依赖钉在 MyGo v0.8.3。本机需要 Go 1.27。
+依赖钉在 MyGo v0.8.3。本机需要 Go 1.27.3 或兼容的更新版本，具体要求以 `go.mod` 为准。
+
+贡献者无需更新签名私钥，可以在 macOS 或 Windows 上直接运行和测试源码：
+
+```sh
+go test ./...
+go run ./cmd/snapover
+```
+
+也可以执行 `go build -o bin/snapover ./cmd/snapover`（Windows 将输出名改为 `bin/Snapover.exe`）。直接构建的是开发版，不包含正式更新配置，不能自动升级；Finder 服务等系统集成功能仍需应用包。以下一键打包和 `build-dev.command` 是维护者的签名打包流程，需要官方更新签名私钥。
 
 在 Mac 上双击 `build.command`，或在项目目录运行：
 
@@ -341,3 +352,11 @@ MyGo 的 `WriteImage` 写出 PNG。Windows 会再带一份 24 位、自下而上
 诊断面包屑通过有界队列异步写入，通常每秒同步一次，运行期间会轮转；退出和显式阻塞栈会等待刷盘。严重阻塞时队列满会丢弃部分普通诊断行，最后一条面包屑不是绝对精确的崩溃位置。运行时致命错误仍直接写入崩溃文件。
 
 修改与验证记录见 [2026-10-16 性能修复](docs/performance-2026-10-16.md)。
+
+## 许可证
+
+本项目源代码采用 [MIT 许可证](LICENSE)，版权归 2fa0 所有。可以自由使用、修改、改名再分发，也可以商用；分发时需要保留版权与许可声明，软件按现状提供、不含担保。
+
+欢迎个人和公司免费使用、换图标改名后分发，也希望改过的版本能开源回来。作者不鼓励把 Snapover 重新包装成收费产品出售；采用 MIT 后这不再是许可禁止的行为，所以这里只是期望，不是附加条件。
+
+图标、参考组件和依赖分别遵守各自许可：图标见 `cmd/snapover/icons/LICENSE*` 与 `cmd/snapover/licenses/`，第三方组件见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。
