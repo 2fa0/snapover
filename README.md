@@ -359,4 +359,4 @@ MyGo 的 `WriteImage` 写出 PNG。Windows 会再带一份 24 位、自下而上
 
 欢迎个人和公司免费使用、换图标改名后分发，也希望改过的版本能开源回来。作者不鼓励把 Snapover 重新包装成收费产品出售；采用 MIT 后这不再是许可禁止的行为，所以这里只是期望，不是附加条件。
 
-图标、参考组件和依赖分别遵守各自许可：图标见 `cmd/snapover/icons/LICENSE*` 与 `cmd/snapover/licenses/`，第三方组件见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。
+图标、参考组件和依赖分别遵守各自许可：图标见 `cmd/snapover/icons/LICENSE*` 与 `cmd/snapover/licenses/`，第三方组件见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。`LICENSE` 和 `THIRD_PARTY_NOTICES.txt` 也随安装包分发：macOS 在 `Snapover.app/Contents/Resources/`，Windows 在 exe 同目录。
