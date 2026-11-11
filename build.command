@@ -3,6 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+build_name="build.command"
+if [[ "${SNAPOVER_BUILD_DEV:-}" == 1 ]]; then
+    build_name="build-dev.command"
+fi
+
 if [[ "$(uname -s)" != Darwin ]]; then
     echo "请在 macOS 上运行此脚本，生成 Windows x64、Mac M 系列和 Intel Mac 的包。" >&2
     exit 1
@@ -27,9 +32,27 @@ if [[ -z "${MYGO_UPDATER_PRIVATE_KEY:-}" && ( -z "$update_key" || ! -f "$update_
 fi
 build_tools="$(mktemp -d "${TMPDIR:-/tmp}/snapover-build.XXXXXX")"
 trap 'rm -rf "$build_tools"' EXIT
-trap 'echo "打包失败，请查看上方错误，处理后重新运行 build.command。" >&2' ERR
+trap 'echo "打包失败，请查看上方错误，处理后重新运行 $build_name。" >&2' ERR
 
 ln -s "$go_bin" "$build_tools/go"
+
+project_dir="$PWD"
+out_dir="$PWD/dist"
+if [[ "${SNAPOVER_BUILD_DEV:-}" == 1 ]]; then
+    project_dir="$build_tools/project"
+    out_dir="$PWD/dist/dev"
+    mkdir -p "$project_dir"
+    # MyGo reads mygo.json from the project root; keep the release config intact.
+    for path in "$PWD"/*; do
+        name="${path##*/}"
+        [[ "$name" == mygo.json || "$name" == dist ]] && continue
+        ln -s "$path" "$project_dir/$name"
+    done
+    cp mygo.json "$project_dir/mygo.json"
+    /usr/bin/plutil -replace updates.deltas -integer 0 "$project_dir/mygo.json" 2>/dev/null || \
+        /usr/bin/plutil -insert updates.deltas -integer 0 "$project_dir/mygo.json"
+    echo "本地测试打包：跳过增量更新差集，产物保存在 dist/dev。"
+fi
 
 # collect_updates moves the signed update files of a platform out of the
 # app's directory, so that the Windows ZIP does not ship them, and keeps
@@ -37,11 +60,11 @@ ln -s "$go_bin" "$build_tools/go"
 # and the app directory should hold only what it runs.
 collect_updates() {
     local dir="$1" file
-    mkdir -p dist/releases
+    mkdir -p "$out_dir/releases"
     for file in "$dir"/*.tar.gz "$dir"/*.delta "$dir"/update-*.json \
         "$dir"/install.sh "$dir"/install.ps1; do
         [[ -e "$file" ]] || continue
-        mv "$file" dist/releases/
+        mv "$file" "$out_dir/releases/"
     done
 }
 
@@ -63,29 +86,33 @@ echo "正在打包 Windows 11 x64…"
 # MyGo always invokes NSIS when found. Exclude Homebrew's crashing
 # makensis while retaining MyGo's executable icons, manifest and resources.
 PATH="$build_tools:/usr/bin:/bin:/usr/sbin:/sbin" CGO_ENABLED=0 \
-    "$go_bin" tool mygo build -platform windows/amd64 -o dist
+    "$go_bin" tool mygo build -platform windows/amd64 -o "$out_dir" "$project_dir"
 
-windows_zip="dist/Snapover-${version}-windows11-x64.zip"
+windows_zip="$out_dir/Snapover-${version}-windows11-x64.zip"
 # Before the ZIP, so that it holds the app and nothing else.
-collect_updates dist/windows-amd64
-/usr/bin/ditto -c -k --keepParent dist/windows-amd64 "$build_tools/windows.zip"
+collect_updates "$out_dir/windows-amd64"
+/usr/bin/ditto -c -k --keepParent "$out_dir/windows-amd64" "$build_tools/windows.zip"
 mv "$build_tools/windows.zip" "$windows_zip"
 
 echo "正在打包 Mac M 系列（arm64）…"
-CGO_ENABLED=0 "$go_bin" tool mygo build -platform darwin/arm64 -o dist
-collect_updates dist/darwin-arm64
+CGO_ENABLED=0 "$go_bin" tool mygo build -platform darwin/arm64 -o "$out_dir" "$project_dir"
+collect_updates "$out_dir/darwin-arm64"
 
 echo "正在打包 Intel Mac（amd64）…"
-CGO_ENABLED=0 "$go_bin" tool mygo build -platform darwin/amd64 -o dist
-collect_updates dist/darwin-amd64
+CGO_ENABLED=0 "$go_bin" tool mygo build -platform darwin/amd64 -o "$out_dir" "$project_dir"
+collect_updates "$out_dir/darwin-amd64"
 
 echo "打包完成："
-echo "  Windows 11 x64：$PWD/$windows_zip"
-echo "  Windows CLI：$PWD/dist/windows-amd64/snapover-cli.exe"
-echo "  Mac 应用：$PWD/dist/darwin-arm64/Snapover.app"
-echo "  Mac CLI：$PWD/dist/darwin-arm64/Snapover.app/Contents/Resources/snapover-cli"
-echo "  Mac 安装包：$PWD/dist/darwin-arm64/snapover-${version}-arm64.dmg"
-echo "  Intel Mac 应用：$PWD/dist/darwin-amd64/Snapover.app"
-echo "  Intel Mac CLI：$PWD/dist/darwin-amd64/Snapover.app/Contents/Resources/snapover-cli"
-echo "  Intel Mac 安装包：$PWD/dist/darwin-amd64/snapover-${version}-amd64.dmg"
-echo "  更新包与清单：$PWD/dist/releases（普通上传时最后传 update-*.json）"
+echo "  Windows 11 x64：$windows_zip"
+echo "  Windows CLI：$out_dir/windows-amd64/snapover-cli.exe"
+echo "  Mac 应用：$out_dir/darwin-arm64/Snapover.app"
+echo "  Mac CLI：$out_dir/darwin-arm64/Snapover.app/Contents/Resources/snapover-cli"
+echo "  Mac 安装包：$out_dir/darwin-arm64/snapover-${version}-arm64.dmg"
+echo "  Intel Mac 应用：$out_dir/darwin-amd64/Snapover.app"
+echo "  Intel Mac CLI：$out_dir/darwin-amd64/Snapover.app/Contents/Resources/snapover-cli"
+echo "  Intel Mac 安装包：$out_dir/darwin-amd64/snapover-${version}-amd64.dmg"
+if [[ "${SNAPOVER_BUILD_DEV:-}" == 1 ]]; then
+    echo "  更新包与清单：$out_dir/releases（仅供测试，请勿用于正式发布）"
+else
+    echo "  更新包与清单：$out_dir/releases（普通上传时最后传 update-*.json）"
+fi
