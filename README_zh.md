@@ -31,6 +31,10 @@
   <a href="README.md">English</a> | <strong>简体中文</strong>
 </p>
 
+<p align="center">
+  <img src="docs/images/screenshot.jpg" alt="Snapover 复制历史界面" width="900" />
+</p>
+
 ---
 
 <table align="center">
