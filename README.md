@@ -5,19 +5,20 @@
 <h1 align="center">Snapover</h1>
 
 <p align="center">
-  <strong>两台电脑共用一块剪贴板。</strong><br>
-  文字、图片、文件和文件夹，复制即到；macOS 与 Windows 原生应用，走局域网，不进云。
+  <strong>One clipboard for two computers.</strong><br>
+  Copy text, images, files or folders on one machine and paste them on the other<br>
+  over your local network. Native on macOS and Windows, never in the cloud.
 </p>
 
 <p align="center">
-  <a href="#-亮点">亮点</a> •
-  <a href="#-安装">安装</a> •
-  <a href="#-首次配对">首次配对</a> •
-  <a href="#-常用快捷键">快捷键</a> •
-  <a href="#-命令行">命令行</a> •
-  <a href="#-从源码构建">构建</a> •
-  <a href="#-隐私与安全">隐私与安全</a> •
-  <a href="#-许可证">许可证</a>
+  <a href="#-highlights">Highlights</a> •
+  <a href="#-installation">Installation</a> •
+  <a href="#-pairing-for-the-first-time">Pairing</a> •
+  <a href="#-shortcuts">Shortcuts</a> •
+  <a href="#-command-line">CLI</a> •
+  <a href="#-build-from-source">Build</a> •
+  <a href="#-privacy-and-security">Privacy</a> •
+  <a href="#-license">License</a>
 </p>
 
 <p align="center">
@@ -28,152 +29,156 @@
   <img src="https://img.shields.io/badge/Built%20with-MyGo-6E4AFF.svg?style=flat-square" alt="MyGo" />
 </p>
 
----
-
-## 💡 为什么是 Snapover
-
-把 A 电脑复制的东西，在 B 电脑直接粘贴。不用云盘、不用登录、不进公网。
-
-两台电脑在同一局域网里互相发现，配对后用自签 TLS 1.3 直连。首次配对要核对与本次握手绑定的六位校验码，双方各自确认后才保存证书指纹；之后每次连接都按指纹验证，指纹变了就拒绝。没有账号，没有云端留存，也没有需要维护的服务端。
+<p align="center">
+  <strong>English</strong> | <a href="README_zh.md">简体中文</a>
+</p>
 
 ---
 
-## ⚡ 亮点
+## 💡 Why Snapover
 
-- 📋 **复制即同步**：文字默认 1 MB 上限，可在设置里调到 20 MB；换行跨平台对齐（内部 LF，写入 Windows 用 CRLF），空行、缩进和末尾换行都保留，换行格式差异不算新内容。远端写回本地不会再被同步回去。
-- 🖼️ **图片**：读出来统一转成 PNG 传输，上限 20 MB、4000 万像素；超限只跳过并写日志，不进历史也不收发。
-- 📁 **文件和文件夹**：在 Finder／资源管理器里正常复制，到另一台直接粘贴，不需要打开发送窗口。保留目录结构、空目录，无需手动压缩；剪切也只按复制处理，不删源文件。整批默认上限 20 MB，可调。
-- 🔗 **没有中间人**：局域网内直连，同一时间只对一个设备活动；默认不走虚拟网卡，避免把 VPN 地址记成下次要连的地址。
-- 🔒 **配对是双向确认**：拒绝、取消或超时都不会自动信任；解除配对立即断开、撤销信任，对端保留旧记录也必须重新获得本机确认。
-- ⚡ **快速历史**：`⌥⌘V`（Windows `Alt+V`）弹出搜索式历史，方向键选择、回车或双击直接粘到刚才的光标处；前 9 条置顶自动分配 `⌘1`–`⌘9`。
-- 🗂️ **复制历史**：后台全文搜索并高亮命中，支持置顶、备注、图片悬停预览与放大查看、文本全文窗口；未置顶保留 1000 条或 30 天，容量上限默认 2 GB；置顶可导出／导入 ZIP 备份。
-- 🎯 **自动或手动同步**：手动模式下普通复制只进本机历史，按「复制并同步」（`⌥⌘C` / `Ctrl+Alt+C`）才发送。
-- 🕵️ **隐私可控**：密码管理器标记过的内容不记录、不同步；可暂停、只同步文本、按来源应用排除；隐私模式重启后仍保持。
-- 🌐 **跨网络（可选）**：两端连上 Tailscale 后单独开启，局域网地址与 Tailscale 地址分别保存，局域网恢复时不会抢占已建立的隧道连接。
-- 📤 **主动发送文件**：Windows 右键「发送到」、macOS Finder「服务」、命令行三个入口，直接存到对端接收文件夹而不动剪贴板；不设软件大小上限，支持暂停、继续和断线续传。
-- 💻 **命令行**：`snapover-cli` 复用后台应用已建立的配对与连接，适合脚本和终端工作流。
-- 🔄 **内置更新**：发布物用 Ed25519 签名，公钥编译进程序；支持增量下载，增量失败自动改下完整包。
-- 🌍 **中英文界面**，可跟随系统；Windows 另有「保持唤醒」开关。
-- 🪶 **原生应用**：Go + MyGo 直接画原生控件，不是套壳浏览器，空闲时也不占几百 MB 内存。
+Copy something on computer A, paste it on computer B. No cloud drive, no account, nothing exposed to the internet.
 
-细节、边界和实测记录都在 [功能与行为细节](docs/features.md)。
+Both computers discover each other on the same local network and connect directly over a self-signed TLS 1.3 channel. The first pairing asks you to compare a six-digit code bound to that handshake and confirm on both sides; only then is the certificate fingerprint pinned, and every later connection is checked against it. No accounts, no server to maintain, no copies left anywhere.
 
 ---
 
-## 📦 安装
+## ⚡ Highlights
 
-### macOS（Apple Silicon & Intel）
+- 📋 **Copy and it arrives**: text is UTF-8, 1 MB by default and adjustable up to 20 MB in Settings. Line endings are normalised per platform (LF internally, CRLF on Windows) while blank lines, indentation, trailing newlines and lone CRs survive; a change of line-ending style is not treated as new content. Content written by the remote side is never synced back.
+- 🖼️ **Images**: converted to PNG for transport, capped at 20 MB and 40 megapixels; anything larger is skipped and logged rather than synced.
+- 📁 **Files and folders**: copy them in Finder or Explorer and paste on the other machine — no send dialog involved. Directory structure and empty folders are preserved, nothing needs zipping, and cutting still behaves like copying (the source is not deleted). 20 MB per batch by default, adjustable.
+- 🔗 **No middleman**: a direct LAN connection with a single active peer at a time. Virtual network interfaces are ignored by default, so a VPN address never becomes the address Snapover tries next time.
+- 🔒 **Pairing needs both sides**: rejection, cancellation and timeout never fall back to trust; unpairing disconnects immediately and revokes trust, so a peer holding the old record still has to be confirmed again.
+- ⚡ **Quick history**: `⌥⌘V` (`Alt+V` on Windows) opens a searchable history; arrow keys and Enter or a double click paste straight into the field you were just in. The first nine pinned items get `⌘1`–`⌘9`.
+- 🗂️ **Clipboard history**: background full-text search with highlighted matches, pinning, per-item notes, hover image previews with a zoom viewer, a full-text window for long entries. Unpinned items keep for 1000 entries or 30 days within a 2 GB budget by default; pinned items export and import as a ZIP backup.
+- 🎯 **Automatic or manual sync**: in manual mode a normal copy stays local, and `⌥⌘C` / `Ctrl+Alt+C` sends the current entry when you ask.
+- 🕵️ **Privacy on your terms**: content marked by password managers is neither stored nor synced; pause sync, sync text only, or exclude source applications. Privacy mode survives a restart.
+- 🌐 **Across networks, optionally**: enable Tailscale support on both sides, and the LAN and Tailscale addresses are stored separately — a returning LAN link never preempts an established tunnel.
+- 📤 **Send files on purpose**: Windows "Send to", the macOS Finder service, or the CLI drops files into the other machine's receiving folder without touching the clipboard; no size limit in the app, with pause, resume and reconnect.
+- 💻 **Command line**: `snapover-cli` reuses the pairing and connection the desktop app already holds, for scripts and terminal workflows.
+- 🔄 **Built-in updates**: releases are signed with Ed25519 with the public key compiled in, and delta updates fall back to the full archive when they cannot be applied.
+- 🌍 **English and Chinese interface**, following the system by default; Windows also gets a keep-awake switch.
+- 🪶 **A native app**: Go and MyGo draw real native controls rather than embedding a browser, so an idle window does not cost hundreds of megabytes.
 
-1. 到 [**Releases**](https://github.com/2fa0/snapover/releases) 下载对应架构的 `.dmg`：
-   - **Apple Silicon（M1/M2/M3/M4）**：`snapover-<版本>-arm64.dmg`
-   - **Intel x86_64**：`snapover-<版本>-amd64.dmg`
-2. 打开磁盘映像，把 **Snapover** 拖进「应用程序」。
+Detailed behaviour, limits and measured notes live in [功能与行为细节](docs/features.md) (Chinese). The same for [the CLI reference](docs/cli.md) and [the build notes](docs/build.md).
+
+---
+
+## 📦 Installation
+
+### macOS (Apple silicon & Intel)
+
+1. Download the matching `.dmg` from [**Releases**](https://github.com/2fa0/snapover/releases):
+   - **Apple silicon (M1/M2/M3/M4)**: `snapover-<version>-arm64.dmg`
+   - **Intel x86_64**: `snapover-<version>-amd64.dmg`
+2. Open the disk image and drag **Snapover** into `Applications`.
 
 > [!NOTE]
-> **首次打开**：目前是 ad-hoc 签名、未做 Apple 公证，首次启动请右键（或 Control-点击）`Snapover.app` 选 **打开**，或执行：
+> **First launch**: the app is ad-hoc signed and not notarised yet. Right-click (or Control-click) `Snapover.app` and choose **Open**, or run:
 > ```sh
 > xattr -cr /Applications/Snapover.app
 > ```
-> 没有 Developer ID 时，包只能在打包那台 Mac 上直接双击打开。
+> Without a Developer ID, a build opens directly only on the Mac that produced it.
 
-### Windows（10 / 11 x64）
+### Windows (10 / 11 x64)
 
-- **ZIP 便携版**：下载 `Snapover-<版本>-windows11-x64.zip`，解压后运行文件夹里的 `Snapover.exe`，同目录的资源文件要一起保留。
-- **便携数据**：在 `Snapover.exe` 旁边放一个空文件 `portable.flag`，数据会写到同目录的 `data/`，不写进用户目录。
-- Windows 版没有代码签名，SmartScreen 可能提示拦截，选择「更多信息 → 仍要运行」。
-- 防火墙要放行入站 TCP `47821`；自动发现还需要 UDP `5353`。尚未配对时，「连接设备」页会直接给出防火墙放行入口。
+- **ZIP (portable)**: download `Snapover-<version>-windows11-x64.zip`, extract it, and run `Snapover.exe` from the folder — keep the files next to it together.
+- **Portable data**: drop an empty `portable.flag` next to `Snapover.exe` and data goes to `data/` beside it instead of your user profile.
+- The Windows build is not code signed, so SmartScreen may intervene; choose **More info → Run anyway**.
+- Allow inbound TCP `47821` through the firewall; discovery also needs UDP `5353`. Before pairing, the "Connect devices" page can add the firewall rule for you.
 
 > [!IMPORTANT]
-> **Releases 里的最新版本可能落后于默认分支。** 本 README 描述的是默认分支（`0.10.1`）的行为，其中文件剪贴板、主动发送文件、Tailscale、暂停续传等功能尚未发版。想立刻用上，请按[从源码构建](#-从源码构建)自行编译。
+> **Releases can lag behind the default branch.** This README describes `main` (`0.10.1`), where file clipboard sync, sending files, Tailscale support and resumable transfers are not released yet. To use them today, [build from source](#-build-from-source).
 
 ---
 
-## 🚀 首次配对
+## 🚀 Pairing for the first time
 
-1. 两台电脑都装好并启动。托盘／菜单栏常驻，关掉窗口不会退出。
-2. 打开「连接设备」→「添加设备」，选择发现的电脑。找不到就手填地址，只写 IP 时端口默认 `47821`。
-3. 核对两边显示的**六位校验码**相同，然后在两台电脑上各自确认。
-4. 连上后会记住设备和地址，下次启动自动连接最近一台；那台拨不通时，同一轮会继续尝试其他已配对设备。
+1. Install and launch Snapover on both computers. It stays in the tray or menu bar; closing the window does not quit it.
+2. Open **Connect devices** → **Add device** and pick the computer that appears. If discovery does not find it, enter the address by hand — port `47821` is assumed.
+3. Compare the **six-digit code** shown on both computers and confirm on each of them.
+4. The device and its address are remembered, so the next launch reconnects automatically, preferring the most recent device and trying the other paired devices in the same round if that one is unreachable.
 
-补充：
+Notes:
 
-- 添加窗口开放 2 分钟，单次确认最多等 90 秒；拒绝、取消或超时都不会自动信任，完成确认前不同步剪贴板、也不接收文件。
-- macOS 15 及以上首次启动发现时会请求「本地网络」权限，选择允许；macOS 13/14 没有这个入口。辅助功能权限只在第一次使用快捷粘贴时询问。
-- 广播被网络隔离、VPN 或系统权限挡住时，可以手填地址；「连接设备」里还能勾选参与发现和搜索的网段。
-- 「测试连接」只验证 TCP 端口通不通，不验证 TLS 与配对。
+- The add window stays open for 2 minutes and a single confirmation waits up to 90 seconds. Rejection, cancellation or timeout never leads to trust, and nothing is synced or received before both sides confirm.
+- macOS 15 and later asks for **Local Network** access the first time discovery runs — allow it. macOS 13 and 14 have no such entry. Accessibility permission is only requested the first time you use quick paste.
+- If broadcast is blocked by network isolation, a VPN or system permissions, enter the address by hand; **Connect devices** can also limit which subnets take part in discovery.
+- **Test connection** only checks that the TCP port is reachable, not TLS or pairing.
 
-跨网络、多设备、地址优先级等细节见 [功能与行为细节](docs/features.md#tailscale-跨网络连接)。
+Details on multiple devices, address priority and cross-network use are in [功能与行为细节](docs/features.md#tailscale-跨网络连接) (Chinese).
 
 ---
 
-## ⌘ 常用快捷键
+## ⌘ Shortcuts
 
-| 动作 | macOS | Windows |
+| Action | macOS | Windows |
 | --- | --- | --- |
-| 打开快速历史 | `⌥⌘V` 或 `Cmd+Shift+V` | `Alt+V` |
-| 复制并同步（手动模式） | `⌥⌘C` | `Ctrl+Alt+C` |
-| 粘贴前 9 条置顶 | `⌘1`–`⌘9` | `Ctrl+1`–`Ctrl+9` |
-| 只写入剪贴板、不直接粘贴 | `⌥Enter` | `Alt+Enter` |
-| 切换当前记录置顶 | `⌘⇧P` | `Ctrl+Shift+P` |
-| 删除当前记录 | `⌘⇧⌫` | `Ctrl+Shift+Backspace` |
+| Open quick history | `⌥⌘V` or `Cmd+Shift+V` | `Alt+V` |
+| Copy and sync (manual mode) | `⌥⌘C` | `Ctrl+Alt+C` |
+| Paste one of the first nine pinned items | `⌘1`–`⌘9` | `Ctrl+1`–`Ctrl+9` |
+| Write to the clipboard without pasting | `⌥Enter` | `Alt+Enter` |
+| Pin or unpin the current item | `⌘⇧P` | `Ctrl+Shift+P` |
+| Delete the current item | `⌘⇧⌫` | `Ctrl+Shift+Backspace` |
 
-快速历史里按 Enter 或双击直接粘贴，普通 Backspace 仍编辑搜索词。所有快捷键都能在设置里按键录制、保存或恢复默认；组合被占用时保留原键位。第一次粘贴需要在系统设置 → 隐私与安全性 → 辅助功能里允许 Snapover。
+Enter or a double click in quick history pastes directly, while a plain Backspace still edits the search field. Every shortcut can be recorded, saved or reset in Settings; a conflicting combination keeps the previous one. Quick paste needs Snapover allowed under System Settings → Privacy & Security → Accessibility.
 
 ---
 
-## 💻 命令行
+## 💻 Command line
 
-`snapover-cli` 复用本机后台已经建立好的配对和当前连接，不需要重新配对，也不打开发送窗口。**先启动 Snapover 并连上设备**，再运行：
+`snapover-cli` reuses the pairing and the current connection of the desktop app, so there is nothing to pair again and no send window opens. **Start Snapover and connect a device first**, then:
 
 ```sh
-# macOS：为已安装的应用设置别名
+# macOS: alias the helper inside the installed app
 alias snapover='/Applications/Snapover.app/Contents/Resources/snapover-cli'
 
-snapover send file './报告.pdf' './截图.png'
-snapover send text '你好'
-snapover send image './截图.jpg'
+snapover send file './report.pdf' './screenshot.png'
+snapover send text 'hello'
+snapover send image './screenshot.jpg'
 cat ./notes.txt | snapover send text --stdin
 ```
 
 ```powershell
-# Windows PowerShell：把解压目录加入 PATH，或设别名
+# Windows PowerShell: add the extracted folder to PATH, or set an alias
 Set-Alias snapover "C:\Apps\Snapover\snapover-cli.exe"
 
-snapover send file "C:\Users\me\Documents\报告.pdf"
+snapover send file "C:\Users\me\Documents\report.pdf"
 Get-Content -Raw -Encoding UTF8 .\notes.txt | snapover send text --stdin
 ```
 
-背下来就够用：文件存到对端接收文件夹，文字和图片进对端剪贴板；成功返回 `0`，发送或连接失败返回 `1`，参数错误返回 `2`；没有在线设备时立即报错，不会排队等下次连接。
+That is enough to remember: files land in the other machine's receiving folder, text and images go to its clipboard. Exit code `0` on success, `1` when sending or connecting fails, `2` for bad arguments; with no online device the command fails immediately instead of queueing.
 
-完整参数、编码注意事项、退出码和超时规则见 [命令行发送](docs/cli.md)。
-
----
-
-## 🔄 内置升级
-
-设置 → 关于与更新里可以手动「检查更新」，默认每 24 小时后台检查一次；有新版本时弹出更新窗口，显示版本说明、安装、稍后提醒、跳过此版本。托盘菜单也有「检查更新…」。
-
-发布物用 Ed25519 私钥签名，公钥编译进程序，签名不符或大小不对就不安装，应用保持原样。支持增量更新（从最近 3 个已发布版本生成），增量失败自动改为下载完整包。macOS 退出后替换整个 `.app`，Windows 就地替换并在下次启动清理旧文件，`portable.flag`、`data/` 和同目录其他文件不会被删除。
-
-不能自动更新的情况会说明原因，而不是静默失败：直接从磁盘映像运行的应用、放在不可写目录的程序、以及源码构建（`go run` / `go build`）都需要手动装新版。macOS 目前是 ad-hoc 签名，更新后如果提示没有辅助功能权限，到系统设置里重新允许一次即可。
-
-维护者的打包与发版流程，以及签名私钥的保管要求，见 [构建与发布](docs/build.md)；方案与待办见 [内置升级方案](docs/update-plan.md)。
+Full options, encoding caveats, exit codes and timeout rules: [命令行发送](docs/cli.md) (Chinese).
 
 ---
 
-## 🚧 已知限制
+## 🔄 Built-in updates
 
-- **图片格式**：MyGo 的 `WriteImage` 写出 PNG。Windows 会再带一份 24 位、自下而上的 `CF_DIB`，不是 `CF_DIBV5`；macOS 不会同时写 TIFF。系统截图和普通文本是验收标准，贴进微信、Word、Photoshop、飞书时透明通道可能丢。
-- **远程桌面**：通过 RDP 使用 Windows 时，请关闭该连接的剪贴板共享／重定向。`rdpclip.exe` 可能在 Snapover 写入成功后覆盖剪贴板，导致 `Ctrl+V` 无反应而历史回贴正常；检测到这种情况时侧栏会提示关掉剪贴板共享，不会重复写入。已实机确认关闭 RDP 剪贴板同步可以解决。
-- **网络切换**：换 Wi-Fi 后会重新绑定物理网卡并更新已配对设备的地址；网络禁用组播时需要在「连接设备」里手填地址。
-- **签名**：没有 Developer ID 时 macOS 包只能在打包那台机器上直接打开；Windows 没有代码签名，SmartScreen 可能拦截。
-- **不做**：内置跨公网发现或中继、富文本同步。跨公网请自行用 Tailscale 等外部网络，再在设置里允许通过它连接。
+**Settings → About & updates** checks on demand, and every 24 hours in the background by default. When a new version exists, the update window shows the release notes with install, remind me later and skip this version; the tray menu has **Check for updates…** too.
+
+Releases are signed with an Ed25519 key whose public half is compiled into the app, and a signature or size mismatch leaves the app untouched. Delta updates are generated from the last three releases and fall back to the full archive. On macOS the whole `.app` is replaced after quitting; on Windows the files are replaced in place and leftovers are cleaned on the next launch, without disturbing `portable.flag`, `data/` or neighbouring files.
+
+Cases that cannot self-update say why instead of failing silently: an app run straight from a disk image, one in a non-writable location, and source builds (`go run` / `go build`) all need a new package installed by hand. macOS builds are ad-hoc signed for now, so after an update you may need to allow Accessibility again.
+
+How maintainers package and publish, and how the signing key must be kept, is in [构建与发布](docs/build.md) (Chinese); the plan and its open items are in [内置升级方案](docs/update-plan.md) (Chinese).
 
 ---
 
-## 🔧 从源码构建
+## 🚧 Known limitations
 
-需要 **Go 1.27.3+**（以 `go.mod` 为准），不需要 cgo。
+- **Image formats**: MyGo's `WriteImage` writes PNG. Windows additionally gets a 24-bit, bottom-up `CF_DIB` rather than `CF_DIBV5`, and macOS does not also write TIFF. Screenshots and plain text are the acceptance bar; the alpha channel may be lost when pasting into WeChat, Word, Photoshop or Feishu.
+- **Remote desktop**: when using Windows over RDP, turn off clipboard sharing/redirection for that connection and let Snapover handle the copy. `rdpclip.exe` can overwrite the clipboard after Snapover writes it, so `Ctrl+V` does nothing while pasting from history still works; Snapover detects the new owner and suggests turning the shared clipboard off rather than writing twice. Disabling RDP clipboard sync is a confirmed fix.
+- **Network changes**: switching Wi-Fi rebinds the physical interface and updates paired addresses through discovery; where multicast is blocked, enter the address by hand.
+- **Signing**: without a Developer ID a macOS build opens only on the machine that produced it; Windows builds are unsigned, so SmartScreen may intervene.
+- **Not planned**: built-in discovery or relaying across the internet, and rich-text sync. For cross-network use, bring your own Tailscale and allow it in Settings.
+
+---
+
+## 🔧 Build from source
+
+Requires **Go 1.27.3+** (see `go.mod`) and no cgo.
 
 ```sh
 git clone https://github.com/2fa0/snapover.git
@@ -183,72 +188,72 @@ go test ./...
 go run ./cmd/snapover
 ```
 
-也可以只编译二进制：
+Or just build the binary:
 
 ```sh
-go build -o bin/snapover ./cmd/snapover     # Windows 把输出名改成 bin/Snapover.exe
+go build -o bin/snapover ./cmd/snapover     # on Windows name it bin/Snapover.exe
 ```
 
-这样得到的是开发版：不包含正式更新配置，不能自动升级；Finder 服务等系统集成功能需要应用包。
+What you get is a development build: no release update configuration, so it cannot self-update, and system integrations such as the Finder service need a packaged app.
 
-一键打包三个平台（仅维护者需要，要求官方更新签名私钥）：
+Packaging all three platforms is a maintainer step and needs the official update signing key:
 
 ```sh
 ./build.command
 ```
 
-产物：`dist/Snapover-<版本>-windows11-x64.zip`、`dist/darwin-arm64/` 与 `dist/darwin-amd64/` 下的 `.app` 和 `.dmg`，以及 `dist/releases/` 里的更新包与清单。本地测试用 `./build-dev.command`，跳过增量差集、产物放 `dist/dev/`。
+Outputs: `dist/Snapover-<version>-windows11-x64.zip`, the `.app` and `.dmg` bundles under `dist/darwin-arm64/` and `dist/darwin-amd64/`, plus update archives and manifests in `dist/releases/`. For local testing use `./build-dev.command`, which skips delta generation and writes to `dist/dev/`.
 
-单独打某个平台：
+One platform at a time:
 
 ```sh
-go tool mygo build -platform darwin/universal -o dist     # Universal .app + .dmg
-go tool mygo build -platform windows/amd64 -o dist        # 交叉编译 Windows x64
+go tool mygo build -platform darwin/universal -o dist     # universal .app + .dmg
+go tool mygo build -platform windows/amd64 -o dist        # cross-compile Windows x64
 ```
 
-局域网发现的实机测试会使用真实网络，只在需要验证发现功能时运行：
+The real-network discovery test only runs when asked:
 
 ```sh
 SNAPOVER_TEST_LAN=1 go test -count=1 ./internal/discovery -run TestLANDiscovery -v
 ```
 
 > [!NOTE]
-> 跨编译只能证明目标平台能编过，不能替代实机验证。Mac 上编出来的 Windows 程序无法验证剪贴板，`Win+Shift+S` 和记事本粘贴必须在 Windows 上试。macOS 从桌面宿主应用跑测试时，本地网络权限归属于宿主，`no route to host` 不能单独证明路由故障。
+> Cross-compiling only proves the other platform compiles; it is not a real-device test. A Windows build made on a Mac cannot verify clipboard behaviour — `Win+Shift+S` and pasting into Notepad have to be tried on Windows. When tests are launched from a desktop host app on macOS, local network permission belongs to that host, so `no route to host` alone does not prove a routing problem.
 
-打包细节、签名密钥和发版步骤见 [构建与发布](docs/build.md)。
-
----
-
-## 🔐 隐私与安全
-
-- **数据都在本机**：macOS 在 `~/Library/Application Support/Snapover`，Windows 在 `%AppData%\Snapover`。里面有本机证书、`peers.json`、历史和日志。**不要把 `identity/` 拷到另一台机器。**
-- **日志不含正文**：`logs/snapover.log` 是运行日志，`logs/crash.log` 是崩溃记录；两者约 1 MB 轮转、只保留上一份，最早记录超过 7 天的会清理。日志不写剪贴板正文、图片字节或私钥。
-- **没有遥测**：不做自动上报，不上传日志。「连接诊断」生成的摘要包含平台、连接状态和结果分类，不含剪贴板正文、路径、设备名、地址或证书。
-- **报告安全问题**：请用 GitHub 的[私密漏洞报告](https://github.com/2fa0/snapover/security/advisories/new)，不要开公开 issue；在日志或样例里附上前请先删掉凭据和隐私内容。
-
-历史容量、缓存和崩溃排查的细节见 [功能与行为细节](docs/features.md)。
+Packaging details, signing keys and the release checklist: [构建与发布](docs/build.md) (Chinese).
 
 ---
 
-## 🤝 贡献
+## 🔐 Privacy and security
 
-欢迎 issue 和 pull request。
+- **Data stays local**: `~/Library/Application Support/Snapover` on macOS, `%AppData%\Snapover` on Windows. It holds the machine certificate, `peers.json`, history and logs. **Do not copy `identity/` to another machine.**
+- **Logs carry no content**: `logs/snapover.log` is the run log and `logs/crash.log` the crash log; both rotate at about 1 MB keeping one previous file, and entries older than seven days are removed. Logs never contain clipboard text, image bytes or private keys.
+- **No telemetry**: nothing is reported or uploaded automatically. A connection diagnosis summary contains the platform, connection state and result categories — no clipboard content, paths, device names, addresses or certificates.
+- **Reporting security issues**: please use [GitHub private vulnerability reporting](https://github.com/2fa0/snapover/security/advisories/new) instead of a public issue, and strip credentials and private content from any logs or samples you attach.
 
-1. Fork 本仓库，从 `main` 拉分支（`git checkout -b feat/your-feature`）
-2. 小改动直接提 PR；涉及协议、持久化、并发或配对安全，请先在 issue 里说清关键约束
-3. 提交前跑相关的 `go test`，涉及界面的改动请在 macOS 或 Windows 实机上看一眼
-4. 不要提交更新签名私钥、构建产物（`bin/`、`dist/`）或含真实剪贴板内容的日志
-
-代码结构、必须保留的行为约束和验证命令见 [AGENTS.md](AGENTS.md)。
+History budgets, caches and crash triage: [功能与行为细节](docs/features.md) (Chinese).
 
 ---
 
-## 📄 许可证
+## 🤝 Contributing
 
-Snapover 以 [MIT 许可证](LICENSE)发布，版权归 2fa0 所有。
+Issues and pull requests are welcome.
 
-简单说：可以自由使用、复制、修改、合并、发布、再许可和销售，商用或个人用都行，只要在所有副本里保留版权与许可声明；软件按「现状」提供，不含任何担保。
+1. Fork the repository and branch from `main` (`git checkout -b feat/your-feature`).
+2. Small changes can go straight to a pull request; for protocol, persistence, concurrency or pairing security, describe the constraints in an issue first.
+3. Run the relevant `go test` before submitting, and look at UI changes on a real macOS or Windows machine.
+4. Never commit the update signing key, build outputs (`bin/`, `dist/`) or logs containing real clipboard content.
 
-欢迎个人和公司免费使用、换图标改名后分发，也希望改过的版本能开源回来。作者不鼓励把 Snapover 重新包装成收费产品出售；采用 MIT 后这不再是许可禁止的行为，所以这里只是期望，不是附加条件。
+Code layout, behaviours that must be preserved and the verification commands are in [AGENTS.md](AGENTS.md).
 
-第三方组件与图标保留各自的许可，不因本项目采用 MIT 而改变：图标见 `cmd/snapover/icons/LICENSE*` 与 `cmd/snapover/licenses/`，完整清单见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。`LICENSE` 和 `THIRD_PARTY_NOTICES.txt` 也随安装包分发——macOS 在 `Snapover.app/Contents/Resources/`，Windows 在 exe 同目录。
+---
+
+## 📄 License
+
+Snapover is released under the [MIT License](LICENSE), copyright 2fa0.
+
+In short: use, copy, modify, merge, publish, distribute, sublicense and sell — commercially or not — as long as the copyright and permission notices are kept in all copies. The software comes "as is", without warranty of any kind.
+
+Using it for free, forking it, renaming it and shipping it with your own icon is all welcome, and contributions back are appreciated. Repackaging Snapover into a paid product is discouraged; with MIT that is no longer something the license forbids, so it is a request, not a condition.
+
+Third-party components and icons keep their own licenses, unchanged by this project's MIT license: see `cmd/snapover/icons/LICENSE*` and `cmd/snapover/licenses/` for icons, and [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt) for the full list. `LICENSE` and `THIRD_PARTY_NOTICES.txt` are shipped with the app too — under `Snapover.app/Contents/Resources/` on macOS, next to the executable on Windows.
