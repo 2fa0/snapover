@@ -106,7 +106,7 @@
 
 ---
 
-## ⌨️ 常用快捷键
+## ⌘ 常用快捷键
 
 | 动作 | macOS | Windows |
 | --- | --- | --- |
@@ -161,7 +161,7 @@ Get-Content -Raw -Encoding UTF8 .\notes.txt | snapover send text --stdin
 
 ---
 
-## ⚠️ 已知限制
+## 🚧 已知限制
 
 - **图片格式**：MyGo 的 `WriteImage` 写出 PNG。Windows 会再带一份 24 位、自下而上的 `CF_DIB`，不是 `CF_DIBV5`；macOS 不会同时写 TIFF。系统截图和普通文本是验收标准，贴进微信、Word、Photoshop、飞书时透明通道可能丢。
 - **远程桌面**：通过 RDP 使用 Windows 时，请关闭该连接的剪贴板共享／重定向。`rdpclip.exe` 可能在 Snapover 写入成功后覆盖剪贴板，导致 `Ctrl+V` 无反应而历史回贴正常；检测到这种情况时侧栏会提示关掉剪贴板共享，不会重复写入。已实机确认关闭 RDP 剪贴板同步可以解决。
@@ -171,7 +171,7 @@ Get-Content -Raw -Encoding UTF8 .\notes.txt | snapover send text --stdin
 
 ---
 
-## 🛠️ 从源码构建
+## 🔧 从源码构建
 
 需要 **Go 1.27.3+**（以 `go.mod` 为准），不需要 cgo。
 
