@@ -31,6 +31,10 @@
   <strong>English</strong> | <a href="README_zh.md">简体中文</a>
 </p>
 
+<p align="center">
+  <img src="docs/images/screenshot.jpg" alt="Snapover clipboard history" width="900" />
+</p>
+
 ---
 
 <table align="center">
