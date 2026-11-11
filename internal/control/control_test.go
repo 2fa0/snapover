@@ -16,7 +16,7 @@ func TestLocalCommandStreamsAndReportsResults(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	dir := t.TempDir()
-	s, err := Start(ctx, dir, func(ctx context.Context, request Request, progress func(int64, int64)) (string, error) {
+	s, err := start(ctx, dir, func(ctx context.Context, request Request, progress func(int64, int64)) (string, error) {
 		if request.Value == "error" {
 			return "", errors.New("对端拒绝")
 		}
@@ -26,7 +26,7 @@ func TestLocalCommandStreamsAndReportsResults(t *testing.T) {
 		}
 		progress(1, 2)
 		return request.Value, nil
-	})
+	}, 100*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestLocalAuthenticationAndInvalidRequests(t *testing.T) {
 	}{
 		{"", `{"timeout_ms":1000}`, http.StatusUnauthorized},
 		{"wrong", `{"timeout_ms":1000}`, http.StatusUnauthorized},
-		{ep.Token, `{"timeout_ms":0}`, http.StatusBadRequest},
+		{ep.Token, `{"timeout_ms":-1}`, http.StatusBadRequest},
 		{ep.Token, `{"timeout_ms":1000} {}`, http.StatusBadRequest},
 		{ep.Token, `{"timeout_ms":1000,"unknown":true}`, http.StatusBadRequest},
 	} {
@@ -186,5 +186,91 @@ func TestFileBatchRequestCarriesPaths(t *testing.T) {
 	// A single payload keeps working for text and image commands.
 	if err := Send(ctx, dir, Request{Kind: "text", Value: "你好", TimeoutMS: 1000}, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestIdleTimeoutTracksActualProgress(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	dir := t.TempDir()
+	s, err := start(ctx, dir, func(ctx context.Context, request Request, progress func(int64, int64)) (string, error) {
+		ticker := time.NewTicker(25 * time.Millisecond)
+		defer ticker.Stop()
+		for done := int64(1); done <= 12; done++ {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-ticker.C:
+			}
+			if request.Value == "stalled" {
+				progress(1, 12)
+			} else {
+				progress(done, 12)
+			}
+		}
+		return "saved", nil
+	}, 150*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	// The legacy total timeout is ignored; ongoing progress survives several idle intervals.
+	if err = Send(ctx, dir, Request{Value: "moving", TimeoutMS: 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = Send(ctx, dir, Request{Value: "stalled"}, nil); err == nil || !strings.Contains(err.Error(), "没有传输进展") {
+		t.Fatalf("duplicate progress kept transfer alive: %v", err)
+	}
+}
+
+func TestClientIdleTimeoutCancelsUnresponsiveHandler(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	dir := t.TempDir()
+	stopped := make(chan struct{})
+	s, err := start(ctx, dir, func(ctx context.Context, _ Request, _ func(int64, int64)) (string, error) {
+		<-ctx.Done()
+		close(stopped)
+		return "", ctx.Err()
+	}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = send(ctx, dir, Request{}, nil, 100*time.Millisecond); !errors.Is(err, errNoProgress) {
+		t.Fatalf("client stalled: %v", err)
+	}
+	select {
+	case <-stopped:
+	case <-ctx.Done():
+		t.Fatal("client idle timeout did not cancel handler")
+	}
+}
+
+func TestLongProgressStreamHasNoCumulativeSizeLimit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	dir := t.TempDir()
+	const count = 25000
+	s, err := Start(ctx, dir, func(_ context.Context, _ Request, progress func(int64, int64)) (string, error) {
+		for i := int64(1); i <= count; i++ {
+			progress(i, count)
+		}
+		return "saved", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var received int
+	if err = Send(ctx, dir, Request{}, func(event Event) {
+		if event.State == "progress" {
+			received++
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if received != count {
+		t.Fatalf("progress stream truncated at %d", received)
 	}
 }

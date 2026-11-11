@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/2fa0/snapover/internal/control"
@@ -18,17 +17,17 @@ import (
 )
 
 const usage = `用法：
-  snapover-cli send file  [--timeout 60s] [--data 目录] [--] 文件路径...
-  snapover-cli send text  [--timeout 60s] [--data 目录] [--] "文本"
-  snapover-cli send text  --stdin [--timeout 60s] [--data 目录]
-  snapover-cli send image [--timeout 60s] [--data 目录] [--] 图片路径
+  snapover-cli send file  [--data 目录] [--] 文件路径...
+  snapover-cli send text  [--data 目录] [--] "文本"
+  snapover-cli send text  --stdin [--data 目录]
+  snapover-cli send image [--data 目录] [--] 图片路径
 
 请先启动 Snapover 并连接设备。文件保存到对端接收文件夹，文字和图片
 进入对端剪贴板，不改动本机剪贴板。路径包含空格时请加引号。
 文字使用 UTF-8，上限沿用 Snapover 设置（默认 1 MB，最多 20 MB）；
 图片支持 PNG/JPEG/BMP/WebP，最大 20 MB；
-发送文件可一次提供多个路径，按顺序逐个传输，每个文件上限沿用
- Snapover 设置（默认 200 MB），双方分别校验。
+发送文件可一次提供多个路径，按顺序逐个传输，不设软件大小上限。
+持续有进展就继续发送，长时间没有进展才会停止；Ctrl+C 可取消。
 可设置 snapover 别名以缩短命令。
 退出码：0 成功，1 发送失败，2 参数或输入无效。
 `
@@ -42,7 +41,6 @@ func main() {
 type command struct {
 	request control.Request
 	dataDir string
-	timeout time.Duration
 }
 
 func parse(ctx context.Context, args []string, stdin io.Reader) (command, error) {
@@ -57,12 +55,8 @@ func parse(ctx context.Context, args []string, stdin io.Reader) (command, error)
 	flags.SetOutput(io.Discard)
 	fromStdin := flags.Bool("stdin", false, "从管道读取 UTF-8 文本")
 	dataDir := flags.String("data", "", "后台 Snapover 的数据目录")
-	timeout := flags.Duration("timeout", 60*time.Second, "发送超时时间")
 	if err := flags.Parse(args[2:]); err != nil {
 		return command{}, err
-	}
-	if *timeout < time.Millisecond || *timeout > control.MaxTimeout {
-		return command{}, errors.New("超时时间必须在 1ms 至 10m 之间")
 	}
 	values := flags.Args()
 	var value string
@@ -87,7 +81,7 @@ func parse(ctx context.Context, args []string, stdin io.Reader) (command, error)
 			return command{}, fmt.Errorf("一次最多发送 %d 个文件", control.MaxRequestPaths)
 		}
 		// Every entry stays an independent single-file transfer, so each path
-		// must be a regular file. The size limit belongs to the running app.
+		// must be a regular file. Disk checks belong to the receiving app.
 		for _, arg := range values {
 			if arg == "" {
 				return command{}, errors.New("文件路径不能为空")
@@ -139,8 +133,8 @@ func parse(ctx context.Context, args []string, stdin io.Reader) (command, error)
 			return command{}, err
 		}
 	}
-	request := control.Request{Kind: kind, Value: value, Paths: paths, TimeoutMS: timeout.Milliseconds()}
-	return command{request: request, dataDir: *dataDir, timeout: *timeout}, nil
+	request := control.Request{Kind: kind, Value: value, Paths: paths}
+	return command{request: request, dataDir: *dataDir}, nil
 }
 
 func readInput(ctx context.Context, stdin io.Reader) ([]byte, error) {
@@ -188,9 +182,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		fmt.Fprint(stderr, usage)
 		return 2
 	}
-	// Leave time for the app to report a timeout with the final delivery status.
-	ctx, cancel := context.WithTimeout(ctx, cmd.timeout+3*time.Second)
-	defer cancel()
 	err = control.Send(ctx, cmd.dataDir, cmd.request, func(event control.Event) {
 		switch event.State {
 		case "started":

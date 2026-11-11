@@ -33,7 +33,7 @@ func TestParseRejectsInvalidInput(t *testing.T) {
 	for _, args := range [][]string{
 		{"send", "folder", "x"}, {"send", "text", ""}, {"send", "text", "a", "b"},
 		{"send", "file", "--stdin"}, {"send", "text", "--stdin", "extra"},
-		{"send", "text", "--timeout", "0", "x"}, {"send", "text", "--timeout", "11m", "x"},
+		{"send", "text", "--timeout", "60s", "x"}, {"send", "text", "--timeout", "11m", "x"},
 		{"send", "text", "--data", "unused", "\xff"},
 	} {
 		if _, err := parse(context.Background(), args, strings.NewReader("x")); err == nil {
@@ -126,5 +126,15 @@ func TestRunExitCodesAndOutput(t *testing.T) {
 	}
 	if code := run(ctx, []string{"--help"}, nil, &out, &errs); code != 0 {
 		t.Fatalf("%d", code)
+	}
+}
+
+func TestHelpHasNoTimeoutOption(t *testing.T) {
+	if strings.Contains(usage, "--timeout") {
+		t.Fatal("obsolete timeout option")
+	}
+	cmd, err := parse(context.Background(), []string{"send", "text", "--data", "unused", "hello"}, nil)
+	if err != nil || cmd.request.TimeoutMS != 0 {
+		t.Fatalf("unexpected total deadline: %+v %v", cmd, err)
 	}
 }
