@@ -2,6 +2,7 @@
 package control
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -22,8 +23,6 @@ import (
 	"github.com/2fa0/snapover/internal/settings"
 )
 
-const MaxTimeout = 10 * time.Minute
-
 // JSON escaping can expand text sixfold.
 const maxRequestBytes = (settings.MaxTextMB<<20)*6 + 64<<10
 
@@ -33,10 +32,11 @@ const MaxRequestPaths = 1000
 // Request carries one console command. Paths is used for file batches; Value
 // stays the single payload of text and image requests.
 type Request struct {
-	Kind      string   `json:"kind"`
-	Value     string   `json:"value"`
-	Paths     []string `json:"paths,omitempty"`
-	TimeoutMS int64    `json:"timeout_ms"`
+	Kind  string   `json:"kind"`
+	Value string   `json:"value"`
+	Paths []string `json:"paths,omitempty"`
+	// Accepted for older console clients; no longer limits total duration.
+	TimeoutMS int64 `json:"timeout_ms,omitempty"`
 }
 
 type Event struct {
@@ -62,6 +62,10 @@ type Server struct {
 }
 
 func Start(ctx context.Context, dataDir string, handler Handler) (*Server, error) {
+	return start(ctx, dataDir, handler, idleTimeout)
+}
+
+func start(ctx context.Context, dataDir string, handler Handler, idle time.Duration) (*Server, error) {
 	lock, err := lockFile(filepath.Join(dataDir, "cli.lock"))
 	if err != nil {
 		return nil, fmt.Errorf("无法锁定 CLI 服务，可能已有 Snapover 在运行：%w", err)
@@ -84,8 +88,7 @@ func Start(ctx context.Context, dataDir string, handler Handler) (*Server, error
 	s.http = &http.Server{
 		ReadTimeout: 10 * time.Second, ReadHeaderTimeout: 3 * time.Second,
 		IdleTimeout: 5 * time.Second, MaxHeaderBytes: 4096,
-		WriteTimeout: MaxTimeout + 15*time.Second,
-		BaseContext:  func(net.Listener) context.Context { return ctx },
+		BaseContext: func(net.Listener) context.Context { return ctx },
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodPost || r.URL.Path != "/send" {
 				http.Error(w, "不支持此命令", http.StatusNotFound)
@@ -115,31 +118,37 @@ func Start(ctx context.Context, dataDir string, handler Handler) (*Server, error
 				return
 			}
 			var extra any
-			if decoder.Decode(&extra) != io.EOF || request.TimeoutMS <= 0 || request.TimeoutMS > MaxTimeout.Milliseconds() {
-				http.Error(w, "请求内容或超时时间无效", http.StatusBadRequest)
+			if decoder.Decode(&extra) != io.EOF || request.TimeoutMS < 0 {
+				http.Error(w, "请求内容无效", http.StatusBadRequest)
 				return
 			}
 			if len(request.Paths) > MaxRequestPaths {
 				http.Error(w, "文件数量超过上限", http.StatusBadRequest)
 				return
 			}
-			ctx, cancel := context.WithTimeout(r.Context(), time.Duration(request.TimeoutMS)*time.Millisecond)
-			defer cancel()
+			ctx, deadline := watchProgress(r.Context(), idle)
+			defer deadline.close()
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.Header().Set("Cache-Control", "no-store")
 			encoder := json.NewEncoder(w)
 			emit := func(event Event) {
+				// Bound each local socket write without capping the response lifetime.
+				_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if err := encoder.Encode(event); err != nil {
-					cancel()
+					deadline.cancel(err)
 				}
 				if err := http.NewResponseController(w).Flush(); err != nil {
-					cancel()
+					deadline.cancel(err)
 				}
 			}
 			emit(Event{State: "started", Message: "正在发送，等待对端确认…"})
 			message, err := handler(ctx, request, func(done, total int64) {
+				deadline.advance(done)
 				emit(Event{State: "progress", Done: done, Total: total})
 			})
+			if cause := context.Cause(ctx); cause != nil {
+				err = cause
+			}
 			if err != nil {
 				emit(Event{State: "error", Message: err.Error()})
 			} else {
@@ -188,6 +197,12 @@ func writeEndpoint(path string, ep endpoint) error {
 }
 
 func Send(ctx context.Context, dataDir string, request Request, onEvent func(Event)) error {
+	return send(ctx, dataDir, request, onEvent, idleTimeout+3*time.Second)
+}
+
+func send(ctx context.Context, dataDir string, request Request, onEvent func(Event), idle time.Duration) error {
+	ctx, deadline := watchProgress(ctx, idle)
+	defer deadline.close()
 	f, err := os.Open(filepath.Join(dataDir, "cli.json"))
 	if err != nil {
 		return errors.New("找不到后台 Snapover，请先启动新版 Snapover；自定义数据目录请使用 --data")
@@ -211,11 +226,14 @@ func Send(ctx context.Context, dataDir string, request Request, onEvent func(Eve
 	r.Header.Set("Authorization", "Bearer "+ep.Token)
 	r.Header.Set("Content-Type", "application/json")
 	// Never send the local token or payload to a configured HTTP proxy or redirect.
-	transport := &http.Transport{DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext}
+	transport := &http.Transport{DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext, ResponseHeaderTimeout: 10 * time.Second}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(r)
 	if err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
+		}
 		return fmt.Errorf("无法联系后台 Snapover，请检查是否已启动或重启应用：%w", err)
 	}
 	defer response.Body.Close()
@@ -223,11 +241,16 @@ func Send(ctx context.Context, dataDir string, request Request, onEvent func(Eve
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 		return fmt.Errorf("CLI 请求失败（%d）：%s", response.StatusCode, bytes.TrimSpace(message))
 	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
-	for {
+	// Bound each event, rather than truncating the progress stream of a long transfer.
+	scanner := bufio.NewScanner(response.Body)
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	for scanner.Scan() {
 		var event Event
-		if err := decoder.Decode(&event); err != nil {
-			return fmt.Errorf("未收到发送结果，请检查对端后再重试：%w", err)
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return fmt.Errorf("发送结果格式无效：%w", err)
+		}
+		if event.State == "progress" {
+			deadline.advance(event.Done)
 		}
 		switch event.State {
 		case "complete":
@@ -243,4 +266,11 @@ func Send(ctx context.Context, dataDir string, request Request, onEvent func(Eve
 			}
 		}
 	}
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("未收到发送结果，请检查对端后再重试：%w", err)
+	}
+	return errors.New("未收到发送结果，请检查对端后再重试")
 }
