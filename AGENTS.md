@@ -5,7 +5,7 @@
 ## 目录与事实来源
 
 - 当前目录就是 Git 仓库、Go 模块和应用代码所在位置。Git、Go 和打包命令在此执行。
-- `README.md`：英文落地页（为什么、亮点、安装、配对、快捷键、命令行速查）；`README_zh.md` 是同一内容的中文版。开始相关任务前优先阅读，细节分别展开在 `docs/features.md`（行为与边界）、`docs/cli.md`（命令行）和 `docs/build.md`（构建与发布）。
+- `README.md`：英文落地页（为什么、亮点、安装、配对、快捷键、命令行速查）；`README_zh.md` 是同一内容的中文版。开始相关任务前优先阅读，细节分别展开在 `docs/features.md` / `docs/features_zh.md`（行为与边界）、`docs/cli.md` / `docs/cli_zh.md`（命令行）和 `docs/build.md` / `docs/build_zh.md`（构建与发布）。英文占基准文件名，中文版统一加 `_zh`；改动其中一份时同步另一份。
 - `go.mod`：Go 工具链及依赖版本的事实来源；`mygo.json`：应用版本与打包配置的事实来源。不要凭历史文档推断当前版本。
 - `docs/`：更新记录、性能记录及专项实机验证步骤，按任务读取。不要恢复已关闭的审计或拆分发布说明；与当前代码冲突时，以代码和验证结果为准。
 
@@ -86,7 +86,7 @@ git diff --check
 - 实机局域网发现测试会使用真实网络，仅在需要验证发现功能时运行：`SNAPOVER_TEST_LAN=1 go test -count=1 ./internal/discovery -run TestLANDiscovery -v`。
 - macOS 从桌面宿主运行时，本地网络权限可能归属于宿主应用。`no route to host` 不能单独证明 VPN 或路由问题。
 - 只有需要产物时才打包：在 macOS 执行 `./build.command`，生成 Windows x64 ZIP 和 macOS arm64 应用/DMG，并包含 CLI。脚本已绕过本机有问题的 NSIS，不要为普通验证改写打包流程。
-- `bin/`、`dist/` 和生成的 CLI 二进制是构建产物，不提交。完整打包、签名、Finder 服务及平台实机步骤见 `docs/build.md` 和专项文档。
+- `bin/`、`dist/` 和生成的 CLI 二进制是构建产物，不提交。完整打包、签名、Finder 服务及平台实机步骤见 `docs/build_zh.md` 和专项文档。
 - 完成后报告修改结果、实际执行的验证，以及尚未覆盖的平台行为。验证受环境限制时如实说明，不把编译成功称为实机验证通过。
 
 ## 剪贴板故障排查

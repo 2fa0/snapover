@@ -60,7 +60,7 @@
 - 🌍 **中英文界面**，可跟随系统；Windows 另有「保持唤醒」开关。
 - 🪶 **原生应用**：Go + MyGo 直接画原生控件，不是套壳浏览器，空闲时也不占几百 MB 内存。
 
-细节、边界和实测记录都在 [功能与行为细节](docs/features.md)。
+细节、边界和实测记录都在 [功能与行为细节](docs/features_zh.md)。
 
 ---
 
@@ -106,7 +106,7 @@
 - 广播被网络隔离、VPN 或系统权限挡住时，可以手填地址；「连接设备」里还能勾选参与发现和搜索的网段。
 - 「测试连接」只验证 TCP 端口通不通，不验证 TLS 与配对。
 
-跨网络、多设备、地址优先级等细节见 [功能与行为细节](docs/features.md#tailscale-跨网络连接)。
+跨网络、多设备、地址优先级等细节见 [功能与行为细节](docs/features_zh.md#tailscale-跨网络连接)。
 
 ---
 
@@ -149,7 +149,7 @@ Get-Content -Raw -Encoding UTF8 .\notes.txt | snapover send text --stdin
 
 背下来就够用：文件存到对端接收文件夹，文字和图片进对端剪贴板；成功返回 `0`，发送或连接失败返回 `1`，参数错误返回 `2`；没有在线设备时立即报错，不会排队等下次连接。
 
-完整参数、编码注意事项、退出码和超时规则见 [命令行发送](docs/cli.md)。
+完整参数、编码注意事项、退出码和超时规则见 [命令行发送](docs/cli_zh.md)。
 
 ---
 
@@ -161,7 +161,7 @@ Get-Content -Raw -Encoding UTF8 .\notes.txt | snapover send text --stdin
 
 不能自动更新的情况会说明原因，而不是静默失败：直接从磁盘映像运行的应用、放在不可写目录的程序、以及源码构建（`go run` / `go build`）都需要手动装新版。macOS 目前是 ad-hoc 签名，更新后如果提示没有辅助功能权限，到系统设置里重新允许一次即可。
 
-维护者的打包与发版流程，以及签名私钥的保管要求，见 [构建与发布](docs/build.md)；方案与待办见 [内置升级方案](docs/update-plan.md)。
+维护者的打包与发版流程，以及签名私钥的保管要求，见 [构建与发布](docs/build_zh.md)；方案与待办见 [内置升级方案](docs/update-plan.md)。
 
 ---
 
@@ -219,7 +219,7 @@ SNAPOVER_TEST_LAN=1 go test -count=1 ./internal/discovery -run TestLANDiscovery 
 > [!NOTE]
 > 跨编译只能证明目标平台能编过，不能替代实机验证。Mac 上编出来的 Windows 程序无法验证剪贴板，`Win+Shift+S` 和记事本粘贴必须在 Windows 上试。macOS 从桌面宿主应用跑测试时，本地网络权限归属于宿主，`no route to host` 不能单独证明路由故障。
 
-打包细节、签名密钥和发版步骤见 [构建与发布](docs/build.md)。
+打包细节、签名密钥和发版步骤见 [构建与发布](docs/build_zh.md)。
 
 ---
 
@@ -230,7 +230,7 @@ SNAPOVER_TEST_LAN=1 go test -count=1 ./internal/discovery -run TestLANDiscovery 
 - **没有遥测**：不做自动上报，不上传日志。「连接诊断」生成的摘要包含平台、连接状态和结果分类，不含剪贴板正文、路径、设备名、地址或证书。
 - **报告安全问题**：请用 GitHub 的[私密漏洞报告](https://github.com/2fa0/snapover/security/advisories/new)，不要开公开 issue；在日志或样例里附上前请先删掉凭据和隐私内容。
 
-历史容量、缓存和崩溃排查的细节见 [功能与行为细节](docs/features.md)。
+历史容量、缓存和崩溃排查的细节见 [功能与行为细节](docs/features_zh.md)。
 
 ---
 

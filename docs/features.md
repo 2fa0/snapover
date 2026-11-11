@@ -1,222 +1,669 @@
-# 功能与行为细节
+# Features and behaviour
 
-本文是 [README](../README.md) 的补充：写作时按主题整理，内容以当前代码和实机验证为准。界面上的入口和快捷键见 README。
+This document expands the [README](../README.md). It is organised by topic and
+reflects the current code and real-device testing. UI entry points and
+shortcuts are described in the README.
 
-## 文字
+**English** | [简体中文](features_zh.md)
 
-- UTF-8，默认上限 1 MB，可在设置中输入 1–20 MB；按字节数计算，超限不收录历史、不收发，已保存的历史仍可回贴。
-- 换行跨平台兼容：内部统一 LF，写入 Windows 剪贴板时使用 CRLF，macOS 使用 LF。保留空行、缩进、末尾换行和单独的 CR；换行格式差异不会造成重复同步。
-- 长度上限双方分别遵守：文本上限应用后立即生效，各自按自己的设置校验。
+## Text
 
-## 图片
+- UTF-8, 1 MB by default, adjustable to 1–20 MB in Settings. The limit counts
+  bytes: oversized text is neither stored in history nor transferred, while
+  entries already saved can still be pasted.
+- Line endings cross platforms: LF internally, CRLF when writing to the Windows
+  clipboard, LF on macOS. Blank lines, indentation, trailing newlines and lone
+  CRs survive, and a difference in line-ending style does not count as new
+  content.
+- Each side enforces its own text limit: a new limit applies immediately and
+  both ends validate against their own setting.
 
-- 读出来统一按 PNG 传输，最大 20 MB。再大只跳过并打日志。设置里可以改图片上限，最大仍是 20 MB；超过上限的图片只留在本机历史。
-- 大图解码共用一个处理额度，PNG 限制 20 MB、4000 万像素，解码像素缓冲上限 160 MiB。特别大的 16 位 RGBA 图片可能因此被拒绝；普通 8 位 5K 截图仍在范围内。TIFF / DIB 原生数据在复制到 Go 前也检查字节数，转换在后台进行。连续大图完成后等待空闲再回收内存，避免每张图都强制 GC。
+## Images
 
-## 文件和文件夹
+- Images are converted to PNG for transport, up to 20 MB. Anything larger is
+  skipped and logged. The limit is configurable up to a hard 20 MB; images over
+  the limit stay in local history only.
+- Decoding large images shares one budget: PNG is capped at 20 MB and 40
+  megapixels, and the decoded pixel buffers at 160 MiB. Unusually large 16-bit
+  RGBA images may therefore be rejected; ordinary 8-bit 5K screenshots still
+  fit. TIFF and DIB payloads are size-checked before they are copied into Go,
+  and conversion happens in the background. After a run of large images the app
+  waits for idle before reclaiming memory instead of forcing a GC per image.
 
-双方更新到支持文件剪贴板的版本并连接后，在 Finder／资源管理器里正常复制文件或文件夹（支持多选），切到另一台电脑，在目标位置按 `⌘V`／`Ctrl+V` 即可粘贴，不需要打开发送窗口。复制图片文件时按文件同步；在图片程序里复制像素仍按图片同步。
+## Files and folders
 
-- 文件在后台分块同步，完整接收并校验后才写入对端的原生文件剪贴板。小文件在后台静默完成；大约 20 MB 以上，或传输超过约 1.5 秒时，托盘、主窗口侧栏和不抢焦点的进度窗口会显示打包、传输百分比、对方处理中以及可以粘贴，避免误以为已经传完。
-- 文件夹保留目录结构、空目录与普通文件内容，不需要手动压缩或解压。剪切也只按复制同步，不删除源文件；不持续同步原文件后续修改。
-- 文件剪贴板遵守自动／手动、暂停和只同步文本设置。传输中复制了新内容时会停止旧文件的发送；接收期间本机发生新复制，或收到更新的对端剪贴板时，旧文件完成后不会覆盖新内容。断线会清理尚未完成的接收，失败后重新复制即可。旧版设备仍可同步文字和图片，复制文件时会提示更新对方。
-- 文件剪贴板默认整批内容合计最多 20 MB，可在设置 → 剪贴板同步 → 大小限制中调整「文件复制同步上限」；双方分别校验，已有自定义数值保留。此限制不影响主动发送文件。
-- 每批最多 10000 个文件和文件夹、64 层目录，暂不支持符号链接、特殊文件和不能在两个平台间安全保留的文件名；遇到重名或不支持的内容时整批失败，不发布不完整目录。
-- 文件缓存放在应用数据目录的 `clipboard-files/`，不会落进「接收文件夹」。当前系统剪贴板引用的缓存会保留，应用重启后仍可粘贴；其他完成的缓存至少保留 15 分钟，在后续接收或每 5 分钟的后台清理中移除。接收缓存最多保留 128 批，开始新接收前，已有内容的容量预算固定为 1 GiB，另按本次实际大小为正在接收的归档和解包内容预留空间；提高文件大小上限不会扩大旧缓存预算；不足时提示稍后重试，不删除当前剪贴板内容。
-- 文件和文件夹同样进入主界面与快速历史，支持搜索、置顶、删除和容量清理。文件按文件名显示，文件夹按名称显示；在文件夹行悬停 300 毫秒后，预览显示复制时的树状结构，只展开下一层、最多 20 项，超出时提示还有更多，不继续展开子文件夹。预览高度随项目数在约 280–400 像素间调整，超出可见区域可滚动查看，屏幕空间不足时自动缩小。多选作为一条记录，预览同样限制在一层、20 项。
-- 文件和文件夹进入历史时记录原路径（或 `clipboard-files/` 接收缓存路径）、名称和一层目录树，未置顶时不额外复制文件正文；置顶时会在历史容量与条目上限内保存副本，取消置顶时清理。只要原路径、接收缓存或置顶副本仍在磁盘上，即可从主界面或快速历史直接复制、粘贴文件，或右键在 Finder／资源管理器中显示（优先打开原路径）；路径移动、删除且未置顶时菜单会提示重新复制。要把文件直接保存到对方接收文件夹，使用系统右键或命令行；日常拷贝文件和文件夹请直接复制粘贴。
+Once both sides run a version with file clipboard support and are connected,
+copy files or folders normally in Finder or Explorer (multi-selection works),
+then paste on the other computer with `⌘V` / `Ctrl+V`. No send dialog is
+involved. Copying an image file syncs it as a file; copying pixels inside an
+image editor still syncs as an image.
 
-## 队列、确认与防回环
+- Files are transferred in chunks in the background and written to the peer's
+  native file clipboard only after the whole batch is received and verified.
+  Small batches finish silently; from about 20 MB, or when a transfer takes
+  longer than roughly 1.5 seconds, the tray, the sidebar and a progress window
+  that does not steal focus show packing, transfer percentage, the peer
+  processing and finally readiness to paste.
+- Folders keep their structure, empty directories and file contents; nothing
+  needs to be zipped or unpacked. Cutting is treated as copying and never
+  deletes the source, and later changes to the original are not tracked.
+- File clipboard sync follows the automatic/manual setting, pause and
+  text-only mode. Copying something new during a transfer stops the old batch;
+  if a newer copy happens locally or arrives from the peer while receiving, the
+  older batch will not overwrite it. A disconnect cleans up unfinished
+  receives; copy again after a failure. Peers on older versions still sync text
+  and images and are told to update when files are copied.
+- A batch is capped at 20 MB in total by default, adjustable under Settings →
+  Clipboard sync → Size limits ("File copy sync limit"). Both sides validate
+  their own value and existing custom values are kept. This limit does not
+  apply to sending files on purpose.
+- A batch holds at most 10000 files and folders and 64 levels of directories.
+  Symlinks, special files and names that cannot be preserved safely across both
+  platforms are not supported yet; duplicates of unsupported content fail the
+  whole batch rather than publishing an incomplete tree.
+- The file cache lives in `clipboard-files/` inside the data directory and never
+  lands in the receiving folder. Cache referenced by the current system
+  clipboard is kept so it can still be pasted after a restart; other completed
+  caches last at least 15 minutes and are removed by later receives or the
+  five-minute background cleanup. At most 128 batches are kept; before a new
+  receive starts, the budget for existing content is fixed at 1 GiB and space
+  for the incoming archive and its unpacked contents is reserved separately.
+  Raising the size limit does not enlarge the old budget; when space runs out
+  the app asks you to retry later instead of dropping current clipboard files.
+- Files and folders also appear in the main window and quick history, with
+  search, pinning, deletion and capacity cleanup. Files are listed by name and
+  folders by name; hovering a folder row for 300 ms shows the tree as it was
+  copied, expanded one level and capped at 20 entries, with a note that more
+  exist. The preview height scales between roughly 280 and 400 pixels with the
+  item count, scrolls when needed and shrinks on small screens. A
+  multi-selection is one entry with the same one-level, 20-entry preview.
+- History records the original path (or the `clipboard-files/` cache path), the
+  name and one level of the tree. Unpinned entries store no file contents;
+  pinning saves a copy within the history capacity and entry limits, and
+  unpinning removes it. As long as the original path, the receive cache or the
+  pinned copy exists, the entry can be copied or pasted from the main window or
+  quick history, or revealed in Finder / Explorer (the original path wins).
+  Once the path is gone and the entry is not pinned, the menu says to copy it
+  again. Use the system context menu or the CLI to drop files straight into the
+  peer's receiving folder; for everyday moving about, just copy and paste.
 
-- 防回环：远端写回剪贴板的内容不会再被同步回去。远端剪贴板写入附带本次进程的轻量标记；监听器先判断标记和序号，不为自身写入重复解码图片。读取期间剪贴板变化时会重新采集，不把新复制误记成旧事件。
-- 剪贴板连续变化会等稳定后再记录和同步。Excel、Figma、IDE 一秒刷很多次时，只保留最后一次。稳定等待会丢掉连续更新中的中间内容，这是为合并表格和设计工具的反复写入。
-- 待发送剪贴板队列最多 8 条且合计不超过 20 MiB；慢连接达到任一限制时会提示队列已满，该次复制仍保留在本机历史。关闭连接后释放待发送内容。
-- 自动同步按条跟踪对端确认，设置页显示最近结果；确认写入成功时不弹通知，暂停、写入失败、超时或断线未确认时显示原因。确认只跟踪少量 ID，不额外保留图片或文本副本。
-- 本地 2 秒内刚复制过时，对端内容只进入本机历史，不覆盖当前剪贴板，也不会稍后自动覆盖；发送方会看到「已存入对端历史，未覆盖剪贴板」。暂停接收、文本超限或历史保存失败时不会报告已保存。
-- 密码管理器打过标记的内容不同步，也不进历史。
-- 设置和托盘提供「隐私模式」：开启后不记录本机复制、不收发剪贴板，重启后仍保持；主动发送文件不受影响。关闭后从新的复制事件恢复，不补发被忽略的内容。设置 → 剪贴板同步 → 排除来源应用，可填写历史中显示的完整应用名，用分号分隔，不区分大小写；这些应用的本机复制不记录、不同步。来源无法识别时仍按普通复制处理，远端来源名称不用于排除。
-- 托盘菜单可勾选「忽略下一次复制」，该次复制不记录历史、不同步，等待期间再次点击可取消。下一次本机复制稳定后自动恢复，不改系统剪贴板、不追溯删除旧历史；远端写入和本进程的历史回贴不消耗这次忽略。该状态不跨重启保存；「暂停同步」仍保留本地历史，不能替代这个动作。
-- 设置里可以暂停同步、只同步文本、改文本和图片上限、开机启动。
-- 设置 → 剪贴板同步可切换「自动 / 手动」，默认自动。手动模式下普通复制仅保存本机历史，仍可接收对端内容；按「复制并同步」快捷键才发送当前选中的文本、图片、文件或文件夹。默认 macOS 为 `⌥⌘C`，Windows 为 `Ctrl+Alt+C`，设置中点击当前快捷键，直接按下新组合后保存，也可恢复默认，冲突或保存失败时保留原键位。macOS 需允许辅助功能权限。未复制到新内容时不会发送旧剪贴板；暂停同步仍停止剪贴板收发，主动发送文件不受影响。
+## Queue, confirmations and echo suppression
 
-## 复制历史
+- Echo suppression: content written by the peer is never synced back. Remote
+  writes carry a lightweight marker for the writing process; the listener
+  checks the marker and sequence number first, so it does not decode images for
+  its own writes. If the clipboard changes while reading, it samples again
+  rather than attributing new content to an old sequence number.
+- Rapid clipboard changes wait for a stable value before being recorded and
+  synced; when Excel, Figma or an IDE writes many times per second only the last
+  one survives. The stable window drops intermediate values on purpose, which
+  is what merges repeated writes from spreadsheet and design tools.
+- The outgoing queue holds at most 8 entries totalling 20 MiB. Reaching either
+  limit on a slow link reports a full queue while that copy stays in local
+  history. Pending content is released when the connection closes.
+- Automatic sync tracks the peer's confirmation per entry and shows the latest
+  result in Settings. A confirmed write shows no notification; pause, write
+  failure, timeout or an unconfirmed disconnect show the reason. Only a few IDs
+  are tracked, and no extra copies of text or images are kept.
+- If you copied something locally within the last two seconds, incoming content
+  only goes to local history without overwriting the clipboard, and it is not
+  applied later either; the sender sees "saved to the peer's history, clipboard
+  not overwritten". A paused receive, oversized text or a failed history write
+  is never reported as saved.
+- Content marked by a password manager is neither synced nor stored.
+- Privacy mode in Settings and the tray: while on, local copies are not recorded
+  and nothing is sent or received, and the setting survives a restart. Sending
+  files on purpose still works. Turning it off resumes from the next copy event
+  without replaying what was ignored. Settings → Clipboard sync → Excluded
+  source apps takes the full application names shown in history, separated by
+  semicolons and case-insensitive: copies made in those apps are neither
+  recorded nor synced. An unrecognised source is treated as an ordinary copy,
+  and remote source names are not used for exclusion.
+- The tray can enable "Ignore the next copy": that copy is neither recorded nor
+  synced, and clicking the item again cancels it. It resets after the next local
+  copy settles, without touching the system clipboard or deleting past history;
+  remote writes and pastes from this app's own history do not consume it. The
+  state is not persisted, and pause is not a substitute for it.
+- Settings can pause sync, sync text only, change the text and image limits and
+  enable launch at login.
+- Settings → Clipboard sync switches between automatic and manual. In manual
+  mode an ordinary copy only enters local history and incoming content is still
+  accepted; "Copy and sync" sends the selected text, image, file or folder.
+  Defaults are `⌥⌘C` on macOS and `Ctrl+Alt+C` on Windows; click the shortcut in
+  Settings, press the new combination and it is saved, or restore the default.
+  A conflict or a failed save keeps the previous shortcut. macOS needs
+  Accessibility permission. Nothing is sent when there is no new content, and
+  pausing still stops clipboard traffic while sending files keeps working.
 
-- 历史可以搜索、置顶、删除、清空。未置顶的保留 1000 条或 30 天，并受历史内容容量上限约束，默认 2 GB；超限时从最旧的未置顶记录开始清理。置顶内容计入容量，但不会自动删除；置顶占满容量或单条内容放不下时会说明未保存原因。
-- 长文本正文保存在数据目录的 `texts/` 中，列表只保留短预览；搜索会在后台扫描完整正文。首次启动会自动迁移旧历史，复制完整文本、置顶和清理行为不变。
-- 设置 → 历史存储可以修改容量上限、查看已用空间和进度。容量包含文本、原图、缩略图、图片预览和置顶文件副本；未置顶的文件历史只保留所选路径、名称和最多 20 项的一层预览，不保存正文，也不递归统计目录大小。展开「占用明细」可查看置顶内容、历史目录总占用，并在后台统计文件剪贴板缓存、接收文件夹和损坏历史备份；目录总占用还包含索引、变更日志和临时查看副本。关闭窗口或收起该区域会取消未完成的统计；接收文件和备份不自动删除，可打开所在文件夹手动整理。「刷新」同时更新用量和已展开的明细。应用上限立即清理超限记录。清空未置顶记录在复制历史页，需再次确认。
-- 历史变更追加到 `history/history.log`，累计 256 次操作或 1 MiB 日志后生成 `index.json` 快照。启动时恢复日志，修复未写完的末尾记录；完整记录校验失败会报错并保留文件。
-- 历史回写在后台读取和校验图片，避免在界面线程重新计算图片哈希、生成缩略图和重复解码。关闭发起回写的窗口或删除待粘贴记录会取消回写。
-- 列表缩略图由两个后台任务加载，最多排队 32 张；缓存最多 128 张且估算位图内存不超过 8 MiB，离开历史并关闭快速面板一分钟后释放缓存。
-- 主界面与快速历史搜索会高亮命中文字，正文命中时显示附近的短片段；备注、来源应用、设备名、文件名或目录项命中时标明字段。片段里的每一处关键字都标出，命中用加粗加浅色底块区分，选中的那一行改用更亮的关键字与略淡的周围文字。快速历史搜索时搜索框右侧显示结果条数或「搜索中…」，正文还在后台读取时先显示已加载字段的命中结果。片段只用于展示，复制和粘贴仍使用完整原文；长文本继续在后台分块读取，关闭窗口或更换搜索词会取消旧查询。输入时若匹配到历史里用过的来源应用，搜索框下方会出现「来源：应用名」，点一下即按该来源筛选；候选只取最近 24 个来源应用名，不读磁盘。
-- 主界面和快速历史固定显示「本机 / 同步」与时间，设备名和来源应用过长时分别省略，悬停可查看完整名称。macOS 用前台应用名，Windows 用前台进程名；同步到对端后，对端历史也能看到来源应用。
-- 历史列表使用独立的元数据快照，置顶、删除和清理在后台执行；关闭主窗口不影响清理收尾或快捷历史。
+## Clipboard history
 
-## 置顶、备注与备份
+- History can be searched, pinned, deleted and cleared. Unpinned entries keep
+  for 1000 items or 30 days and are also bounded by the content budget, 2 GB by
+  default; over the limit the oldest unpinned entries go first. Pinned entries
+  count towards the budget but are never deleted automatically; if pinned items
+  fill it, the reason is shown instead of silently dropping an entry.
+- Long text bodies live in `texts/` inside the data directory and the list keeps
+  a short preview; search scans full text in the background. The first launch
+  migrates old history automatically, with unchanged copy, pin and cleanup
+  behaviour.
+- Settings → History storage changes the budget and shows usage and progress.
+  The budget covers text, originals, thumbnails, previews and pinned file
+  copies; unpinned file entries keep only the path, name and up to 20 preview
+  items, without contents, and directories are not measured recursively.
+  "Usage breakdown" shows pinned content, the history directory total and,
+  computed in the background, the file clipboard cache, the receiving folder and
+  damaged history backups; the directory total also covers the index, the change
+  log and temporary viewer copies. Closing the window or the section cancels an
+  unfinished scan. Received files and backups are never deleted automatically —
+  open the folder and tidy it yourself. Refresh updates usage and any expanded
+  breakdown, limits apply immediately, and clearing unpinned entries lives on
+  the history page behind a second confirmation.
+- History changes are appended to `history/history.log`; every 256 operations or
+  1 MiB of log produces an `index.json` snapshot. Startup replays the log and
+  repairs a torn tail; a complete record that fails validation is reported and
+  the file is kept.
+- Pasting back from history reads and verifies images in the background so the
+  UI thread does not recompute hashes, thumbnails or decode twice. Closing the
+  window that started it or deleting the pending entry cancels it.
+- List thumbnails are loaded by two background workers with at most 32 queued;
+  the cache holds 128 thumbnails within an estimated 8 MiB of bitmap memory and
+  is released one minute after leaving history and closing quick history.
+- Search highlights matches in the main window and quick history, showing a
+  short excerpt for body matches and the field name for matches in notes, source
+  apps, device names, file names or directory entries. Every occurrence in the
+  excerpt is marked; matches use bold text on a light background, and the
+  selected row uses a brighter match with dimmer surrounding text. In quick
+  history the right of the search field shows the result count or "Searching…",
+  and body text still being read shows the matches of fields already loaded.
+  Excerpts are for display only — copy and paste use the full text. Long text
+  keeps being read in chunks and closing the window or changing the query
+  cancels the old one. Typing an application name seen in history offers
+  "Source: app" below the field to filter by it; the candidates are the 24 most
+  recent source names and are not read from disk.
+- The main window and quick history always show local versus synced plus a
+  timestamp, truncating long device and application names with a tooltip for the
+  full name. macOS uses the foreground application name, Windows the foreground
+  process name, and the peer's history shows the source app too.
+- The list uses a separate metadata snapshot, so pinning, deletion and cleanup
+  happen in the background; closing the main window does not interrupt cleanup
+  or quick history.
 
-- 置顶记录支持添加自定义备注／别名（最多 80 个字符），显示在记录下方并随历史持久化保存；搜索框可直接按备注搜索并高亮命中，取消置顶时自动清除备注。
-- 最多 9 条可粘贴的置顶记录自动分配 `⌘1`–`⌘9`（Windows `Ctrl+1`–`Ctrl+9`），键位同时显示在主界面复制历史和快速历史行尾，在快速历史打开时直接粘贴对应记录。键位绑定记录并随历史保存，不跟随行号或搜索结果变化；删除／取消置顶会释放键位，其他记录的键位不变。旧置顶记录在升级后自动分配可用键位；超过 9 条仍可正常置顶和选取，但没有数字快捷键。
-- 复制历史 → 置顶备份支持单文件 ZIP 导出／导入，保存置顶文本全文、图片和备注，不携带设备身份、信任记录、来源信息或文件正文。备份未加密，请妥善保管。每份最多 100000 条、解压后的 JSON 合计最多 1 GiB；默认导出全部置顶文本和图片，也可按最新到最旧的序号范围分批导出；导入追加记录并重新分配可用数字快捷键，不覆盖已有置顶，重复导入会产生新记录。损坏备份在写入前拒绝；磁盘或容量错误可能留下已完成的部分，界面报告已处理条数。导入遵守历史容量限制，可能清理未置顶内容。
-- 选中文件历史时显示可用状态；置顶文件会在历史容量与条目上限内把正文拷进 `history/pinned-files/`，源文件删除后仍可粘贴，取消置顶时清理副本；未置顶仍只保留路径。
+## Pinning, notes and backups
 
-## 快速历史
+- A pinned entry can carry a note or alias of up to 80 characters, shown below
+  the entry and persisted with history. Search matches notes and highlights
+  them; unpinning clears the note.
+- Up to nine pinnable entries are assigned `⌘1`–`⌘9` (`Ctrl+1`–`Ctrl+9` on
+  Windows), shown at the end of each row in the main window and quick history,
+  and pasting them directly works while quick history is open. The shortcut
+  binds to the entry and is saved with history, so it does not follow row order
+  or search results; deleting or unpinning frees the shortcut without shifting
+  the others. Pinned entries from older versions get available shortcuts after
+  an upgrade; beyond nine, pinning and selection still work without numeric
+  shortcuts.
+- History → Pinned backup exports and imports a single ZIP holding pinned text,
+  images and notes. It contains no device identity, trust records, source
+  information or file contents. The archive is not encrypted. Each archive holds
+  at most 100000 entries and at most 1 GiB of JSON after extraction; the default
+  exports all pinned text and images, and a sequence range can export in
+  batches from newest to oldest. Import appends entries and reassigns available
+  numeric shortcuts, never overwriting existing pins, so importing twice creates
+  duplicates. A damaged archive is rejected before writing; a disk or capacity
+  error may leave a partial result and the UI reports how many entries were
+  processed. Import respects the history budget and may clean unpinned entries.
+- A file entry shows whether it is still usable. Pinning a file copies its
+  contents into `history/pinned-files/` within the history capacity and entry
+  limits, so it stays pasteable after the source is deleted, and the copy is
+  removed when unpinned; unpinned entries keep only the path.
 
-- macOS 默认按 `⌥⌘V` 弹出快速历史，方向键或鼠标选择，回车或双击粘贴到刚才的光标处。默认也能用 `Cmd+Shift+V`，Windows 默认是 `Alt+V`。设置 → 快速历史快捷键点击当前组合，直接按键录制，保存后立即生效并记住，也可恢复默认。新组合被占用或保存失败时保留原快捷键；自定义组合会替换默认组合。
-- 快速历史弹窗默认 380 × 440，可以直接拖动右边、下边或右下角改宽高，松手后记住，下次打开沿用；拖窗口的空白处（四周留白和搜索框与列表之间的缝隙）可以移动位置，但位置不记忆。
-- 快捷键打开时先留在当前前台窗口那块屏幕：指针也在这块屏上就贴着指针（水平居中、优先在下方）；指针在别的屏则贴着输入光标，光标不可信时落在前台窗口里。从托盘打开则贴着图标。窗口不会缩到看不清列表，也不会拖出当前屏幕的工作区。
-- 第一次粘贴要在系统设置 → 隐私与安全性 → 辅助功能里允许 Snapover。没记住刚才的窗口时，只写回剪贴板，需要自己再粘贴一次。
-- 快速历史与主窗口复制历史均支持右键菜单：粘贴（或复制）、置顶／取消置顶、设置／修改／清除备注、删除。快速历史中 Enter／双击仍直接粘贴；`⌥Enter`（Windows `Alt+Enter`）只写入剪贴板并关闭弹窗，之后自行粘贴。`⌘⇧P`（Windows `Ctrl+Shift+P`）切换置顶，`⌘⇧⌫`（Windows `Ctrl+Shift+Backspace`）删除当前记录；普通 Backspace 仍编辑搜索词。整理记录后保留搜索词，置顶时保持选中原记录，删除时选择相邻记录。文件历史在原路径或接收缓存尚未清理时可直接复制、粘贴，并支持右键「在 Finder 中显示」（Windows「在资源管理器中显示」）；原路径已删除或缓存清理后菜单会说明需重新复制。
-- 历史粘贴准备在整个应用中最多一个，关闭窗口会取消结果发布并释放预备资源。
+## Quick history
 
-## 预览：图片与文本
+- `⌥⌘V` opens quick history on macOS; arrow keys or the mouse select and Enter
+  or a double click paste into the field you were in. `Cmd+Shift+V` also works
+  by default, and Windows uses `Alt+V`. Settings → Quick history shortcut
+  records a new combination by pressing it, applies it immediately and
+  remembers it, with a reset to the default. An occupied combination or a
+  failed save keeps the previous shortcut, and a custom combination replaces
+  the default one.
+- The panel starts at 380 × 440. Drag its right, bottom or bottom-right edge to
+  resize and the size is remembered; drag empty space (the padding and the gap
+  between search field and list) to move it, though the position is not
+  remembered.
+- Opened by shortcut, the panel stays on the screen of the current foreground
+  window: near the pointer, centred horizontally and preferably below it, if
+  the pointer is on that screen, otherwise near the input caret, falling back to
+  the foreground window when the caret is unreliable. Opened from the tray it
+  sits near the icon. It never shrinks below a readable list and never leaves
+  the current screen's work area.
+- The first paste requires allowing Snapover under System Settings → Privacy &
+  Security → Accessibility. Without a remembered window, the content is only
+  written to the clipboard and you paste it yourself.
+- Both the main window and quick history have a context menu: paste (or copy),
+  pin/unpin, set/edit/clear note, delete. In quick history Enter and a double
+  click still paste directly; `⌥Enter` (`Alt+Enter` on Windows) only writes to
+  the clipboard and closes the panel. `⌘⇧P` (`Ctrl+Shift+P`) toggles the pin and
+  `⌘⇧⌫` (`Ctrl+Shift+Backspace`) deletes the current entry, while a plain
+  Backspace keeps editing the query. Organising entries keeps the query,
+  pinning keeps the entry selected and deleting selects a neighbour. A file
+  entry can be copied or pasted while its original path or receive cache is
+  intact, and the menu offers reveal in Finder (Explorer on Windows); once the
+  path is gone or the cache cleaned, the menu explains that it must be copied
+  again.
+- At most one paste preparation exists in the whole app; closing the window
+  cancels publishing the result and releases what was prepared.
 
-- 主界面和快速历史的图片行停留 300 毫秒后显示大图预览，默认在右侧，空间不足时自动换边；鼠标可移入预览，离开后延迟关闭。列表仍使用 160 像素缩略图，悬停预览使用独立的最多 1120 × 680 像素图片，窗口图片区域最多 560 × 340，兼顾 Retina 清晰度；只显示当前一张，关闭时释放，像素数据含缩小层级不超过约 4 MiB。新图片复用剪贴板解码生成预览，旧记录按需生成并存入磁盘；旧原图超过 400 万像素时回退到小缩略图，避免悬停解码过大的图片。悬停卡片始终放下整张图，不出现滚动条；窗口被工作区压矮时图片跟着缩小，长图会缩成一条。
-- 点击「放大查看」（或右键菜单同名项）在独立窗口里打开当前这一张：滚轮一格一档、触控板双指捏合都缩放，并以指针为中心；放大后可拖拽平移，双击在「适应窗口」和「实际大小」之间切换，工具栏显示当前比例、提供 ± 与两个复位按钮，Esc 或「关闭」退出。窗口一次只开一个，换图即替换；解码按 1000 万像素封顶，超出时先缩小再显示，关闭窗口立刻释放像素。窗口里的「用系统应用打开」把原图交给系统看图程序（macOS「预览」，Windows 默认图片程序）。打开查看器会收起悬停预览；从快速历史打开时同时关闭快速历史，主界面保持打开。
-- 原图先复制到数据目录的 `history/opened/`，不直接打开历史文件，避免预览里的保存改掉记录。未被外部程序修改的副本重复打开时会复用，并重新计算保留时间；已编辑的副本保留，重新打开会从历史原图生成新副本。查看副本总容量上限为 128 MiB，空间不足时提示稍后重试，不提前删除刚打开的文件。后台每分钟清理超过 15 分钟的副本，退出和下次启动也会清掉。打开失败只提示，不退回应用内滚动窗口。回车和双击仍然是粘贴。
-- 被截断的文本行悬停 300 毫秒后展开预览，使用 MyGo 的只读 CodeEditor，显示行号，根据常见代码特征启用语法高亮，自动换行并保留缩进，可移入浮窗滚动阅读。列表已经完整显示的短文本不再弹出预览。悬停只在后台读取前 16 KiB，截断时提示还有更多内容；点击「查看全文」在独立只读 CodeEditor 窗口中阅读完整文本，同样显示行号与语法高亮，支持选择、复制文字，Esc 关闭。超过 256 KiB 或包含超长单行的文本分段显示，每段最多 16 KiB，支持前后翻段和「复制全文」，不改变原始内容。全文使用按需创建的只读窗口，关闭后释放内容。图片原图不使用这个窗口。图片和文本均不通过键盘选择自动展开，搜索命中片段只用于列表展示。
-- 粘贴目标由系统前台应用／窗口事件更新，仅事件注册失败时使用轮询；图片预览根据鼠标进入和离开事件更新，只为悬停与关闭延迟安排计时。
+## Previews: images and text
 
-## 界面、动效与提示
+- An image row hovered for 300 ms shows a large preview, to the right by
+  default and flipped automatically when space is tight; the pointer can enter
+  the preview and it closes after a delay when leaving. The list keeps 160-pixel
+  thumbnails, while the hover preview uses a separate image of up to 1120 × 680
+  with a 560 × 340 area in the window, balancing Retina sharpness. Only one
+  preview is shown and it is released on close, with pixel data including
+  reduced levels staying under about 4 MiB. New images reuse the decode done for
+  the clipboard and older entries generate previews on demand and cache them to
+  disk; originals over 4 megapixels fall back to the small thumbnail so a hover
+  never decodes a huge image. The hover card always fits the whole image
+  without scrollbars, shrinking with the window and turning very tall images
+  into a thin strip.
+- "Open larger view", also in the context menu, opens the current image in its
+  own window: the wheel steps and a trackpad pinch zoom around the pointer,
+  dragging pans, a double click toggles fit-to-window and actual size, the
+  toolbar shows the zoom level with ± and two reset buttons, and Esc or Close
+  exits. One window exists at a time and a new image replaces the current one;
+  decoding is capped at 10 megapixels by downscaling first, and closing the
+  window frees the pixels at once. "Open in system app" hands the original to
+  the system viewer (Preview on macOS, the default image app on Windows).
+  Opening the viewer dismisses the hover preview; from quick history it also
+  closes quick history while the main window stays open.
+- The original is first copied to `history/opened/` rather than opened in place,
+  so a save in the viewer cannot alter the record. An unmodified copy is reused
+  and its retention restarted; an edited copy is kept, and reopening generates a
+  fresh copy from the history original. The copies total at most 128 MiB and a
+  shortage asks you to retry later without deleting a file just opened. Copies
+  older than 15 minutes are cleaned every minute, on quit and on the next
+  launch. A failed open is only reported; the app does not fall back to an
+  embedded scroller. Enter and a double click still paste.
+- A truncated text row hovered for 300 ms expands into a preview using MyGo's
+  read-only CodeEditor, with line numbers, syntax highlighting for common code
+  patterns, wrapping and preserved indentation, scrollable while hovered. Short
+  text already fully visible does not open a preview. Hovering reads the first
+  16 KiB in the background and notes when more exists; "View full text" opens a
+  read-only CodeEditor window with line numbers and highlighting, selectable and
+  copyable text and Esc to close. Text over 256 KiB or with very long lines is
+  split into segments of at most 16 KiB with paging and "Copy all", without
+  changing the original. Full text uses an on-demand window released on close.
+  Images do not use this window, and neither images nor text expand on keyboard
+  selection alone; search excerpts are display only.
+- The paste target follows foreground application and window events and falls
+  back to polling only if event registration fails; image previews follow
+  pointer enter and leave events and only schedule timers for the hover and
+  close delays.
 
-- 主界面的页面切换、侧栏选中颜色、连接状态和记录数量变化使用 MyGo 原生动效；设备详情展开和收起有短过渡。遵循系统「减少动态效果」设置，快速历史的键盘选择和粘贴仍立即响应。
-- 结果提示带成功、警告或失败的图标与颜色，失败的提示可以被提前关掉，不再和成功长得一样；同步进度条按进行中、完成、失败着色，结束时报以对勾或叉号，大小未知时显示流动段。已配对设备的状态在名字旁用彩色圆点标出，重连时圆点脉冲；统计文件与备份占用、图片缩略图解码前用骨架行占位，数字和图片到位时布局不跳动。
-- 设置 → 语言默认跟随系统，也可选择简体中文或 English，界面、菜单和更新窗口一起切换；历史正文、文件名和设备名保持原文。
-- 启动后打开窗口，菜单和侧栏是同一组三页：设置、连接设备（配对）、复制历史。默认打开连接设备页，`-peer` 会填进手填地址并开始连接。
-- 窗口按需创建，关闭时销毁界面并取消尚未完成的设置打开操作，只保存不再提示的标记。主窗口关闭后下次打开时重建并恢复窗口位置和大小；后台同步与快速历史继续运行。开机启动时不创建主窗口，退出才结束进程。
+## Interface, motion and feedback
 
-## 托盘、图标与开机启动
+- Page changes, sidebar selection colour, connection state and record counts use
+  MyGo's native motion, and device details expand with a short transition. The
+  system "Reduce motion" setting is respected, while keyboard selection and
+  pasting in quick history stay instant.
+- Result toasts carry success, warning or failure icons and colours, and a
+  failing toast can be dismissed early instead of looking like success. Sync
+  progress is coloured for running, done and failed, ending in a check or cross,
+  with a flowing segment when the size is unknown. Paired devices show a
+  coloured dot next to the name that pulses while reconnecting, and skeleton
+  rows stand in while measuring files and backups or decoding thumbnails so the
+  layout does not jump.
+- Settings → Language follows the system by default and can be set to Chinese or
+  English, switching the interface, menus and update window together; history
+  bodies, file names and device names keep their original text.
+- Launching opens the main window, whose menu and sidebar are the same three
+  pages: Settings, Connect devices and Clipboard history. It starts on Connect
+  devices, and `-peer` fills the manual address field and starts connecting.
+- Windows are created on demand: closing destroys the interface and cancels an
+  unfinished settings open, keeping only the "do not ask again" flag. The main
+  window is rebuilt with its remembered position and size, while background sync
+  and quick history keep running. Launching at login does not create the main
+  window, and quitting ends the process.
 
-- Windows 托盘／macOS 菜单栏图标左键打开选项菜单（快速历史、设置、暂停同步、忽略下一次复制、退出），右键打开快速历史。菜单只放高频动作，不显示版本号和连接状态；连接状态看托盘提示，页面切换用窗口侧栏（macOS 窗口菜单栏只留应用菜单和编辑菜单，「设置…」在应用菜单里，`⌘,` 打开）。快捷键仍可直接打开快速历史。
-- macOS「设置 → 菜单栏图标」和 Windows「设置 → 托盘图标」均可点击横排预览选择邮筒、小鸟或信封，默认邮筒，切换立即生效并记住选择。旧版原图标已移除，之前的原图标选择自动改用邮筒，小鸟和信封的选择保持不变。对应资源分别为 `internal/resources/icon2.png`、`internal/resources/icon1.png`、`internal/resources/icon3.png`，请保留 PNG 的透明通道；显示时保持图标比例，并适配 macOS 菜单栏或 Windows 任务栏的深浅色。替换这些图片资源后需要重新打包并重启程序。
-- macOS 开机启动要用打好的 `.app`；源码直接运行不行。Windows 写的是当前 exe 的启动项。
-- exe 旁边放一个 `portable.flag` 时，数据写到旁边的 `data/`，不写进用户目录。
+## Tray, icon and launch at login
 
-## 主动发送文件（Windows「发送到」／macOS Finder「服务」）
+- Left-clicking the tray icon on Windows or the menu bar icon on macOS opens an
+  options menu (quick history, settings, pause sync, ignore the next copy, quit)
+  while right-clicking opens quick history. The menu holds frequent actions
+  only, without version or connection state — the tray tooltip shows connection
+  state and the sidebar switches pages (the macOS window menu bar keeps only the
+  application and edit menus, with "Settings…" in the application menu under
+  `⌘,`). The shortcut still opens quick history directly.
+- Settings → Menu bar icon on macOS and Settings → Tray icon on Windows offer a
+  horizontal preview of the mailbox, bird and envelope icons. The mailbox is the
+  default, a change applies immediately and is remembered. The old original icon
+  is gone and that choice now means the mailbox, while bird and envelope choices
+  are kept. The resources are `internal/resources/icon2.png`,
+  `internal/resources/icon1.png` and `internal/resources/icon3.png`; keep their
+  alpha channel, and note they are drawn preserving aspect ratio against light
+  and dark menu bars and taskbars. Replacing them requires repackaging and
+  restarting.
+- Launch at login requires the packaged `.app` on macOS; running from source
+  cannot register it. Windows writes a startup entry for the current executable.
+- With a `portable.flag` next to the executable, data goes to `data/` beside it
+  instead of the user profile.
 
-日常把文件或文件夹拷到另一台电脑，直接复制再粘贴即可，见上文「文件和文件夹」。要把文件直接保存到对方的接收文件夹、且不改剪贴板，使用 Windows「发送到」、macOS Finder「服务」或命令行。两边都更新到支持发送文件的版本并连接后即可。可选择多个文件，也可以拖入或一次选中多个文件，按顺序逐个传输；支持普通文件（包括空文件），不设软件大小上限，受接收磁盘可用空间和文件系统限制。仍不支持文件夹，需要发送文件夹时请直接复制粘贴。20 MiB 以内静默发送并在完成后通知；超过 20 MiB 打开进度窗口，完成后窗口保留结果。尚未连接或需要确认设备时会打开发送窗口，可在窗口中更换文件后手动发送。
+## Sending files on purpose (Windows "Send to" / macOS Finder service)
 
-「文件复制同步上限」仅影响复制文件和文件夹，不影响主动发送。旧版接收端仍按其原有大小上限校验；通过发送窗口发送超过 20 MiB 的批次，以及暂停和续传，都需要双方更新到新版。
+To copy files or folders to the other computer, just copy and paste as described
+above. To drop files straight into the peer's receiving folder without touching
+the clipboard, use Windows "Send to", the macOS Finder service or the CLI. Once
+both sides run a version with sending and are connected, select one or several
+files, or drag them in, and they transfer one after another; ordinary files
+including empty ones are supported with no size limit in the app, bounded only
+by free disk space and the filesystem. Folders are still unsupported — copy and
+paste them instead. Batches up to 20 MiB send silently with a completion
+notification; larger ones open a progress window that keeps the result. When no
+device is connected or a device needs confirmation, the send window opens so you
+can change files and send manually.
 
-文件直接保存到对方的接收文件夹，不改变剪贴板，也不会持续同步原文件的后续修改。默认位置是系统的「下载 / Snapover」，可以在设置 → 文件同步 → 接收文件夹里更改。选择目录及开始接收时会检查安全保存能力；文件系统不支持时会提示更换文件夹。已开始接收的文件仍保存到开始时的目录。同名文件自动加序号，不覆盖已有内容。
+The "file copy sync limit" only affects copying files and folders, not sending.
+Peers on older versions still validate against their own limit; batches over
+20 MiB sent from the send window, plus pause and resume, need both sides
+updated.
 
-发送窗口出现时会显示传输进度，收到对方确认保存后才显示成功。关闭发送窗口后仍会继续传输，完成或失败时显示通知（需要系统允许通知）。接收端也会显示收到文件的通知，可在设置 → 文件同步 → 接收文件夹打开接收文件夹。文本和图片剪贴板同步可以继续使用；主动发送文件不受「暂停同步」和「只同步文本」影响。
+Files are saved to the peer's receiving folder without changing the clipboard
+and without tracking later edits to the original. The default is the system
+"Downloads / Snapover" folder, changeable under Settings → File sync →
+Receiving folder. Choosing a folder and starting a receive both check that it
+can be saved safely, and a filesystem without that support asks for another
+folder; a receive already under way keeps writing to the folder it started in.
+Name collisions get a numeric suffix instead of overwriting.
 
-传输沿用已信任设备的 TLS 连接，分片写入临时文件，校验完成后发布为正式文件。新的接收临时文件放在独立暂存目录，启动和后续接收时清理超过 24 小时的残留，保留正在使用的接收文件；旧版散落的临时文件无法仅凭名称确认归属，留待手动检查。发送文件剪贴板的 ZIP 放在应用缓存中，发送结束删除，异常退出后由缓存清理回收。历史文本写入中断的临时文件超过 24 小时后在下次启动时清理。发送期间原文件发生修改时会取消本次发送。若取消时无法确认对方是否已保存，或确认超时，请先检查对方文件夹，再决定是否重试，以免重复保存。
+The send window shows progress, and success only appears after the peer confirms
+the save. Closing the send window keeps the transfer going, with notifications
+for completion or failure (when notifications are allowed); the receiver shows
+its own notification and can open the folder from Settings → File sync →
+Receiving folder. Text and image sync keep working, and sending ignores pause
+and text-only mode.
 
-接收前检查可用空间和 FAT/FAT32 的单文件限制；传输期间空间被占用、写入或刷盘失败时会报告失败，未完成文件不会作为最终文件出现，也不会覆盖同名文件。新版两端按分片写入确认推进，并限制在途数据，慢盘不会积压整份文件到内存；一次磁盘处理或确认最多等待 15 分钟，不因传输总时长或速度低而超时。
+Transfers reuse the trusted device's TLS connection, write chunks to a temporary
+file and publish the final file after verification. New receive temporaries live
+in a dedicated staging directory, cleaned of leftovers older than 24 hours at
+startup and on later receives while active files are kept; scattered temporary
+files from older versions cannot be attributed by name alone and are left for
+manual review. ZIPs for file clipboard batches live in the application cache,
+are removed when sending ends and are reclaimed by cache cleanup after an
+abnormal exit. Temporary files from interrupted history text writes are removed
+at the next launch once older than 24 hours. Editing the source during a
+transfer cancels it. If cancellation cannot confirm whether the peer saved, or
+the confirmation times out, check the peer's folder before retrying to avoid
+duplicates.
 
-大文件的暂停、继续和断网续传需要双方使用支持该功能的新版。暂停保留已写入进度；断网后等待原设备重连，最多等待 15 分钟，不改发其他设备。接收端保留最多 8 份续传状态，各保留 15 分钟；重连时校验源文件是否变化，并从接收端确认的位置续传，最终仍校验整份文件。双方应用需保持运行；退出后重新发送。在线取消会清理未完成文件；断线时取消无法立即通知接收端，远端临时文件到期清理。CLI 保留终端进度和 Ctrl+C 取消行为，连续 15 分钟没有字节进展才超时，不弹图形窗口；文件剪贴板同步仍保留独立的缓存容量保护。
+Before receiving, free space and the FAT/FAT32 single-file limit are checked;
+space taken during a transfer, write or flush failures report an error, an
+unfinished file never appears as final and never overwrites an existing one.
+Both sides advance on chunk write confirmations with limited data in flight, so
+a slow disk never buffers a whole file in memory, and a single disk operation or
+confirmation waits at most 15 minutes without timing out on total transfer time
+or low throughput.
 
-### Windows 右键「发送到」
+Pause, resume and reconnect for large files need both sides on a version with
+the feature. Pausing keeps written progress; after a disconnect the app waits
+for the same device to reconnect for up to 15 minutes and never diverts to
+another device. The receiver keeps up to eight resumable states for 15 minutes
+each, verifies the source file is unchanged on reconnect, resumes from the
+position the receiver confirmed and still verifies the whole file at the end.
+Both apps must stay running; after quitting, send again. Cancelling while
+online cleans up unfinished files; cancelling during a disconnect cannot notify
+the receiver immediately, so remote temporaries expire. The CLI keeps terminal
+progress and Ctrl+C behaviour, times out only after 15 minutes without byte
+progress and never opens a window, while file clipboard sync keeps its separate
+cache limits.
 
-Windows 版首次正常启动会在当前用户的「发送到」菜单里添加「Snapover 发送文件」，无需管理员权限。右键一个文件 → 发送到 → Snapover 发送文件，即可直接发送到当前连接的设备，不需要拖拽或再次点击发送；大文件会打开进度窗口，小文件在后台发送。Windows 11 如果没有看到「发送到」，先打开「显示更多选项」。
+### Windows "Send to"
 
-Snapover 已在后台运行时，文件请求会交给原进程，不会再启动一份同步程序。尚未启动时会先启动，并尝试连接最近的已配对设备；10 秒内连上该设备后自动发送。未配对、设备离线或连接到了其他设备时，文件保留在发送窗口，提示连接或确认设备后手动发送，不会无限等待后突然发送。
+The first normal launch adds "Snapover send file" to the current user's "Send
+to" menu without administrator rights. Right-click a file → Send to → Snapover
+send file to send to the connected device without dragging or a second click;
+large files open the progress window while small ones send in the background.
+If Windows 11 hides the entry, choose "Show more options" first.
 
-支持选择多个普通文件，按顺序发送；文件夹或已有传输正在进行时会提示，不会覆盖正在发送的文件。可在设置 → 文件同步 → 接收文件夹关闭右键入口；重新启用或移动 exe 后再次启动，会更新快捷方式的目标位置。快捷方式直接通过 Windows 系统 Shell Link 接口创建，无需启动 PowerShell；若创建失败，窗口会显示错误，完整原因也会写入 `logs/snapover.log`。仍可复制文件粘贴，或使用命令行发送。
+When Snapover is already running the request goes to the existing process
+instead of starting a second copy. Otherwise it launches first and tries the
+most recent paired device: if that device connects within 10 seconds the file
+sends automatically. With no pairing, an offline device or a connection to a
+different device, the files stay in the send window with a prompt to connect or
+confirm, rather than waiting indefinitely and sending later.
 
-也可以从命令行调用（GUI 参数，Windows 和 macOS 都启用）：
+Multiple ordinary files are sent in order; folders or an in-flight transfer are
+reported instead of overwriting what is being sent. Settings → File sync →
+Receiving folder can disable the entry, and enabling it again or moving the
+executable updates the shortcut target on the next launch. The shortcut is
+created directly through the Windows Shell Link API without PowerShell; if that
+fails the window shows the error and `logs/snapover.log` records the reason.
+Copying and pasting files, or the CLI, still work.
+
+The GUI argument works on both Windows and macOS:
 
 ```sh
-Snapover.exe --send-file "C:\Users\xxx\Documents\报告.pdf"
+Snapover.exe --send-file "C:\Users\xxx\Documents\report.pdf"
 ```
 
-### macOS Finder「服务」
+### macOS Finder service
 
-将 `Snapover.app` 放到「应用程序」并启动后，右键一个文件 → 服务 → Snapover 发送文件，即可发送到当前连接的设备，无需拖拽或再次点击发送。入口直接复用 Snapover 后台，不再使用 Automator 工作流或产生 WorkflowServiceRunner。20 MiB 以内的批次在后台发送，对方确认保存后显示发送完成通知；超过 20 MiB 自动打开带进度条的发送窗口，可暂停、继续或取消，完成后窗口保留文字结果。接收端全程后台保存，完成后显示通知（需要系统允许通知）。
+With `Snapover.app` in Applications and running, right-click a file → Services →
+Snapover send file to send to the connected device, without dragging or a second
+click. The entry reuses the running app instead of an Automator workflow, so no
+WorkflowServiceRunner appears. Batches up to 20 MiB send in the background with
+a completion notification once the peer confirms the save; larger ones open the
+progress window with pause, resume and cancel, keeping a textual result when
+done. The receiver saves entirely in the background and notifies on completion
+(when notifications are allowed).
 
-应用已运行时，文件请求交给原进程；未启动时会先后台启动，并尝试连接最近的已配对设备。10 秒内连上该设备后自动发送；没有已配对设备、连接超时或连接到了其他设备时，保留文件并打开发送窗口，提示连接或确认后手动发送。与 Windows 一样，支持多个普通文件；文件夹或发送中再次操作时会提示。
+When the app is running the request goes to the existing process; otherwise it
+launches in the background and tries the most recent paired device, sending
+automatically if that device connects within 10 seconds. With no paired device,
+a timeout or a connection to another device, the files are kept and the send
+window opens with a prompt to connect or confirm. As on Windows, several
+ordinary files are supported, and folders or a second request while sending are
+reported.
 
-可在设置 → 文件同步 → 接收文件夹停用发送文件服务或点击「刷新 Finder 服务」。菜单显示由 macOS 管理：若未显示或需要隐藏入口，请在系统设置中搜索「服务」，调整「Snapover 发送文件」；不同 macOS 版本的设置位置可能不同。开发时直接 `go run` 不会注册菜单入口，需使用打包的 `Snapover.app`。新版启动时会移除旧版的 Snapover Automator 快速操作；此前由系统保留的空闲 Runner 会由 macOS 回收。
+Settings → File sync → Receiving folder can disable the service or "Refresh
+Finder service". macOS owns the menu: if the entry is missing or should be
+hidden, search for "Services" in System Settings and adjust "Snapover send
+file", noting the location differs between macOS versions. Running from source
+with `go run` does not register the entry — use a packaged `Snapover.app`. A new
+version removes the old Automator quick action; idle runners the system kept are
+reclaimed by macOS.
 
-也可以直接调用应用中的程序：
+The app's own executable can also be called directly:
 
 ```sh
-/Applications/Snapover.app/Contents/MacOS/Snapover --send-file "/Users/xxx/Documents/报告.pdf"
+/Applications/Snapover.app/Contents/MacOS/Snapover --send-file "/Users/xxx/Documents/report.pdf"
 ```
 
-## Tailscale 跨网络连接
+## Tailscale across networks
 
-1. 两台电脑自行安装并连接 Tailscale，确保设备间允许访问 Snapover 的入站 TCP 端口，默认 `47821`。自定义监听端口时使用对应端口。
-2. 两端打开 Snapover → 设置 → 本机与诊断，开启「允许通过 Tailscale 连接」，默认关闭。
-3. 首次添加时，在两端点击「添加设备」。发起端展开「通过地址连接」，选择「Tailscale」，填写另一台电脑的 Tailscale IPv4（`100.64.0.0–100.127.255.255`）；端口可省略。核对双方相同的验证码并分别确认。
-4. 已经配对的设备，在「详情」中点击「添加 Tailscale 地址」或「修改 Tailscale 地址」，输入地址后「验证并连接」。只有设备 ID、证书和配对验证通过后才保存，失败保留原地址。
+1. Install and connect Tailscale on both computers, and let them reach
+   Snapover's inbound TCP port, `47821` by default — use your custom port if you
+   changed it.
+2. On both sides open Snapover → Settings → This device & diagnostics and enable
+   "Allow connections over Tailscale", off by default.
+3. When adding for the first time, press "Add device" on both sides. The
+   initiating side expands "Connect by address", chooses "Tailscale" and enters
+   the other computer's Tailscale IPv4 address
+   (`100.64.0.0–100.127.255.255`), with the port optional. Compare the matching
+   code and confirm on each side.
+4. For an already paired device, open its details and press "Add Tailscale
+   address" or "Edit Tailscale address", enter the address, then "Verify and
+   connect". The address is saved only after the device ID, certificate and
+   pairing all verify; a failure keeps the previous address.
 
-同一设备分别保存局域网与 Tailscale 地址。自动重连依次尝试当前发现的局域网地址、已保存的局域网地址和已保存的 Tailscale 地址，去重后最多三个候选；用户明确指定地址时先尝试该地址。每轮失败后按 1、2、4 秒退避，最长 30 秒。已建立的连接保持，局域网重新出现时不会主动抢占 Tailscale 连接；下次断线再选路径。错误设备或指纹不符的候选暂停使用，修改地址或手动重新连接后再验证。
+A device stores its LAN and Tailscale addresses separately. Automatic
+reconnection tries the currently discovered LAN address, the saved LAN address
+and the saved Tailscale address, de-duplicated to at most three candidates; an
+address you specified explicitly is tried first. Each failed round backs off by
+1, 2, 4 seconds, up to 30 seconds. An established connection stays, so a
+returning LAN link does not preempt a Tailscale session; the next disconnect
+picks the path again. Candidates with the wrong device or fingerprint are
+disabled until the address is edited or you reconnect manually.
 
-关闭支持开关会结束相关 Tailscale 连接和拨号，保留配对与地址，继续尝试该设备的局域网路径；局域网会话不受影响。删除 Tailscale 地址也不解除配对。文件发送的目标绑定设备身份，路径变化不会改发给另一台设备，发送中断仍按原有规则报告结果。
+Disabling the switch ends related Tailscale connections and dials, keeps pairing
+and addresses, and keeps trying the device over LAN; LAN sessions are unaffected.
+Deleting a Tailscale address does not unpair. A file send is bound to the device
+identity, so a path change never redirects it and an interruption is reported as
+usual.
 
-首版通过系统已连接的 IPv4 隧道使用 Tailscale，不调用其管理 API，不自动发现跨网设备，也不新增 MagicDNS、Tailscale IPv6 或子网路由支持。macOS 的 `utun` 和 Windows 的 Tailscale 接口需要有对应共享范围的本地 IPv4；没有可用隧道时不会回退到物理网卡发送。存在多个无法区分的共享地址隧道时会拒绝并提示检查其他 VPN。地址范围和接口仅用于选路，信任仍由 Snapover 的 TLS 配对建立。
+The first version uses Tailscale through the system's connected IPv4 tunnel. It
+does not call the management API, does not discover devices across networks and
+adds no MagicDNS, Tailscale IPv6 or subnet routing. The macOS `utun` interface
+and the Windows Tailscale interface need a local IPv4 address within the shared
+range; without a usable tunnel the app does not fall back to the physical
+interface. Multiple indistinguishable tunnels in the shared range are refused
+with a note to check other VPNs. Address ranges and interfaces only choose the
+path — trust still comes from Snapover's TLS pairing.
 
-「本机与诊断 → 设备信息」可查看本机 Tailscale IPv4。连接测试沿用所选路径，但只验证 TCP 端口，不验证 TLS 或配对。排查时依次检查两端开关、Tailscale 在线状态、地址和端口、设备访问规则及系统防火墙；连接超时本身不能确定是哪一项导致。使用 `-listen` 限定监听地址时，不会自动扩大监听范围，应监听 Tailscale 地址或使用 `-listen :47821`。`-peer` 若匹配已保存的 Tailscale 地址，会复用对应路径；新的 Tailscale 地址先从 GUI 添加。
+"This device & diagnostics → Device info" shows the local Tailscale IPv4 address.
+The connection test follows the chosen path but only checks the TCP port, not
+TLS or pairing. When troubleshooting, check both sides' switches, Tailscale
+online state, addresses and ports, device access rules and firewalls; a timeout
+alone does not identify which one is at fault. Using `-listen` with a specific
+address never widens the listening range — listen on the Tailscale address or
+use `-listen :47821`. `-peer` reuses the saved path when it matches a stored
+Tailscale address; new Tailscale addresses are added from the GUI first.
 
-旧配对记录可直接加载。新版增加可选的 `lan_addr` 和 `tailscale_addr`，同时保留兼容字段 `addr`；降级后旧版可能无法使用最近保存的 Tailscale 地址，重新保存还可能丢失新增字段，不保证双地址在降级后保留。
+Older pairing records load directly. The new format adds optional `lan_addr` and
+`tailscale_addr` while keeping the compatible `addr` field; after a downgrade an
+older version may not use the most recent Tailscale address, and saving again
+may drop the newer fields, so dual addresses are not guaranteed across
+downgrades.
 
-跨网实机验收步骤见 [Tailscale 实施计划](tailscale-plan.md#9-实机验收与完成条件)。自动化测试不需要真实 Tailscale；不能替代 Windows / macOS、不同 Tailscale 安装版本及慢速或中继链路的双机验证。
+The real-device acceptance steps for cross-network use are in the Tailscale plan
+(Chinese: [tailscale-plan.md](tailscale-plan.md#9-实机验收与完成条件)). Automated
+tests need no real Tailscale but cannot replace two-machine testing on Windows
+and macOS, with different Tailscale versions and over slow or relayed links.
 
-## 数据目录、日志与诊断
+## Data directory, logs and diagnostics
 
-数据目录：
+Data directory:
 
-- macOS：`~/Library/Application Support/Snapover`
-- Windows：`%AppData%\Snapover`
+- macOS: `~/Library/Application Support/Snapover`
+- Windows: `%AppData%\Snapover`
 
-里面有本机证书和 `peers.json`。不要把 `identity/` 拷到另一台机器。
+It holds the machine certificate and `peers.json`. Never copy `identity/` to
+another computer.
 
-日志在同目录的 `logs/`。`snapover.log` 和 `crash.log` 大约 1 MB 轮转一次，只保留上一份；最早一条超过 7 天的日志，以及多余的旧备份，会在启动和运行中删除。正在使用的 `session.open` 不会删。
+Logs are in `logs/` beside it. `snapover.log` and `crash.log` rotate at about
+1 MB keeping one previous file; entries older than seven days and surplus
+backups are removed at startup and while running. The active `session.open` is
+never removed.
 
-- `snapover.log`：普通运行日志
-- `crash.log`：崩溃记录。Go panic 和运行时致命错误会把栈写进去。复制后闪退时，崩溃前最后一条通常是正在读的剪贴板格式名，不是内容。下次启动如果上次没正常退出，也会写一条。文件里没有栈时，是原生闪退：macOS 再看 `~/Library/Logs/DiagnosticReports` 里 Snapover 开头的报告，Windows 看事件查看器。
+- `snapover.log`: the run log.
+- `crash.log`: crash records. Go panics and fatal runtime errors write their
+  stack. After a crash on copy, the last line is usually the clipboard format
+  being read, not its content. If the previous exit was unclean, a line is
+  written at the next launch. A file without a stack means a native crash: on
+  macOS look for reports starting with Snapover in `~/Library/Logs/DiagnosticReports`,
+  on Windows use Event Viewer.
 
-诊断面包屑通过有界队列异步写入，通常每秒同步一次，运行期间会轮转；退出和显式阻塞栈会等待刷盘。严重阻塞时队列满会丢弃部分普通诊断行，最后一条面包屑不是绝对精确的崩溃位置。运行时致命错误仍直接写入崩溃文件。
+Diagnostic breadcrumbs go through a bounded queue written mostly once per second
+and rotated while running; quitting and explicit blocking stacks wait for the
+flush. Under heavy blocking a full queue drops ordinary diagnostic lines, so the
+last breadcrumb is not an exact crash position. Fatal runtime errors still write
+straight to the crash file.
 
-设置 → 本机与诊断 → 连接诊断可生成、查看和复制诊断摘要，包含平台、连接状态、同步策略和最近结果分类，不含剪贴板正文、路径、设备名、地址或证书；复制时刷新摘要。TCP 测试仍仅验证端口连通性。
+Settings → This device & diagnostics → Connection diagnostics generates, shows
+and copies a summary with platform, connection state, sync policy and recent
+result categories — no clipboard content, paths, device names, addresses or
+certificates. Copying refreshes the summary. The TCP test still only checks port
+reachability.
 
-文件通知待显示队列和保留通知各最多 16 条。
+At most 16 file notifications are queued and 16 kept.
 
-## Windows 保持唤醒
+## Windows keep-awake
 
-设置 → 保持唤醒提供「防止自动锁屏」开关，默认关闭。开启后请求系统和屏幕保持唤醒，空闲约 60 秒时尝试发送一次零位移鼠标输入来重置屏保计时，不产生按键或点击。关闭窗口后随托盘继续运行；手动锁屏或离开当前交互桌面时暂停，返回后恢复。关闭开关或退出软件时停止。系统禁止模拟输入重置屏保计时、权限不足或调用失败时会显示原因并停止后台请求；不修改域策略、注册表或电源计划。效果需在实际 Windows 环境验证，开启期间会增加耗电，验证步骤见 [保持唤醒验证](keep-awake-validation.md)。
+Settings → Keep awake offers "Prevent automatic screen lock", off by default.
+When on, the app asks the system and display to stay awake and, after about 60
+seconds idle, tries one zero-displacement mouse input to reset the screensaver
+timer, producing no key presses or clicks. Closing the window keeps it running
+in the tray; locking the screen manually or leaving the interactive desktop
+pauses it until you return. Turning the switch off or quitting stops it. If the
+system forbids simulated input for the screensaver timer, permissions are
+insufficient or the call fails, the reason is shown and background requests
+stop; domain policies, the registry and power plans are never modified. Verify
+the effect on a real Windows machine — it costs battery, and the steps are in
+[keep-awake-validation.md](keep-awake-validation.md) (Chinese).
 
-## 资源与内存边界
+## Resource and memory bounds
 
-- 大图解码、缩略图和预览的内存上限见上文；连续大图完成后等待空闲再回收，避免每张图都强制 GC。
-- 历史列表使用独立的元数据快照，置顶、删除和清理在后台执行；关闭主窗口不影响清理收尾或快捷历史。
-- 历史粘贴准备在整个应用中最多一个，关闭窗口会取消结果发布并释放预备资源。
-- 通知待显示队列和保留通知各最多 16 条。
-- 诊断面包屑队列有界，满时丢弃普通诊断行。
+- Image decoding, thumbnail and preview limits are described above; after a run
+  of large images the app waits for idle instead of forcing a GC per image.
+- History uses a separate metadata snapshot, so pinning, deletion and cleanup
+  run in the background and closing the main window does not interrupt them.
+- At most one paste preparation exists app-wide; closing the window cancels
+  publishing and releases it.
+- At most 16 notifications are queued and 16 kept.
+- Diagnostic breadcrumbs use a bounded queue that drops ordinary lines when full.
 
-修改与验证记录见 [2026-10-16 性能修复](performance-2026-10-16.md)。
+Fixes and measurements are recorded in the performance notes (Chinese:
+[performance-2026-10-16.md](performance-2026-10-16.md)).
 
-## 配对与连接（实现要点）
+## Pairing and connection internals
 
-- 自签 TLS 1.3。首次通过与握手绑定的校验码和双方明确确认配对，之后钉住证书指纹；解除配对立即关闭连接。
-- 对端从局域网连进来时，会用它的来源 IP 加上它的监听端口，覆盖已保存的地址。默认丢弃虚拟网卡上的连接，局域网拨号绑定到物理网卡，避免把 VPN 地址记成下次要连的地址。
-- 发现和连接默认不走虚拟网卡；可单独允许 Tailscale IPv4 地址连接，不参与局域网广播。连接设备里可以缩小广播网段；未设置时仍是全部物理网段。广播被网络隔离、VPN 或系统权限阻止时，可以手填地址。
-- 「连接设备」可以勾选参与广播和搜索的网段，按网卡名和网段记住，不含当前 IP。未设置或点「全选」时使用全部物理网段，之后新出现的也会加入；缩小勾选后，新网段默认不加入。全部取消则停止自动发现，仍可手填地址。
-- 两边都在监听，所以只要有一边还能拨到另一边，就能连上。发送途中设备切换或断线仍会失败，不会改投另一台。
-- 首次配对的校验码由本次 TLS 握手的 exporter 派生，两边确认后才保存证书指纹；后续按指纹验证，指纹变了就拒绝。已有配对记录兼容保留。旧版设备只能重连已有配对，首次配对必须两边都升级。
-- 解除配对，或加 `-reset-peers`，下次添加需要双方重新确认。「连接设备」的详情里可以解除单台设备的配对，也可以解除全部配对；解除后立即断开对应连接、停止本机对它的重连并撤销信任。对端即使保留旧记录，再次连接也必须重新获得本机确认，不会自动恢复信任。
+- Self-signed TLS 1.3. Pairing happens through a code bound to the handshake plus
+  explicit confirmation on both sides; afterwards the certificate fingerprint is
+  pinned, and unpairing closes the connection immediately.
+- When a peer connects over the LAN, its source IP and listening port replace the
+  saved address. Connections from virtual interfaces are dropped by default and
+  LAN dials bind to the physical interface, so a VPN address never becomes the
+  address used next time.
+- Discovery and connection ignore virtual interfaces by default; Tailscale IPv4
+  addresses can be allowed separately and never take part in LAN broadcast. The
+  subnet list under Connect devices narrows broadcast; unset means all physical
+  subnets. Where broadcast is isolated, blocked by a VPN or by system
+  permissions, enter the address by hand.
+- Connect devices lets you choose which subnets take part in broadcast and
+  discovery, remembered by interface name and subnet without the current IP.
+  Unset or "Select all" uses every physical subnet, including ones that appear
+  later; after narrowing, new subnets stay out. Clearing everything stops
+  automatic discovery while manual addresses still work.
+- Both sides listen, so one reachable direction is enough to connect. Switching
+  devices mid-send or a disconnect still fails rather than redirecting the
+  transfer.
 
-### 命令行参数
+### Command-line flags
 
 ```sh
-# 指定对端地址启动（只写 IP 时端口默认 47821）
+# Start with a peer address (port 47821 is assumed when omitted)
 go run ./cmd/snapover -peer 192.168.1.20:47821
 
-# 查看当前剪贴板，不建立连接
+# Inspect the current clipboard without connecting
 go run ./cmd/snapover -check
 
-# 限定监听地址；不会自动扩大监听范围，Tailscale 场景用 -listen :47821
+# Restrict the listening address; this never widens the range, and Tailscale
+# setups should use -listen :47821
 go run ./cmd/snapover -listen :47821
 
-# 清除全部配对记录
+# Clear every pairing record
 go run ./cmd/snapover -reset-peers
 ```
 
-启动日志会打印本机局域网地址，以及证书指纹。
+The startup log prints the local LAN address and the certificate fingerprint.
 
-### 连接帮助与系统权限
+### Connection help and system permissions
 
-- Windows 防火墙要放行入站 TCP 47821，自动发现还需要 UDP 5353。macOS 首次访问局域网时需要允许本地网络权限；安装包包含用途说明和 Bonjour 服务声明。发现失败时设备页会显示恢复提示，也可在系统设置 → 隐私与安全性 → 本地网络中检查权限。
-- Windows 尚未配对时，「连接设备」页直接提供防火墙放行入口；启动监听后如系统弹出防火墙询问，选择允许。打不开弹窗时用「打开防火墙设置」勾选 Snapover 的专用网络。详细步骤仍在连接帮助里：返回时立即重新搜索，约 10 秒仍为空再展开排查。关闭提醒或成功连接后不再主动提示，以后可从「连接帮助」打开。
-- macOS 15 及以上尚未配对时，「连接设备」页说明本地网络用途；启动发现即会触发系统询问，选择「允许」。打不开弹窗时用「打开本地网络设置」；若只打开了「隐私与安全性」，再手动选择「本地网络」。连接帮助仍可重新搜索和查看恢复步骤。macOS 13/14 不显示本地网络权限入口，保留普通连接帮助。辅助功能权限仍只在首次使用快捷粘贴时引导。
+- Windows Firewall must allow inbound TCP 47821, and discovery needs UDP 5353.
+  macOS asks for Local Network access the first time; the package declares its
+  purpose and the Bonjour service. When discovery fails the device page shows
+  recovery steps, and System Settings → Privacy & Security → Local Network lists
+  the permission.
+- Before pairing, the Windows Connect devices page offers a firewall shortcut;
+  if the firewall prompt appears after the listener starts, allow it. When the
+  prompt does not appear, "Open firewall settings" ticks Snapover on private
+  networks. Detailed steps stay in connection help: go back and search again,
+  and expand troubleshooting only after about 10 seconds of nothing. Dismissing
+  the reminder or connecting successfully stops the prompt, and connection help
+  can reopen it later.
+- On macOS 15 and later, before pairing, Connect devices explains what Local
+  Network is for and starting discovery triggers the prompt — choose Allow. If
+  the prompt does not appear, use "Open Local Network settings", and when only
+  Privacy & Security opened, pick Local Network manually. Connection help still
+  offers a new search and recovery steps. macOS 13 and 14 have no Local Network
+  entry and keep ordinary connection help. Accessibility permission is still
+  requested only when quick paste is first used.

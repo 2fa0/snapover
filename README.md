@@ -61,7 +61,7 @@ Both computers discover each other on the same local network and connect directl
 - 🌍 **English and Chinese interface**, following the system by default; Windows also gets a keep-awake switch.
 - 🪶 **A native app**: Go and MyGo draw real native controls rather than embedding a browser, so an idle window does not cost hundreds of megabytes.
 
-Detailed behaviour, limits and measured notes live in [功能与行为细节](docs/features.md) (Chinese). The same for [the CLI reference](docs/cli.md) and [the build notes](docs/build.md).
+Detailed behaviour, limits and measured notes live in [features and behaviour](docs/features.md), alongside the [CLI reference](docs/cli.md) and the [build notes](docs/build.md).
 
 ---
 
@@ -107,7 +107,7 @@ Notes:
 - If broadcast is blocked by network isolation, a VPN or system permissions, enter the address by hand; **Connect devices** can also limit which subnets take part in discovery.
 - **Test connection** only checks that the TCP port is reachable, not TLS or pairing.
 
-Details on multiple devices, address priority and cross-network use are in [功能与行为细节](docs/features.md#tailscale-跨网络连接) (Chinese).
+Details on multiple devices, address priority and cross-network use are in [features and behaviour](docs/features.md#tailscale-across-networks).
 
 ---
 
@@ -150,7 +150,7 @@ Get-Content -Raw -Encoding UTF8 .\notes.txt | snapover send text --stdin
 
 That is enough to remember: files land in the other machine's receiving folder, text and images go to its clipboard. Exit code `0` on success, `1` when sending or connecting fails, `2` for bad arguments; with no online device the command fails immediately instead of queueing.
 
-Full options, encoding caveats, exit codes and timeout rules: [命令行发送](docs/cli.md) (Chinese).
+Full options, encoding caveats, exit codes and timeout rules: [sending from the command line](docs/cli.md).
 
 ---
 
@@ -162,7 +162,7 @@ Releases are signed with an Ed25519 key whose public half is compiled into the a
 
 Cases that cannot self-update say why instead of failing silently: an app run straight from a disk image, one in a non-writable location, and source builds (`go run` / `go build`) all need a new package installed by hand. macOS builds are ad-hoc signed for now, so after an update you may need to allow Accessibility again.
 
-How maintainers package and publish, and how the signing key must be kept, is in [构建与发布](docs/build.md) (Chinese); the plan and its open items are in [内置升级方案](docs/update-plan.md) (Chinese).
+How maintainers package and publish, and how the signing key must be kept, is in [building and releasing](docs/build.md); the plan and its open items are in the update plan (Chinese: [update-plan.md](docs/update-plan.md)).
 
 ---
 
@@ -220,7 +220,7 @@ SNAPOVER_TEST_LAN=1 go test -count=1 ./internal/discovery -run TestLANDiscovery 
 > [!NOTE]
 > Cross-compiling only proves the other platform compiles; it is not a real-device test. A Windows build made on a Mac cannot verify clipboard behaviour — `Win+Shift+S` and pasting into Notepad have to be tried on Windows. When tests are launched from a desktop host app on macOS, local network permission belongs to that host, so `no route to host` alone does not prove a routing problem.
 
-Packaging details, signing keys and the release checklist: [构建与发布](docs/build.md) (Chinese).
+Packaging details, signing keys and the release checklist: [building and releasing](docs/build.md).
 
 ---
 
@@ -231,7 +231,7 @@ Packaging details, signing keys and the release checklist: [构建与发布](doc
 - **No telemetry**: nothing is reported or uploaded automatically. A connection diagnosis summary contains the platform, connection state and result categories — no clipboard content, paths, device names, addresses or certificates.
 - **Reporting security issues**: please use [GitHub private vulnerability reporting](https://github.com/2fa0/snapover/security/advisories/new) instead of a public issue, and strip credentials and private content from any logs or samples you attach.
 
-History budgets, caches and crash triage: [功能与行为细节](docs/features.md) (Chinese).
+History budgets, caches and crash triage: [features and behaviour](docs/features.md).
 
 ---
 
