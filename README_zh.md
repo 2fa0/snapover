@@ -107,9 +107,6 @@
 - **macOS 13+**：Apple Silicon 选择 `snapover-<版本>-arm64.dmg`，Intel 选择 `snapover-<版本>-amd64.dmg`，打开后把 Snapover 拖进「应用程序」。
 - **Windows 10/11 x64**：解压 `Snapover-<版本>-windows11-x64.zip`，保留同目录文件并运行 `Snapover.exe`。在 exe 旁放一个空的 `portable.flag`，数据就会保存到同目录的 `data/` 文件夹。
 
-> [!IMPORTANT]
-> **Releases 可能落后于 `main`。** 本 README 描述的是 `main`（`0.10.1`），其中文件／文件夹剪贴板同步、主动发送文件、Tailscale 和断线续传尚未发版。想立刻使用这些功能，请[从源码构建](#-从源码构建)。
-
 <details>
 <summary><strong>首次打开须知：Gatekeeper、SmartScreen 与防火墙</strong></summary>
 
