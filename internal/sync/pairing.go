@@ -144,6 +144,7 @@ func (e *Engine) Disconnect() {
 }
 
 func (e *Engine) Stop() {
+	e.resumeFiles.close()
 	e.authMu.Lock()
 	e.authEpoch++
 	e.pairingUntil = time.Time{}

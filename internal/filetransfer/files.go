@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +37,7 @@ func ValidatePaths(paths []string, maxBytes int64) ([]int64, error) {
 		return nil, errors.New("请选择要发送的文件")
 	}
 	sizes := make([]int64, len(paths))
+	var total int64
 	for i, path := range paths {
 		info, err := Validate(path, maxBytes)
 		if err != nil {
@@ -43,6 +46,10 @@ func ValidatePaths(paths []string, maxBytes int64) ([]int64, error) {
 			}
 			return nil, fmt.Errorf("%s：%w", filepath.Base(path), err)
 		}
+		if info.Size() > math.MaxInt64-total {
+			return nil, errors.New("文件批次总大小超出可表示范围，请分批发送")
+		}
+		total += info.Size()
 		sizes[i] = info.Size()
 	}
 	return sizes, nil
@@ -90,6 +97,9 @@ func Begin(dir, name string, size, maxBytes int64) (*Incoming, error) {
 	if err := CheckReceiveDir(dir); err != nil {
 		return nil, err
 	}
+	if err := checkDiskSpace(dir, size); err != nil {
+		return nil, err
+	}
 	stageDir, err := os.MkdirTemp(dir, ".snapover-incoming-")
 	if err != nil {
 		return nil, fmt.Errorf("无法创建接收暂存目录：%w", err)
@@ -134,7 +144,10 @@ func (f *Incoming) Append(offset int64, data []byte) error {
 	if offset != f.Written || len(data) == 0 || int64(len(data)) > f.Size-f.Written {
 		return errors.New("文件分片顺序或大小无效")
 	}
-	if _, err := f.file.Write(data); err != nil {
+	if n, err := f.file.Write(data); err != nil || n != len(data) {
+		if err == nil {
+			err = io.ErrShortWrite
+		}
 		return fmt.Errorf("写入文件失败：%w", err)
 	}
 	_, _ = f.hash.Write(data)

@@ -109,29 +109,14 @@ func TestCancelledFileTransferClearsQuietly(t *testing.T) {
 	}
 }
 
-func TestReceiveFolderProgressDoesNotUseClipboardCopy(t *testing.T) {
+func TestReceiveFolderStaysSilent(t *testing.T) {
 	a := interfaceTestApp(t)
-	a.apply(clipsync.Notice{
-		Kind:      clipsync.NoticeFile,
-		FileState: "receiving",
-		FileName:  "archive.zip",
-		FileDone:  30 << 20,
-		FileTotal: 60 << 20,
-	}, nil)
-	label, ok := a.transferStatusText()
-	if !ok || !strings.Contains(label, "正在接收 archive.zip") {
-		t.Fatalf("receive-folder progress: %q", label)
+	a.apply(clipsync.Notice{Kind: clipsync.NoticeFile, FileState: "receiving", FileName: "archive.zip", FileDone: 30 << 20, FileTotal: 60 << 20}, nil)
+	if _, ok := a.transferStatusText(); ok {
+		t.Fatal("receive opened transfer progress")
 	}
-	a.apply(clipsync.Notice{
-		Kind:      clipsync.NoticeFile,
-		FileState: "complete",
-		FileName:  "archive.zip",
-		FilePath:  "/tmp/archive.zip",
-		FileDone:  60 << 20,
-		FileTotal: 60 << 20,
-	}, nil)
-	label, ok = a.transferStatusText()
-	if !ok || label != "收到 archive.zip，已保存到接收文件夹" {
-		t.Fatalf("receive-folder complete: %q", label)
+	a.apply(clipsync.Notice{Kind: clipsync.NoticeFile, FileState: "complete", FileName: "archive.zip", FilePath: "/tmp/archive.zip", FileTotal: 60 << 20}, nil)
+	if a.receiveMessage != "收到 archive.zip，已保存到接收文件夹" {
+		t.Fatal(a.receiveMessage)
 	}
 }

@@ -25,6 +25,7 @@ var errHistoryOnly = errors.New("对端刚复制过内容，已存入对端历�
 
 // Engine ties one clipboard to at most one live peer.
 type Engine struct {
+	resumeFiles resumeFiles
 	LocalID     string
 	Name        string
 	Platform    string
@@ -698,6 +699,9 @@ func (e *Engine) attachPeer(ctx context.Context, conn *tls.Conn, weDialed bool, 
 		e.notify(Notice{Kind: NoticeSync, Message: result.Message, PeerID: peer.id, PeerName: hello.Name, ClipboardState: result.State, SessionID: sess.sessionID})
 	}
 	for _, cap := range hello.Capabilities {
+		if cap == wire.FileResumeCapability {
+			sess.fileResumeSupported = true
+		}
 		if cap == wire.FileCapability {
 			sess.fileSupported = true
 		}
@@ -708,6 +712,8 @@ func (e *Engine) attachPeer(ctx context.Context, conn *tls.Conn, weDialed bool, 
 			sess.clipboardResultSupported = true
 		}
 	}
+	sess.resumeFiles = &e.resumeFiles
+	sess.resumePeer = peer.id + ":" + peer.fp
 	sess.receiveDir = e.ReceiveDir
 	sess.fileLimit = e.FileLimit
 	sess.onFile = func(n Notice) { n.PeerID = peer.id; n.PeerName = hello.Name; e.notify(n) }
@@ -767,7 +773,7 @@ func (e *Engine) handshake(conn *tls.Conn) (*identityResult, wire.Hello, error) 
 		Proto:        wire.Proto,
 		Fingerprint:  e.Fingerprint,
 		ListenPort:   e.ListenPort,
-		Capabilities: []string{wire.FileCapability, wire.PairCapability, wire.ClipboardResultCapability, wire.FileClipboardCapability},
+		Capabilities: []string{wire.FileResumeCapability, wire.FileCapability, wire.PairCapability, wire.ClipboardResultCapability, wire.FileClipboardCapability},
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- wire.WriteMsg(conn, wire.TypeHello, hello) }()
