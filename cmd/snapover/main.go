@@ -166,6 +166,7 @@ func main() {
 		die(1)
 	}
 	configureLanguage(cfg.Values.Language)
+	configureTheme(cfg.Values.Theme)
 	historyCapacityErr := hist.SetCapacity(int64(cfg.Values.HistoryMaxMB) << 20)
 	if historyCapacityErr != nil {
 		log.Warn("应用历史容量上限失败", "err", historyCapacityErr)

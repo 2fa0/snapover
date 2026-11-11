@@ -647,6 +647,9 @@ var enStrings = map[string]string{
 	"局域网":        "LAN",
 	"语言":         "Language",
 	"界面语言":       "Interface Language",
+	"界面主题":       "Appearance",
+	"浅色":         "Light",
+	"深色":         "Dark",
 	"跟随系统":       "Follow System",
 
 	// Tray & Menu Bar Icon
