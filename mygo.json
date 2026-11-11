@@ -3,6 +3,8 @@
   "slug": "snapover",
   "identifier": "app.snapover.desktop",
   "version": "0.10.1",
+  "license": "MIT",
+  "copyright": "© 2026 2fa0",
   "main": "./cmd/snapover",
   "icon": "resources/app.png",
   "out": "dist",
