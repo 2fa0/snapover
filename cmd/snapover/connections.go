@@ -194,7 +194,7 @@ func (a *app) startConnection(ep lan.Endpoint, peerID string, explicit bool) {
 }
 
 func (a *app) tailscaleSettings(c *ui.Context) {
-	if settingSwitch(c, &a.allowTailscale, a.tr("允许通过 Tailscale 连接"), a.tr("两台电脑需自行安装并连接 Tailscale，并在此开启。")) {
+	if settingSwitch(c, &a.allowTailscale, a.tr("允许通过 Tailscale 连接"), "") {
 		a.saveTailscaleSetting()
 	}
 	if a.tailscaleError != "" {
