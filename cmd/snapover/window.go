@@ -46,6 +46,7 @@ type app struct {
 	cfg                       *settings.File
 	systemLang                string
 	languageError             string
+	themeError                string
 	privacyMode               bool
 	excludedAppsText          string
 	privacyError              string
@@ -818,6 +819,8 @@ func (a *app) settingsPage(c *ui.Context) {
 	settingsGroup(c, a.tr("历史存储"), func() { a.historyStorageSettings(c) })
 	settingsGroup(c, a.tr("通用与外观"), func() {
 		a.languageSettings(c)
+		ui.Divider(c)
+		a.themeSettings(c)
 		if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
 			ui.Divider(c)
 			title := "菜单栏图标"

@@ -225,3 +225,35 @@ func TestLanguageDefaultsAndNormalization(t *testing.T) {
 		}
 	}
 }
+
+func TestThemeDefaultsAndNormalization(t *testing.T) {
+	for _, tc := range []struct {
+		json string
+		want string
+	}{
+		{`{}`, ThemeAuto},
+		{`{"theme":""}`, ThemeAuto},
+		{`{"theme":"light"}`, ThemeLight},
+		{`{"theme":"dark"}`, ThemeDark},
+		{`{"theme":"unknown"}`, ThemeAuto},
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(tc.json), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f, err := Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.Values.Theme != tc.want {
+			t.Fatalf("%s: theme = %q, want %q", tc.json, f.Values.Theme, tc.want)
+		}
+		if err := f.Save(); err != nil {
+			t.Fatal(err)
+		}
+		reloaded, err := Load(dir)
+		if err != nil || reloaded.Values.Theme != tc.want {
+			t.Fatalf("theme not preserved: %+v, %v", reloaded, err)
+		}
+	}
+}

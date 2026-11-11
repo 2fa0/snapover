@@ -316,6 +316,9 @@ image editor still syncs as an image.
 - Settings → Language follows the system by default and can be set to Chinese or
   English, switching the interface, menus and update window together; history
   bodies, file names and device names keep their original text.
+- Settings → General & Appearance → Appearance offers Follow System, Light and
+  Dark. It follows the system by default; changes apply to all windows immediately
+  and persist across restarts.
 - Launching opens the main window, whose menu and sidebar are the same three
   pages: Settings, Connect devices and Clipboard history. It starts on Connect
   devices, and `-peer` fills the manual address field and starts connecting.

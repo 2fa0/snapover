@@ -31,6 +31,12 @@ const (
 	LangEN   = "en"
 )
 
+const (
+	ThemeAuto  = ""
+	ThemeLight = "light"
+	ThemeDark  = "dark"
+)
+
 // The quick history window keeps the flyout defaults until the user drags it
 // to another size. The bounds keep it usable: it must still show a few rows,
 // and it cannot grow beyond what the work area can hold.
@@ -66,6 +72,7 @@ type Values struct {
 	AllowTailscale bool     `json:"allow_tailscale,omitempty"`
 	HistoryMaxMB   int      `json:"history_max_mb"`
 	Language       string   `json:"language,omitempty"`
+	Theme          string   `json:"theme,omitempty"`
 
 	WindowsNetworkGuideDismissed bool `json:"windows_network_guide_dismissed,omitempty"`
 	MacNetworkGuideDismissed     bool `json:"mac_network_guide_dismissed,omitempty"`
@@ -108,6 +115,7 @@ func Load(dataDir string) (*File, error) {
 	f.Values.MaxFileMB = clampFileMB(f.Values.MaxFileMB)
 	f.Values.MenuBarIcon = clampMenuBarIcon(f.Values.MenuBarIcon)
 	f.Values.Language = normalizeLanguage(f.Values.Language)
+	f.Values.Theme = normalizeTheme(f.Values.Theme)
 	f.Values.PickerWidth, f.Values.PickerHeight = clampPickerSize(f.Values.PickerWidth, f.Values.PickerHeight)
 	if f.Values.HistoryMaxMB <= 0 {
 		f.Values.HistoryMaxMB = DefaultHistoryMB
@@ -130,6 +138,7 @@ func (f *File) Save() error {
 	f.Values.MaxFileMB = clampFileMB(f.Values.MaxFileMB)
 	f.Values.MenuBarIcon = clampMenuBarIcon(f.Values.MenuBarIcon)
 	f.Values.Language = normalizeLanguage(f.Values.Language)
+	f.Values.Theme = normalizeTheme(f.Values.Theme)
 	f.Values.PickerWidth, f.Values.PickerHeight = clampPickerSize(f.Values.PickerWidth, f.Values.PickerHeight)
 	buf, err := json.MarshalIndent(f.Values, "", "  ")
 	if err != nil {
@@ -166,6 +175,15 @@ func normalizeLanguage(lang string) string {
 		return lang
 	default:
 		return LangAuto
+	}
+}
+
+func normalizeTheme(theme string) string {
+	switch theme {
+	case ThemeLight, ThemeDark:
+		return theme
+	default:
+		return ThemeAuto
 	}
 }
 
