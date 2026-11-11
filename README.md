@@ -107,9 +107,6 @@ Download the latest package from [**Releases**](https://github.com/2fa0/snapover
 - **macOS 13+**: choose `snapover-<version>-arm64.dmg` for Apple silicon or `snapover-<version>-amd64.dmg` for Intel, then drag Snapover into **Applications**.
 - **Windows 10/11 x64**: extract `Snapover-<version>-windows11-x64.zip` and run `Snapover.exe`, keeping the accompanying files together. Add an empty `portable.flag` beside it to store data in a local `data/` folder.
 
-> [!IMPORTANT]
-> **Releases can lag behind `main`.** This README describes `main` (`0.10.1`), where file/folder clipboard sync, direct file sending, Tailscale support and resumable transfers are not released yet. [Build from source](#-build-from-source) to use those features today.
-
 <details>
 <summary><strong>First-launch notes: Gatekeeper, SmartScreen and firewall</strong></summary>
 
