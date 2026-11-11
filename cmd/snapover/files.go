@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -65,7 +66,7 @@ func (a *app) filesView(c *ui.Context) {
 		zone.Children(func() {
 			if !a.fileSelected() {
 				ui.Text(c, a.tr("把文件拖到这里")).Bold()
-				ui.Text(c, a.tr(fmt.Sprintf("可多选文件，每个最大 %d MB", a.engine.FileLimit()>>20))).FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, a.tr("可多选文件，大小仅受接收磁盘限制")).FontSize(12).TextColor(t.TextMuted)
 				if press(ui.Button(c, a.tr("选择文件…")).Disabled(a.fileBusy || a.fileChoosing)).Clicked() {
 					a.chooseFile()
 				}
@@ -103,6 +104,23 @@ func (a *app) filesView(c *ui.Context) {
 			ui.Text(c, a.tr(message)).TextColor(t.TextMuted).MaxLines(4)
 		}
 		if a.fileBusy {
+			ui.Row(c).Gap(10).Children(func() {
+				if a.fileControl != nil {
+					label := "暂停"
+					if a.fileControl.Paused() {
+						label = "继续发送"
+					}
+					if ui.Button(c, a.tr(label)).Clicked() {
+						a.fileControl.Pause(!a.fileControl.Paused())
+						if a.fileControl.Paused() {
+							a.fileMessage = "已暂停，点击继续发送可从当前位置恢复"
+						}
+					}
+				}
+				if a.fileCancel != nil && ui.Button(c, a.tr("取消传输")).Clicked() {
+					a.fileCancel()
+				}
+			})
 			ui.Text(c, a.tr("关闭窗口后仍会继续传输")).FontSize(12).TextColor(t.TextMuted)
 			return
 		}
@@ -167,7 +185,7 @@ func (a *app) selectFile(paths []string) {
 		a.fileMessage = "请选择要发送的文件"
 		return
 	}
-	sizes, err := filetransfer.ValidatePaths(paths, a.engine.FileLimit())
+	sizes, err := filetransfer.ValidatePaths(paths, math.MaxInt64)
 	if err != nil {
 		a.filePaths, a.fileSize = nil, 0
 		a.fileMessage = err.Error()
@@ -211,34 +229,86 @@ func (a *app) sendSelectedFile(background bool) {
 	a.fileMessage = "正在等待对方接收…"
 	link, _ := a.engine.Link()
 	a.fileRecipient = displayName(link.Name, link.ID)
-	a.beginOrUpdateTransfer(transferFileSend, phaseSending, filepath.Base(paths[0]), 0, a.fileSize, "")
+	large := a.fileSize > largeTransferBytes
+	if large {
+		a.openFiles()
+	}
+	a.fileControl = nil
+	if large {
+		a.fileControl = clipsync.NewFileControl()
+	}
 	ctx := a.root
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	a.fileCancel = cancel
+	control := a.fileControl
+	totalSize := a.fileSize
 	go func() {
-		saved, err := a.engine.SendFiles(ctx, link.ID, paths, func(index int, done, total int64) {
-			a.updateFiles(func() {
-				a.fileDone, a.fileSize = done, total
-				name := filepath.Base(paths[index])
-				a.fileMessage = fmt.Sprintf("正在发送 %d/%d：%s · %s / %s", index+1, len(paths), name, formatSize(int(done)), formatSize(int(total)))
-				phase := phaseSending
-				if done == total {
-					a.fileMessage = "传输完成，正在等待对方确认保存…"
-					phase = phaseWaiting
-				}
-				a.beginOrUpdateTransfer(transferFileSend, phase, name, done, total, "")
-			})
-		})
+		defer cancel()
+		var saved []string
+		var err error
+		var base int64
+		for index, path := range paths {
+			if large && index > 0 {
+				next := clipsync.NewFileControl()
+				next.Pause(control.Paused())
+				control = next
+				a.updateFiles(func() { a.fileControl = next })
+			}
+			var name string
+			var fileSize int64
+			onProgress := func(done, total int64) {
+				fileSize = total
+				done += base
+				total = totalSize
+
+				a.updateFiles(func() {
+					a.fileDone, a.fileSize = done, total
+					name := filepath.Base(paths[index])
+					a.fileMessage = fmt.Sprintf("正在发送 %d/%d：%s · %s / %s", index+1, len(paths), name, formatSize(int(done)), formatSize(int(total)))
+					if done == total {
+						a.fileMessage = "传输完成，正在等待对方确认保存…"
+					}
+				})
+			}
+			if large {
+				name, err = a.engine.SendFileControlled(ctx, link.ID, path, control, onProgress, func() {
+					a.updateFiles(func() { a.fileMessage = "连接已断开，正在等待原设备重连后续传…" })
+				})
+			} else {
+				name, err = a.engine.SendFile(ctx, link.ID, path, onProgress)
+			}
+			if err != nil {
+				break
+			}
+			saved = append(saved, name)
+			base += fileSize
+		}
 		a.updateFiles(func() {
 			a.fileBusy = false
+			a.fileCancel, a.fileControl = nil, nil
 			if err != nil {
 				a.fileMessage = "发送失败：" + err.Error() + "。请检查连接后重试"
 				if len(saved) > 0 {
 					a.fileMessage = fmt.Sprintf("已发送 %d/%d 个文件后失败：%s。请检查连接后重试", len(saved), len(paths), err)
 				}
-				a.beginOrUpdateTransfer(transferFileSend, phaseError, filepath.Base(paths[0]), a.fileDone, a.fileSize, a.fileMessage)
-				if background {
+				if errors.Is(err, context.Canceled) {
+					a.fileMessage = "已取消传输"
+				} else if errors.Is(err, clipsync.ErrFileOutcomeUnknown) {
+					a.fileMessage = err.Error()
+				}
+				if len(saved) > 0 && (errors.Is(err, context.Canceled) || errors.Is(err, clipsync.ErrFileOutcomeUnknown)) {
+					a.fileMessage = fmt.Sprintf("已发送 %d/%d 个文件。%s", len(saved), len(paths), a.fileMessage)
+				}
+				if a.fileWin == nil && (large || !background) {
+					title := "文件发送失败 · Snapover"
+					if errors.Is(err, context.Canceled) {
+						title = "传输已取消 · Snapover"
+					}
+					a.queueFileNotification(fileNotification{title: title, body: a.fileMessage})
+				} else if background {
 					a.openFiles()
 				}
 				return
@@ -249,12 +319,7 @@ func (a *app) sendSelectedFile(background bool) {
 			} else {
 				a.fileMessage = fmt.Sprintf("已发送 %d 个文件", len(saved))
 			}
-			name := filepath.Base(paths[0])
-			if len(paths) > 1 {
-				name = a.fileTitle()
-			}
-			a.beginOrUpdateTransfer(transferFileSend, phaseComplete, name, a.fileSize, a.fileSize, "")
-			if background && runtime.GOOS == "darwin" {
+			if !large || a.fileWin == nil {
 				a.sentFilesNotification(saved, displayName(link.Name, link.ID))
 			}
 		})
@@ -343,18 +408,18 @@ func (a *app) receiveSettings(c *ui.Context) {
 func (a *app) saveFileLimit() {
 	n, err := strconv.ParseInt(strings.TrimSpace(a.maxFileText), 10, 64)
 	if err != nil || n < 1 || n > settings.MaxFileMB {
-		a.maxFileError = "文件大小上限须为有效的正整数，单位 MB"
+		a.maxFileError = "文件复制同步上限须为有效的正整数，单位 MB"
 		return
 	}
 	previous := a.cfg.Values.MaxFileMB
 	a.cfg.Values.MaxFileMB = n
 	if err := a.cfg.Save(); err != nil {
 		a.cfg.Values.MaxFileMB = previous
-		a.maxFileError = "文件上限保存失败，请检查数据目录权限后重试"
+		a.maxFileError = "文件复制同步上限保存失败，请检查数据目录权限后重试"
 		return
 	}
 	a.engine.SetFileLimit(n << 20)
 	a.maxFileText = strconv.FormatInt(n, 10)
 	a.maxFileError = ""
-	a.status = fmt.Sprintf("文件大小上限已设为 %d MB，下一次传输生效", n)
+	a.status = fmt.Sprintf("文件复制同步上限已设为 %d MB，下一次复制同步生效", n)
 }

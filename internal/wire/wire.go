@@ -51,6 +51,7 @@ type Hello struct {
 }
 
 const FileCapability = "file-transfer-v1"
+const FileResumeCapability = "file-resume-v1"
 
 const FileClipboardCapability = "file-clipboard-v1"
 
@@ -67,6 +68,7 @@ type PairChoice struct {
 }
 
 type FileBegin struct {
+	Resumable bool   `msgpack:"resumable,omitempty"`
 	ItemID    string `msgpack:"item_id"`
 	Name      string `msgpack:"name"`
 	TotalSize int64  `msgpack:"total_size"`
@@ -86,8 +88,9 @@ type FileEnd struct {
 }
 
 type FileResult struct {
+	Offset  int64  `msgpack:"offset,omitempty"`
 	ItemID  string `msgpack:"item_id"`
-	State   string `msgpack:"state"` // ready, complete, error
+	State   string `msgpack:"state"` // ready, chunk, complete, error, cancelled, unknown
 	Message string `msgpack:"message,omitempty"`
 }
 

@@ -18,7 +18,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if f.Values.MaxTextMB != DefaultMaxTextMB {
 		t.Fatalf("default text mb = %d", f.Values.MaxTextMB)
 	}
-	if f.Values.MaxFileMB != 200 {
+	if f.Values.MaxFileMB != 20 {
 		t.Fatalf("default file mb = %d", f.Values.MaxFileMB)
 	}
 	if f.Values.HistoryMaxMB != DefaultHistoryMB || f.Values.PickerShortcut != "" || f.Values.ManualSync || f.Values.CopyShortcut != "" || f.Values.KeepAwake || f.Values.AllowTailscale || f.Values.MenuBarIcon != DefaultMenuBarIcon {
@@ -135,10 +135,11 @@ func TestFileLimitDefaultsAndBounds(t *testing.T) {
 		json string
 		want int64
 	}{
-		{`{"max_image_mb":8}`, 200},
-		{`{"max_file_mb":0}`, 200},
-		{`{"max_file_mb":-1}`, 200},
+		{`{"max_image_mb":8}`, 20},
+		{`{"max_file_mb":0}`, 20},
+		{`{"max_file_mb":-1}`, 20},
 		{`{"max_file_mb":1}`, 1},
+		{`{"max_file_mb":200}`, 200},
 		{`{"max_file_mb":4096}`, 4096},
 		{`{"max_file_mb":8796093022207}`, MaxFileMB},
 		{`{"max_file_mb":9223372036854775807}`, MaxFileMB},

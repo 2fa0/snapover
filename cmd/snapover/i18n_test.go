@@ -189,6 +189,17 @@ func TestTranslateENPatterns(t *testing.T) {
 	}
 }
 
+func TestTranslateENFileBatchResult(t *testing.T) {
+	for _, tc := range []struct{ input, want string }{
+		{"已发送 1/2 个文件。已取消传输", "Sent 1/2 files. Transfer cancelled"},
+		{"已发送 1/2 个文件。传输已停止，但无法确认对方是否已保存，请检查对方接收文件夹", "Sent 1/2 files. Transfer stopped, but the save could not be confirmed. Check the peer's receive folder."},
+	} {
+		if got := translateEN(tc.input); got != tc.want {
+			t.Fatalf("translateEN(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestEnglishHistoryPreservesUserContent(t *testing.T) {
 	a := interfaceTestApp(t)
 	a.cfg.Values.Language = settings.LangEN

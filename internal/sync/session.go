@@ -53,6 +53,10 @@ type Session struct {
 	done                     chan struct{}
 	once                     sync.Once
 	fileSupported            bool
+	fileResumeSupported      bool
+	fileCancelID             atomic.Pointer[string]
+	resumeFiles              *resumeFiles
+	resumePeer               string
 	fileClipboardSupported   bool
 	fileCache                *filetransfer.ClipboardCache
 	captureFileClipboard     func(uint64, uint64) (func(clip.Item) error, []string, error)

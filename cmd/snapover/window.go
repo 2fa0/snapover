@@ -221,6 +221,8 @@ type app struct {
 	filePaths              []string
 	fileSize               int64
 	fileBusy               bool
+	fileControl            *clipsync.FileControl
+	fileCancel             context.CancelFunc
 	fileChoosing           bool
 	fileSent               bool
 	fileRecipient          string
@@ -622,8 +624,8 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 		a.applySyncStage(n)
 		a.applyClipboardTransfer(n)
 	case clipsync.NoticeFile:
-		a.applyFileTransfer(n)
 		if n.FileClipboard {
+			a.applyFileTransfer(n)
 			if n.FileState == "error" && n.Message != "" {
 				a.applySyncStage(n)
 			}
@@ -790,12 +792,12 @@ func (a *app) settingsPage(c *ui.Context) {
 					}
 				})
 				ui.Divider(c)
-				settingRow(c, a.tr("文件大小上限"), a.tr("默认 200 MB，整批内容合计，双方分别校验。"), func() {
-					if a.numberInput(c.Key("maxfilemb"), &a.maxFileText, a.tr("文件大小上限，MB"), 1, settings.MaxFileMB, 152).Submitted() {
+				settingRow(c, a.tr("文件复制同步上限"), a.tr("默认 20 MB，整批文件和文件夹合计；仅限制复制同步，不影响主动发送。"), func() {
+					if a.numberInput(c.Key("maxfilemb"), &a.maxFileText, a.tr("文件复制同步上限，MB"), 1, settings.MaxFileMB, 152).Submitted() {
 						a.saveFileLimit()
 					}
 					ui.Text(c, "MB").TextColor(t.TextMuted)
-					if ui.Button(c, a.tr("应用")).Label(a.tr("应用文件上限")).Clicked() {
+					if ui.Button(c, a.tr("应用")).Label(a.tr("应用文件复制同步上限")).Clicked() {
 						a.saveFileLimit()
 					}
 				})

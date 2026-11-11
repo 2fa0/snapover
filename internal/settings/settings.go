@@ -12,7 +12,7 @@ const DefaultMaxImageMB = 20
 const DefaultMenuBarIcon = 2
 
 const (
-	DefaultMaxFileMB       = 200
+	DefaultMaxFileMB       = 20
 	MaxFileMB        int64 = (1<<63 - 1) >> 20
 )
 

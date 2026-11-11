@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -183,54 +182,23 @@ func TestFileExchangeAndClipboardInterleave(t *testing.T) {
 	}
 }
 
-func TestFileLimitChecksBothPeersAndSnapshotsActiveTransfer(t *testing.T) {
+func TestExplicitFileIgnoresClipboardLimits(t *testing.T) {
 	a, b := newPair(t)
 	dir := t.TempDir()
 	b.SetReceiveDir(dir)
-	if a.FileLimit() != 200<<20 || b.FileLimit() != 200<<20 {
-		t.Fatal("unexpected default file limit")
-	}
-	path := filepath.Join(t.TempDir(), "limited.bin")
-	f, err := os.Create(path)
-	if err != nil {
+	a.SetFileLimit(1)
+	b.SetFileLimit(1)
+	path := filepath.Join(t.TempDir(), "file.bin")
+	if err := os.WriteFile(path, make([]byte, 2<<20), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Truncate(2 << 20); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	a.SetFileLimit(1 << 20)
-	if _, err := a.SendFile(ctx, b.LocalID, path, nil); err == nil || !strings.Contains(err.Error(), "1 MB") {
-		t.Fatalf("sender did not enforce its limit: %v", err)
+	if _, err := a.SendFile(ctx, b.LocalID, path, nil); err != nil {
+		t.Fatal(err)
 	}
-	a.SetFileLimit(2 << 20)
-	b.SetFileLimit(1 << 20)
-	if _, err := a.SendFile(ctx, b.LocalID, path, nil); err == nil || !strings.Contains(err.Error(), "接收上限 1 MB") {
-		t.Fatalf("receiver did not enforce its limit: %v", err)
-	}
-	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
-		t.Fatalf("rejected transfer left files: %v, %v", entries, err)
-	}
-	b.SetFileLimit(2 << 20)
-	if _, err := a.SendFile(ctx, b.LocalID, path, func(done, total int64) {
-		if done == 0 {
-			a.SetFileLimit(1 << 20)
-			b.SetFileLimit(1 << 20)
-		}
-	}); err != nil {
-		t.Fatalf("limit change interrupted an accepted transfer: %v", err)
-	}
-	if hashFile(t, filepath.Join(dir, "limited.bin")) != hashFile(t, path) {
-		t.Fatal("file content changed")
-	}
-	if _, err := a.SendFile(ctx, b.LocalID, path, nil); err == nil {
-		t.Fatal("new transfer ignored the lowered limit")
-	}
-	item := mustText(t, "clipboard after limit change")
-	if err := a.SendClipboard(ctx, b.LocalID, item); err != nil {
-		t.Fatalf("file rejection broke clipboard delivery: %v", err)
+	if hashFile(t, path) != hashFile(t, filepath.Join(dir, "file.bin")) {
+		t.Fatal("content changed")
 	}
 }
 

@@ -372,9 +372,9 @@ func translateENPattern(s string) (string, bool) {
 		mb := strings.TrimSuffix(strings.TrimPrefix(s, "文本大小上限已设为 "), " MB")
 		return "Max text size set to " + mb + " MB", true
 	}
-	if strings.HasPrefix(s, "文件大小上限已设为 ") && strings.HasSuffix(s, " MB，下一次传输生效") {
-		mb := strings.TrimSuffix(strings.TrimPrefix(s, "文件大小上限已设为 "), " MB，下一次传输生效")
-		return "Max file size set to " + mb + " MB (takes effect on next transfer)", true
+	if strings.HasPrefix(s, "文件复制同步上限已设为 ") && strings.HasSuffix(s, " MB，下一次复制同步生效") {
+		mb := strings.TrimSuffix(strings.TrimPrefix(s, "文件复制同步上限已设为 "), " MB，下一次复制同步生效")
+		return "File clipboard limit set to " + mb + " MB (takes effect on next clipboard sync)", true
 	}
 	if strings.HasPrefix(s, "文本超过 ") && strings.HasSuffix(s, " MB 上限") {
 		mb := strings.TrimSuffix(strings.TrimPrefix(s, "文本超过 "), " MB 上限")
@@ -428,6 +428,10 @@ func translateENPattern(s string) (string, bool) {
 		if len(parts) == 2 {
 			return "Failed after sending " + parts[0] + " files: " + translateEN(parts[1]) + ". Check the connection and try again", true
 		}
+	}
+	if strings.HasPrefix(s, "已发送 ") && strings.Contains(s, " 个文件。") {
+		parts := strings.SplitN(strings.TrimPrefix(s, "已发送 "), " 个文件。", 2)
+		return "Sent " + parts[0] + " files. " + translateEN(parts[1]), true
 	}
 	if strings.HasPrefix(s, "已发送 ") && strings.HasSuffix(s, " 个文件") {
 		count := strings.TrimSuffix(strings.TrimPrefix(s, "已发送 "), " 个文件")
@@ -690,32 +694,32 @@ var enStrings = map[string]string{
 	"图片大小上限":              "Max Image Size",
 	"最多 20 MB，超限仅保留本机历史。": "Up to 20 MB; larger images are kept in local history only.",
 	"图片大小上限，MB":           "Max image size, MB",
-	"文件大小上限":              "Max File Size",
-	"默认 200 MB，整批内容合计，双方分别校验。":  "Default 200 MB total per batch, verified on both sides.",
-	"文件大小上限，MB":                 "Max file size, MB",
-	"应用文件上限":                    "Apply max file size",
+	"文件复制同步上限":            "File Clipboard Limit",
+	"默认 20 MB，整批文件和文件夹合计；仅限制复制同步，不影响主动发送。": "Default 20 MB total for copied files and folders; does not limit explicit file sends.",
+	"文件复制同步上限，MB":               "File clipboard limit, MB",
+	"应用文件复制同步上限":                "Apply file clipboard limit",
 	"文本上限保存失败，请检查数据目录权限后重试":     "Failed to save text limit; check data directory permissions and try again",
-	"文件大小上限须为有效的正整数，单位 MB":      "Max file size must be a positive integer in MB",
-	"文件上限保存失败，请检查数据目录权限后重试":     "Failed to save file limit; check data directory permissions and try again",
+	"文件复制同步上限须为有效的正整数，单位 MB":    "File clipboard limit must be a positive integer in MB",
+	"文件复制同步上限保存失败，请检查数据目录权限后重试": "Failed to save file clipboard limit; check data directory permissions and try again",
 	"保存设置失败，设置未生效，请检查数据目录权限后重试": "Failed to save settings; check data directory permissions and try again",
-	"保存设置失败":                    "Failed to save settings",
-	"复制并同步快捷键":                  "Copy & Sync Shortcut",
-	"快速历史快捷键":                   "Quick History Shortcut",
-	"历史存储":                      "History Storage",
-	"防止自动锁屏":                    "Prevent Lock Screen",
-	"跨网络连接":                     "Cross-Network Connection",
-	"文件同步":                      "File Sync",
-	"接收文件夹":                     "Receive Folder",
-	"本机与诊断":                     "This Device & Diagnostics",
-	"设备信息":                      "Device Info",
-	"名称":                        "Name",
-	"设备 ID":                     "Device ID",
-	"证书指纹":                      "Certificate Fingerprint",
-	"地址":                        "Address",
-	"没有可用的局域网 IPv4":             "No LAN IPv4 address available",
-	"连接诊断":                      "Connection Diagnostics",
-	"测试连接":                      "Test Connection",
-	"关于与更新":                     "About & Updates",
+	"保存设置失败":        "Failed to save settings",
+	"复制并同步快捷键":      "Copy & Sync Shortcut",
+	"快速历史快捷键":       "Quick History Shortcut",
+	"历史存储":          "History Storage",
+	"防止自动锁屏":        "Prevent Lock Screen",
+	"跨网络连接":         "Cross-Network Connection",
+	"文件同步":          "File Sync",
+	"接收文件夹":         "Receive Folder",
+	"本机与诊断":         "This Device & Diagnostics",
+	"设备信息":          "Device Info",
+	"名称":            "Name",
+	"设备 ID":         "Device ID",
+	"证书指纹":          "Certificate Fingerprint",
+	"地址":            "Address",
+	"没有可用的局域网 IPv4": "No LAN IPv4 address available",
+	"连接诊断":          "Connection Diagnostics",
+	"测试连接":          "Test Connection",
+	"关于与更新":         "About & Updates",
 
 	// Sync Mode & Copy Shortcut
 	"同步方式": "Sync Mode",
@@ -1057,25 +1061,36 @@ var enStrings = map[string]string{
 	"文件同步失败":          "File sync failed",
 	"连接设备后即可发送":       "Connect a device to send files",
 	"对方暂不支持接收文件，请更新对方的 Snapover": "Peer does not support receiving files; update Snapover on the peer",
-	"关闭窗口后仍会继续传输":                "Transfer continues in the background if you close this window",
-	"完成":                         "Done",
-	"发送":                         "Send",
-	"请选择要发送的文件":                  "Choose files to send",
-	"选择要发送的文件":                   "Choose files to send",
-	"选择文件失败":                     "Failed to choose file",
-	"正在等待对方接收…":                  "Waiting for peer to accept…",
-	"传输完成，正在等待对方确认保存…":           "Transfer finished; waiting for peer to confirm save…",
-	"已发送":                        "Sent",
-	"文件已发送 · Snapover":           "File Sent · Snapover",
-	"收到文件 · Snapover":            "File Received · Snapover",
-	"接收失败":                       "Receive failed",
-	"更改接收文件夹…":                   "Change Receive Folder…",
-	"选择接收文件夹":                    "Choose Receive Folder",
-	"选择接收文件夹失败":                  "Failed to choose receive folder",
-	"保存接收位置失败":                   "Failed to save receive folder",
-	"已更改接收文件夹，下一次接收生效":           "Receive folder updated (takes effect on next transfer)",
-	"打开文件夹":                      "Open Folder",
-	"正在发送另一批文件，请完成后再发送":          "Another file transfer is in progress; please wait until it finishes",
+	"可多选文件，大小仅受接收磁盘限制":           "Select multiple files; size is limited only by the receiving disk",
+	"暂停":    "Pause",
+	"继续发送":  "Resume",
+	"取消传输":  "Cancel transfer",
+	"已取消传输": "Transfer cancelled",
+	"传输已停止，但无法确认对方是否已保存，请检查对方接收文件夹": "Transfer stopped, but the save could not be confirmed. Check the peer's receive folder.",
+	"已暂停，点击继续发送可从当前位置恢复":            "Paused. Resume to continue from this position.",
+	"连接已断开，正在等待原设备重连后续传…":           "Disconnected. Waiting for the original device to reconnect…",
+
+	"关闭窗口后仍会继续传输": "Transfer continues in the background if you close this window",
+	"完成":          "Done",
+	"发送":          "Send",
+	"请选择要发送的文件":   "Choose files to send",
+	"选择要发送的文件":    "Choose files to send",
+	"选择文件失败":      "Failed to choose file",
+	"正在等待对方接收…":   "Waiting for peer to accept…",
+	"传输完成，正在等待对方确认保存…": "Transfer finished; waiting for peer to confirm save…",
+	"已发送":               "Sent",
+	"文件已发送 · Snapover":  "File Sent · Snapover",
+	"文件发送失败 · Snapover": "File Send Failed · Snapover",
+	"传输已取消 · Snapover":  "Transfer Cancelled · Snapover",
+	"收到文件 · Snapover":   "File Received · Snapover",
+	"接收失败":              "Receive failed",
+	"更改接收文件夹…":          "Change Receive Folder…",
+	"选择接收文件夹":           "Choose Receive Folder",
+	"选择接收文件夹失败":         "Failed to choose receive folder",
+	"保存接收位置失败":          "Failed to save receive folder",
+	"已更改接收文件夹，下一次接收生效":  "Receive folder updated (takes effect on next transfer)",
+	"打开文件夹":             "Open Folder",
+	"正在发送另一批文件，请完成后再发送": "Another file transfer is in progress; please wait until it finishes",
 	"当前在线设备已改变，请确认设备后点击「发送」":  "Connected device changed; verify the device and click \"Send\"",
 	"没有在线设备。请先连接设备，再点击「发送」":   "No device online. Connect a device first, then click \"Send\"",
 	"正在连接最近的设备，连接成功后会自动发送…":   "Connecting to recent device; will send automatically once connected…",
