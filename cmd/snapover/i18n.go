@@ -114,7 +114,7 @@ func (a *app) languageSettings(c *ui.Context) {
 			selected = 2
 		}
 	}
-	settingRow(c, a.tr("界面语言"), a.tr("默认跟随系统语言，也可手动固定为简体中文或 English"), func() {
+	settingRow(c, a.tr("界面语言"), "", func() {
 		if ui.Segmented(c, &selected, a.tr("跟随系统"), "简体中文", "English").Label(a.tr("界面语言")).Changed() {
 			a.saveLanguageChoice(selected)
 		}
@@ -644,7 +644,6 @@ var enStrings = map[string]string{
 	"语言":         "Language",
 	"界面语言":       "Interface Language",
 	"跟随系统":       "Follow System",
-	"默认跟随系统语言，也可手动固定为简体中文或 English": "Follows the system language by default, or choose Simplified Chinese / English",
 
 	// Tray & Menu Bar Icon
 	"菜单栏图标": "Menu Bar Icon",
@@ -857,7 +856,6 @@ var enStrings = map[string]string{
 	"不用于连接":                                "Not used for connections",
 	"请填写对端地址，端口可省略":                        "Enter peer address (port optional)",
 	"允许通过 Tailscale 连接":                    "Allow Tailscale Connections",
-	"两台电脑需自行安装并连接 Tailscale，并在此开启。":        "Install and connect Tailscale on both computers, then enable it here.",
 	"保存 Tailscale 设置失败，设置未生效，请检查数据目录权限后重试": "Failed to save Tailscale setting; check data directory permissions and try again",
 	"已允许 Tailscale 连接，可在连接设备页添加地址":         "Tailscale connection enabled; add an address on the Devices page",
 	"已关闭 Tailscale 连接，已保存的地址仍保留":           "Tailscale connection disabled; saved addresses are retained",
