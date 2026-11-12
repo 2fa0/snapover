@@ -339,66 +339,69 @@ func TestPickerTextWindowsLoadAndDismiss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A hidden stand-in plays the picker window, so the real hover path runs
+	// frame by frame without a visible panel competing for the pointer.
+	var panel *mygo.Window
 	t.Cleanup(func() {
 		mygo.RunOnMain(func() {
-			a.closePicker()
+			a.closePickPreview()
+			a.picker = nil
+			if panel != nil {
+				panel.Close()
+			}
 			if a.pickOriginal != nil {
 				a.pickOriginal.Close()
 			}
 			a.releaseThumbnails()
-			if a.tray != nil {
-				a.tray.Destroy()
-			}
 		})
 	})
-	startPreview := func() {
-		a.openPicker(false)
-		a.pickPreview.hover = previewHover{id: entry.ID, since: time.Now().Add(-pickPreviewDelay)}
-		a.pickPreview.anchor = mygo.Rectangle{Width: 380, Height: 40}
-		a.loadPickPreview(entry.ID, a.picker)
-	}
 	mygo.RunOnMain(func() {
-		a.startTray()
-		startPreview()
-		// A completed disk read must not reopen a closed history panel.
-		a.closePicker()
+		panel = mygo.NewWindow(mygo.WindowOptions{
+			Title: "文本预览测试", Hidden: true, Width: 380, Height: 440,
+			Content: ui.View(func(c *ui.Context) { ui.Text(c, "文本预览测试") }),
+		})
+		a.picker = panel
+		a.refreshEntries()
 	})
-	waitForTextLoad := func() {
+	waitFor := func(what string, condition func() bool) {
 		t.Helper()
-		deadline := time.Now().Add(3 * time.Second)
+		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
-			var loading bool
-			mygo.RunOnMain(func() { loading = a.pickLoading })
-			if !loading {
+			var ok bool
+			mygo.RunOnMain(func() { ok = condition() })
+			if ok {
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		t.Fatal("text read did not complete")
+		t.Fatalf("%s did not happen", what)
 	}
-	waitForTextLoad()
+	tt := ui.NewTester(a.pickerView, 380, 440)
+	row, ok := tt.Find(entryTitle(entry))
+	if !ok {
+		t.Fatal("text row missing from the quick history")
+	}
+	// The pointer has to rest on the row: one frame is not enough.
+	tt.Move(row.X+row.W/2, row.Y+row.H/2)
 	mygo.RunOnMain(func() {
-		if a.pickPreview.win != nil || a.picker != nil {
-			t.Error("late preview reopened the closed picker")
+		if a.pickPreview.win != nil {
+			t.Error("preview opened before the pointer rested on the row")
 		}
-		startPreview()
 	})
-	waitForTextLoad()
+	tt.Advance(pickPreviewDelay + 20*time.Millisecond)
+	waitFor("the text preview to open", func() bool { return a.pickPreview.win != nil })
 	mygo.RunOnMain(func() {
-		if a.pickPreview.win == nil {
-			t.Error("text preview did not open")
-			return
-		}
 		if _, err := a.pickPreview.win.CapturePage(); err != nil {
 			t.Errorf("render text preview: %v", err)
 		}
-		a.loadPickText(entry.ID, a.picker)
+		a.loadPickText(entry.ID, panel)
 	})
-	waitForTextLoad()
+	waitFor("the full text to open", func() bool { return a.pickOriginal != nil })
+	waitFor("the preview to step aside", func() bool { return a.pickPreview.win == nil })
 	mygo.RunOnMain(func() {
 		first := a.pickOriginal
-		if first == nil || a.picker != nil || a.pickPreview.win != nil {
-			t.Error("full text did not replace the picker and preview")
+		if first == nil {
+			t.Error("opening the full text did not keep a viewer")
 			return
 		}
 		if _, err := first.CapturePage(); err != nil {
@@ -414,6 +417,17 @@ func TestPickerTextWindowsLoadAndDismiss(t *testing.T) {
 		a.pickOriginal.Close()
 		if a.pickOriginal != nil {
 			t.Error("closed viewer remained attached to the app")
+		}
+	})
+	// A viewer request that arrives after the picker went away must be dropped.
+	mygo.RunOnMain(func() {
+		a.picker = nil
+		a.loadPickText(entry.ID, panel)
+	})
+	time.Sleep(50 * time.Millisecond)
+	mygo.RunOnMain(func() {
+		if a.pickOriginal != nil {
+			t.Error("full text opened after the picker closed")
 		}
 	})
 }

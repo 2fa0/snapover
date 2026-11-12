@@ -30,7 +30,10 @@ func TestLoggerWritesFileWithoutConsole(t *testing.T) {
 		log := newLogger(dir, slog.LevelInfo)
 		log.Info("startup without console")
 		log.Warn("keepalive without console")
-		return
+		// Coverage reports through os.Stdout when the test binary exits, which
+		// this closed handle cannot take. The parent checks the log files, so the
+		// child ends here instead of failing the run under -cover.
+		os.Exit(0)
 	}
 
 	exe, err := os.Executable()
