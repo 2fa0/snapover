@@ -32,7 +32,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshot.jpg" alt="Snapover clipboard history" width="900" />
+  <img src="docs/images/screenshot.png" alt="Snapover clipboard history" width="900" />
 </p>
 
 ---
