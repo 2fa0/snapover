@@ -9,7 +9,7 @@ in the [README](../README.md#-build-from-source).
 
 - Go 1.27.3 or a compatible newer version; see `go.mod` for the exact
   requirement. No cgo.
-- MyGo is pinned to v0.8.3.
+- MyGo is pinned to v0.9.0.
 - Packaging runs on macOS only.
 
 ## One-shot packaging

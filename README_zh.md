@@ -32,7 +32,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshot.jpg" alt="Snapover 复制历史界面" width="900" />
+  <img src="docs/images/screenshot_zh.png" alt="Snapover 复制历史界面" width="900" />
 </p>
 
 ---
