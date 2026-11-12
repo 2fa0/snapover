@@ -35,7 +35,7 @@ func main() {
 	peer := flag.String("peer", "", "对端地址，例如 192.168.1.20:47821。只写 IP 时端口用 47821")
 	data := flag.String("data", "", "数据目录。默认 macOS 用 ~/Library/Application Support/Snapover，Windows 用 %AppData%\\Snapover")
 	reset := flag.Bool("reset-peers", false, "解除全部配对，下次添加需双方确认")
-	check := flag.Bool("check", false, "打印当前剪贴板后退出，不建立连接")
+	check := flag.Bool("check", false, "检查当前剪贴板类型和大小后退出，不建立连接")
 	debug := flag.Bool("debug", false, "输出调试日志")
 	sendFile := flag.String("send-file", "", "直接发送一个文件到已连接的设备")
 	flag.Usage = func() {
@@ -51,11 +51,18 @@ func main() {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	mygo.App.SetName("Snapover")
+	// Diagnostics must not open or maintain the running app's data directory.
+	if *check {
+		if err := runCheckMode(log, clip.MyGoBoard{}); err != nil {
+			log.Error("检查剪贴板失败", "err", err)
+		}
+		return
+	}
 	// The update plugin must be registered before App.Run, and its window is
 	// the only place a new version is offered.
 	useUpdater()
 	// Forward shell requests before touching the running instance's data or logs.
-	if (runtime.GOOS == "windows" || runtime.GOOS == "darwin") && !*check && !mygo.App.RequestSingleInstanceLock() {
+	if (runtime.GOOS == "windows" || runtime.GOOS == "darwin") && !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
 
@@ -193,13 +200,11 @@ func main() {
 		receiveDir = defaultReceiveDir()
 	}
 	engine.SetReceiveDir(receiveDir)
-	if !*check {
-		go func() {
-			if err := filetransfer.CleanStaleTransfers(receiveDir); err != nil {
-				log.Warn("清理过期传输临时文件失败", "err", err)
-			}
-		}()
-	}
+	go func() {
+		if err := filetransfer.CleanStaleTransfers(receiveDir); err != nil {
+			log.Warn("清理过期传输临时文件失败", "err", err)
+		}
+	}()
 	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
 	uiApp.startUpdates()
 	if historyOpenErr != nil {
@@ -228,11 +233,6 @@ func main() {
 	})
 
 	mygo.App.WhenReady(func() {
-		if *check {
-			runCheck(log, engine.Board)
-			mygo.App.Quit()
-			return
-		}
 		go engine.MaintainClipboardCache(ctx)
 		// Listen before the window so Windows can show the firewall prompt while
 		// the unpaired devices page is explaining that prompt.
@@ -279,6 +279,23 @@ func die(code int) {
 	os.Exit(code)
 }
 
+func runCheckMode(log *slog.Logger, board clip.Board) error {
+	// MyGo may persist its own UI preferences even without an app window.
+	dir, err := os.MkdirTemp("", "snapover-check-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	mygo.App.SetPath(mygo.PathUserData, dir)
+	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+	mygo.App.OnWindowAllClosed(func() {})
+	mygo.App.WhenReady(func() {
+		runCheck(log, board)
+		mygo.App.Quit()
+	})
+	return mygo.App.Run()
+}
+
 func runCheck(log *slog.Logger, board clip.Board) {
 	seq, err := board.Sequence()
 	if err != nil {
@@ -296,11 +313,7 @@ func runCheck(log *slog.Logger, board clip.Board) {
 	case item.Skip != "":
 		log.Info("当前剪贴板无法同步", "reason", item.Skip, "seq", seq)
 	case item.Kind == clip.KindText:
-		preview := item.Text
-		if len(preview) > 80 {
-			preview = preview[:80] + "…"
-		}
-		log.Info("当前是文本", "bytes", item.Size, "preview", preview, "seq", seq)
+		log.Info("当前是文本", "bytes", item.Size, "seq", seq)
 	case item.Kind == clip.KindImage:
 		log.Info("当前是图片", "bytes", item.Size, "width", item.Width, "height", item.Height, "seq", seq)
 	default:
