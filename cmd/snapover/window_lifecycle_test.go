@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,6 +19,16 @@ import (
 // SNAPOVER_TEST_UI=1 go test ./cmd/snapover -run TestMainWindow -count=1
 // runs the lifecycle checks with real windows in a desktop session.
 func TestMain(m *testing.M) {
+	if dir := os.Getenv("SNAPOVER_TEST_CHECK_HELPER"); dir != "" {
+		mygo.App.SetName("Snapover Check Tests")
+		mygo.App.SetPath(mygo.PathUserData, dir)
+		item, _ := clip.FromText("private-check-body")
+		if err := runCheckMode(slog.New(slog.NewTextHandler(os.Stdout, nil)), checkBoard{item}); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if os.Getenv("SNAPOVER_TEST_SEND_FILE_HELPER") == "1" {
 		mygo.App.SetName("Snapover UI Tests")
 		if !mygo.App.RequestSingleInstanceLock() {
