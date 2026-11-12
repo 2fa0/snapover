@@ -16,6 +16,8 @@ const (
 	// MaxFrame is the type byte plus payload. Text is capped at 20 MiB;
 	// the extra kibibyte is the MessagePack envelope.
 	MaxFrame = 20<<20 + 1024
+	// Hello and pairing messages never carry clipboard bodies.
+	MaxHandshakeFrame = 64 << 10
 	// ChunkSize is the PNG slice carried by one ImageChunk.
 	ChunkSize = 256 << 10
 
@@ -158,12 +160,17 @@ func WriteMsg(w io.Writer, typ byte, v any) error {
 }
 
 func ReadFrame(r io.Reader) (byte, []byte, error) {
+	return ReadFrameLimit(r, MaxFrame)
+}
+
+// ReadFrameLimit rejects an oversized header before allocating its body.
+func ReadFrameLimit(r io.Reader, limit uint32) (byte, []byte, error) {
 	var lenBuf [4]byte
 	if _, err := io.ReadFull(r, lenBuf[:]); err != nil {
 		return 0, nil, err
 	}
 	n := binary.BigEndian.Uint32(lenBuf[:])
-	if n == 0 || int(n) > MaxFrame {
+	if n == 0 || n > limit || n > MaxFrame {
 		return 0, nil, fmt.Errorf("非法帧长度 %d", n)
 	}
 	buf := make([]byte, n)
