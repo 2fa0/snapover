@@ -6,6 +6,17 @@ import (
 	"github.com/2fa0/snapover/internal/wire"
 )
 
+func (s *Session) deliverClipboardResult(result wire.Ack) {
+	s.clipboardResultMu.Lock()
+	defer s.clipboardResultMu.Unlock()
+	if result.ItemID == s.clipboardSendID && s.clipboardResults != nil {
+		select {
+		case s.clipboardResults <- result:
+		default:
+		}
+	}
+}
+
 // Automatic copies keep only IDs and deadlines, never another payload copy.
 func (s *Session) completeClipboard(result wire.Ack) {
 	s.mu.Lock()

@@ -41,6 +41,53 @@ func TestSendClipboardConfirmsWithoutChangingLocalBoard(t *testing.T) {
 	}
 }
 
+func TestSendClipboardWorksInManualMode(t *testing.T) {
+	a, b := newPair(t)
+	a.SetManualSync(true)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	for _, item := range []clip.Item{mustText(t, "explicit manual send"), mustPNG(t)} {
+		if err := a.SendClipboard(ctx, b.LocalID, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(b.Board.(*memBoard).Writes()) != 2 {
+		t.Fatal("manual mode lost an explicit send")
+	}
+}
+
+func TestQueuedCLIReceivesLocalPolicyRejection(t *testing.T) {
+	for _, policy := range []string{"pause", "privacy"} {
+		t.Run(policy, func(t *testing.T) {
+			left, right := net.Pipe()
+			defer right.Close()
+			s := newSession(tls.Client(left, &tls.Config{}), "peer", true, discardLog(), nil)
+			defer s.Close()
+			s.clipboardResultSupported = true
+			e := testEngine(t, &memBoard{})
+			e.adopt(s, Link{ID: "peer"})
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			result := make(chan error, 1)
+			go func() { result <- e.SendClipboard(ctx, "peer", mustText(t, "queued")) }()
+			await(t, func() bool { return len(s.out) == 1 })
+			if policy == "pause" {
+				e.SetPolicy(true, false, 0)
+			} else {
+				e.SetPrivacyPolicy(true, nil)
+			}
+			select {
+			case err := <-result:
+				if err == nil || errors.Is(err, context.DeadlineExceeded) || s.isClosed() {
+					t.Fatalf("local rejection did not preserve the connection: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("CLI kept waiting after its queued request was rejected")
+			}
+		})
+	}
+}
+
 func TestLargeTextUsesConfiguredLimitsWithoutReconnect(t *testing.T) {
 	a, b := newPair(t)
 	item := mustText(t, strings.Repeat("a", clip.MaxTextBytes))

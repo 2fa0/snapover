@@ -75,6 +75,7 @@ progress and can be given several paths at once; text and images report success
 only after the peer confirms writing to its clipboard. Text and images respect
 the local pause, text-only and image-size settings, and report the reason when
 the peer is paused, has just copied something or fails to write the clipboard.
+Explicit CLI text and image sends also work in manual sync mode.
 Sending files ignores clipboard sync switches.
 
 Text and image sending requires the peer to run a version with receive
