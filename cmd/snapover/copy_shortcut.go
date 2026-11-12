@@ -34,7 +34,7 @@ func (a *app) registerCopyShortcut() {
 	}
 	if err != nil {
 		a.copyShortcutError = err.Error()
-		a.status = a.copyShortcutError
+		a.reportStatusError(a.copyShortcutError)
 		return
 	}
 	a.registeredCopyShortcuts = []string{key}
@@ -80,5 +80,5 @@ func (a *app) saveCopyShortcut(value string) {
 }
 
 func (a *app) copyShortcutSettings(c *ui.Context) {
-	a.shortcutRecorder(c, "copy", "复制并同步快捷键", a.copyShortcutText, &a.copyShortcutError, a.saveCopyShortcut)
+	a.shortcutRecorder(c, "copy", "复制并同步", a.copyShortcutText, &a.copyShortcutError, a.saveCopyShortcut)
 }

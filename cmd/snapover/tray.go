@@ -228,7 +228,7 @@ func (a *app) trayMenu() *mygo.Menu {
 
 func (a *app) setIgnoreNextCopy(on bool) {
 	if err := a.engine.SetIgnoreNextCopy(on); err != nil {
-		a.status = "无法忽略下一次复制，请稍后重试：" + err.Error()
+		a.reportStatusError("无法忽略下一次复制，请稍后重试：" + err.Error())
 	} else if on {
 		a.status = "等待下一次复制，该次内容不记录、不同步"
 	} else {
@@ -257,7 +257,7 @@ func (a *app) reveal(page string) {
 func (a *app) setOpenAtLogin(on bool) {
 	if err := mygo.App.SetOpenAtLogin(on); err != nil {
 		a.openAtLogin = mygo.App.OpenAtLogin()
-		a.status = loginErr(err)
+		a.reportStatusError(loginErr(err))
 	} else {
 		a.openAtLogin = on
 		if on {
@@ -281,7 +281,7 @@ func (a *app) restoreLogin() {
 		return
 	}
 	if err := mygo.App.SetOpenAtLogin(true); err != nil {
-		a.status = loginErr(err)
+		a.reportStatusError(loginErr(err))
 		a.cfg.Values.OpenAtLogin = false
 		_ = a.cfg.Save()
 		return

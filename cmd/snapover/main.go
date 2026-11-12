@@ -208,7 +208,7 @@ func main() {
 	uiApp := newApp(engine, hist, cfg, id, *listen, lanAddrs(*listen), peerAddr)
 	uiApp.startUpdates()
 	if historyOpenErr != nil {
-		uiApp.status = "历史不可用，其他功能仍可使用"
+		uiApp.reportStatusError("历史不可用，其他功能仍可使用")
 	}
 	if historyCapacityErr != nil {
 		uiApp.historyCapacityError = "历史维护失败，请在设置中重新应用上限：" + historyCapacityErr.Error()

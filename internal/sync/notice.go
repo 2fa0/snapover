@@ -41,6 +41,7 @@ type Notice struct {
 	Route          lan.Route
 	DialSeq        uint64
 	Written        bool
+	Failed         bool
 }
 
 // Link is the peer of the live session, if there is one.

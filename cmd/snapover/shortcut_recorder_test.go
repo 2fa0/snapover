@@ -57,9 +57,9 @@ func TestShortcutRecorderCapturesWithoutTypingAndOnlySavesOnRequest(t *testing.T
 func TestShortcutRecorderRejectsBareKeysAndPreservesFailedDraft(t *testing.T) {
 	a := &app{}
 	tt := ui.NewTester(func(c *ui.Context) {
-		a.shortcutRecorder(c, "copy", "复制并同步快捷键", "Ctrl+Alt+C", &a.copyShortcutError, func(string) { a.copyShortcutError = "快捷键被占用" })
+		a.shortcutRecorder(c, "copy", "复制并同步", "Ctrl+Alt+C", &a.copyShortcutError, func(string) { a.copyShortcutError = "快捷键被占用" })
 	}, 600, 160)
-	clickInterface(t, tt, "设置复制并同步快捷键")
+	clickInterface(t, tt, "设置复制并同步")
 	tt.Key(0, ui.KeyK)
 	if a.shortcutRecording.key != "" || a.copyShortcutError == "" {
 		t.Fatal("accepted a bare key")
@@ -72,7 +72,7 @@ func TestShortcutRecorderRejectsBareKeysAndPreservesFailedDraft(t *testing.T) {
 	if a.shortcutRecording.key != "Super+Alt+F8" || a.copyShortcutError != "" {
 		t.Fatal("valid chord was not captured")
 	}
-	clickInterface(t, tt, "保存复制并同步快捷键")
+	clickInterface(t, tt, "保存复制并同步")
 	if a.shortcutRecording == nil || a.copyShortcutError != "快捷键被占用" {
 		t.Fatal("failed registration discarded draft")
 	}

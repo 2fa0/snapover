@@ -66,8 +66,7 @@ func (a *app) filesView(c *ui.Context) {
 		zone.Children(func() {
 			if !a.fileSelected() {
 				ui.Text(c, a.tr("把文件拖到这里")).Bold()
-				ui.Text(c, a.tr("可多选文件，大小仅受接收磁盘限制")).FontSize(12).TextColor(t.TextMuted)
-				if press(ui.Button(c, a.tr("选择文件…")).Disabled(a.fileBusy || a.fileChoosing)).Clicked() {
+				if press(ui.Button(c, a.tr("选择文件…")).Label(a.tr("选择要发送的文件，可多选")).Disabled(a.fileBusy || a.fileChoosing)).Clicked() {
 					a.chooseFile()
 				}
 			} else {
@@ -88,16 +87,14 @@ func (a *app) filesView(c *ui.Context) {
 			}
 			progressBar(c, value, toneRunning, a.tr("文件发送进度"))
 		}
-		// Show one relevant status instead of stacking connection and transfer hints.
+		// One status line: the transfer's own message, or the one limit the
+		// buttons cannot show. Being offline needs no line — the button below
+		// already offers to connect.
 		message := a.fileMessage
 		switch {
 		case a.fileCommandHint != "":
 			message = a.fileCommandHint
-		case !a.fileBusy && !a.fileSent && !online:
-			if message == "" {
-				message = "连接设备后即可发送"
-			}
-		case !a.fileBusy && !a.fileSent && !link.FileTransfer:
+		case online && !a.fileBusy && !a.fileSent && !link.FileTransfer:
 			message = "对方暂不支持接收文件，请更新对方的 Snapover"
 		}
 		if message != "" {
@@ -362,7 +359,7 @@ func (a *app) openReceiveFolder() {
 func (a *app) shellResult(err error) {
 	if err != nil {
 		a.updateFiles(func() {
-			a.status = "打开接收位置失败：" + err.Error() + "。请从文件管理器打开接收文件夹"
+			a.reportStatusError("打开接收位置失败：" + err.Error() + "。请从文件管理器打开接收文件夹")
 		})
 	}
 }
@@ -380,7 +377,7 @@ func (a *app) receiveSettings(c *ui.Context) {
 				}
 				a.updateFiles(func() {
 					if err != nil {
-						a.status = "选择接收文件夹失败：" + err.Error()
+						a.reportStatusError("选择接收文件夹失败：" + err.Error())
 						return
 					}
 					if len(paths) == 0 {
@@ -390,7 +387,7 @@ func (a *app) receiveSettings(c *ui.Context) {
 					a.cfg.Values.ReceiveDir = paths[0]
 					if err := a.cfg.Save(); err != nil {
 						a.cfg.Values.ReceiveDir = old
-						a.status = "保存接收位置失败：" + err.Error()
+						a.reportStatusError("保存接收位置失败：" + err.Error())
 						return
 					}
 					a.engine.SetReceiveDir(paths[0])

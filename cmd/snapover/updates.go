@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -48,7 +47,7 @@ func (a *app) readUpdateState() {
 // read-only image, says so instead of opening a window that would fail.
 func (a *app) checkForUpdates() {
 	if !a.updatesEnabled {
-		a.status = "这个版本不能自动更新，请从发布页下载新版"
+		a.reportStatusError("这个版本不能自动更新，请从发布页下载新版")
 		a.refreshTray()
 		return
 	}
@@ -57,12 +56,19 @@ func (a *app) checkForUpdates() {
 
 // updateSettings is the settings page's "关于与更新" group.
 func (a *app) updateSettings(c *ui.Context) {
-	settingRow(c, a.tr(fmt.Sprintf("当前版本 %s", appVersionLabel())), a.tr(a.updateStateText()), func() {
-		if ui.Button(c, a.tr("检查更新")).Clicked() {
+	settingRow(c, a.tr("版本"), "", func() {
+		ui.Text(c, appVersionLabel()).FontSize(12).FontFeatures("tnum").TextColor(c.Theme().TextMuted)
+		check := ui.Button(c, a.tr("检查更新"))
+		// When and why the last check happened is one hover away; a build that
+		// cannot update itself says so where the version is, because that is
+		// the state the button cannot show.
+		check.Tooltip(a.tr(a.updateStateText()))
+		if check.Clicked() {
 			a.checkForUpdates()
 		}
 	})
 	if !a.updatesEnabled {
+		ui.Text(c, a.tr(a.updateStateText())).FontSize(12).TextColor(c.Theme().TextMuted)
 		return
 	}
 	ui.Divider(c)

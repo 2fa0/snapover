@@ -140,7 +140,8 @@ func displayPickerShortcut(key string) string {
 func (a *app) registerPickerShortcut() {
 	keys, err := configuredPickerShortcuts(a.cfg.Values.PickerShortcut)
 	if err != nil {
-		a.shortcutError, a.status = err.Error(), err.Error()
+		a.shortcutError = err.Error()
+		a.reportStatusError(a.shortcutError)
 		return
 	}
 	for _, key := range keys {
@@ -150,7 +151,7 @@ func (a *app) registerPickerShortcut() {
 			}
 		}); err != nil {
 			a.shortcutError = "快捷键无法注册：" + displayPickerShortcut(key) + "。请在设置中更换，也可从托盘打开快速历史"
-			a.status = a.shortcutError
+			a.reportStatusError(a.shortcutError)
 		} else {
 			a.registeredPickerShortcuts = append(a.registeredPickerShortcuts, key)
 		}
@@ -196,5 +197,5 @@ func (a *app) savePickerShortcut(value string) {
 }
 
 func (a *app) shortcutSettings(c *ui.Context) {
-	a.shortcutRecorder(c, "picker", "快速历史快捷键", a.shortcutText, &a.shortcutError, a.savePickerShortcut)
+	a.shortcutRecorder(c, "picker", "快速历史", a.shortcutText, &a.shortcutError, a.savePickerShortcut)
 }

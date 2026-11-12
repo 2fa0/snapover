@@ -100,13 +100,49 @@ func TestMainNavigationRemainsImmediateDuringMotion(t *testing.T) {
 			t.Fatal("sidebar still shows the local device name")
 		}
 		// 版本号只在设置页的「关于与更新」里出现，不进入侧栏。
-		if !tt.HasText("当前版本 " + appVersionLabel()) {
+		if !tt.HasText(appVersionLabel()) {
 			t.Fatal("settings page does not show the app version")
 		}
 		tt.Key(0, ui.KeyDown)
 		if a.page != pageDevices {
 			t.Fatal("sidebar keyboard navigation stopped working")
 		}
+	}
+}
+
+func TestOperationErrorsRemainVisibleWithoutRoutineStatuses(t *testing.T) {
+	a := interfaceTestApp(t)
+	a.page = pageDevices
+	a.peer = ""
+	a.connectAddress()
+	tt := ui.NewTester(a.view, 960, 640)
+	if !tt.HasText("请填写对端地址，端口可省略") {
+		t.Fatal("address validation disappeared from the window")
+	}
+	a.peer, a.addressRoute = "100.65.1.20", 1
+	a.connectAddress()
+	tt.Frame()
+	if !tt.HasText("尚未允许 Tailscale 连接，请在两台电脑的设置中开启") {
+		t.Fatal("disabled route failure disappeared from the window")
+	}
+	a.status = "正在添加设备"
+	tt.Frame()
+	if tt.HasText("正在添加设备") || tt.HasText(a.statusError) {
+		t.Fatal("a routine status retained the previous operation error")
+	}
+	a.page = pageSettings
+	a.cfg.Path = t.TempDir() // Renaming settings onto a directory must fail.
+	a.paused = true
+	a.saveSettings()
+	tt.Frame()
+	if !tt.HasText("保存设置失败，设置未生效，请检查数据目录权限后重试") || a.paused {
+		t.Fatal("failed setting did not restore its value and explain the failure")
+	}
+	a.dialTarget = clipsync.NewDialTarget("peer", a.dialSeq, nil)
+	a.apply(clipsync.Notice{Kind: clipsync.NoticeDial, DialSeq: a.dialSeq, Failed: true, Message: "测试连接失败"}, nil)
+	tt.Frame()
+	if !tt.HasText("测试连接失败") {
+		t.Fatal("asynchronous connection error disappeared")
 	}
 }
 
@@ -325,8 +361,8 @@ func TestNetworkPermissionReminderAppearsBeforeAdding(t *testing.T) {
 	if !tt.HasText("打开本地网络设置") || !tt.HasText("本地网络权限") {
 		t.Fatal("unpaired devices page should offer local network access before adding")
 	}
-	if !tt.HasText("同步文字、图片和文件，不保留字体和颜色。") || !tt.HasText("手填地址") {
-		t.Fatal("unpaired empty devices page should state the sync contract and offer a manual address")
+	if !tt.HasText("手填地址") {
+		t.Fatal("unpaired empty devices page should offer a manual address")
 	}
 	if tt.HasText("查看连接指引") {
 		t.Fatal("first-run should not send people to the guide before the system permission")

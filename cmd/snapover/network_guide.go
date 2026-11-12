@@ -102,7 +102,7 @@ func (a *app) openNetworkAccessSettings() {
 		a.update(func() {
 			a.openingNetworkSettings = false
 			if err != nil {
-				a.status = "打开系统设置失败，请按连接帮助中的步骤手动打开"
+				a.reportStatusError("打开系统设置失败，请按连接帮助中的步骤手动打开")
 			}
 		})
 	}()
@@ -125,7 +125,7 @@ func (a *app) dismissNetworkGuide(kind networkGuideKind) {
 	*dismissed = true
 	if err := a.cfg.Save(); err != nil {
 		*dismissed = false
-		a.status = "保存指引设置失败，请检查数据目录权限后重新关闭指引重试"
+		a.reportStatusError("保存指引设置失败，请检查数据目录权限后重新关闭指引重试")
 	}
 	if a.win != nil {
 		a.win.Invalidate()

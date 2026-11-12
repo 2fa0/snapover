@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -47,20 +46,6 @@ type transferProgress struct {
 	dismissed bool
 }
 
-func (t transferProgress) percent() int {
-	if t.total <= 0 {
-		return 0
-	}
-	p := t.done * 100 / t.total
-	if p < 0 {
-		return 0
-	}
-	if p > 100 {
-		return 100
-	}
-	return int(p)
-}
-
 func (t transferProgress) bar() float64 {
 	switch t.phase {
 	case phasePacking, phaseUnpacking:
@@ -89,9 +74,8 @@ func (t transferProgress) label() string {
 	case phasePacking:
 		return "正在打包 " + name + "…"
 	case phaseSending:
-		if t.total > 0 {
-			return fmt.Sprintf("正在同步 %s · %d%%", name, t.percent())
-		}
+		// The bar is the share; the label names what is moving, and detail()
+		// gives the numbers beside it.
 		return "正在同步 " + name + "…"
 	case phaseWaiting:
 		if t.kind == transferFileSend {
@@ -99,9 +83,6 @@ func (t transferProgress) label() string {
 		}
 		return "对方处理中…"
 	case phaseReceiving:
-		if t.total > 0 {
-			return fmt.Sprintf("正在接收 %s · %d%%", name, t.percent())
-		}
 		return "正在接收 " + name + "…"
 	case phaseUnpacking:
 		return "正在整理 " + name + "…"

@@ -65,7 +65,7 @@ func (a *app) diagnosticSettings(c *ui.Context) {
 			err = a.board.Write(item)
 		}
 		if err != nil {
-			a.status = "复制诊断摘要失败，请重试"
+			a.reportStatusError("复制诊断摘要失败，请重试")
 		} else {
 			a.status = "已复制诊断摘要"
 		}

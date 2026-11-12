@@ -111,7 +111,7 @@ func (a *app) refreshConnectionCandidates() {
 func (a *app) connect() {
 	addr, err := normalizePeer(a.peer)
 	if err != nil || addr == "" {
-		a.status = "请填写对端地址，端口可省略"
+		a.reportStatusError("请填写对端地址，端口可省略")
 		return
 	}
 	explicit := a.startupPeerExplicit
@@ -122,7 +122,7 @@ func (a *app) connect() {
 func (a *app) connectAddress() {
 	addr, err := normalizePeer(a.peer)
 	if err != nil || addr == "" {
-		a.status = "请填写对端地址，端口可省略"
+		a.reportStatusError("请填写对端地址，端口可省略")
 		return
 	}
 	route := lan.RouteLAN
@@ -134,16 +134,16 @@ func (a *app) connectAddress() {
 
 func (a *app) startConnection(ep lan.Endpoint, peerID string, explicit bool) {
 	if err := ep.Validate(); err != nil {
-		a.status = err.Error()
+		a.reportStatusError(err.Error())
 		return
 	}
 	if ep.Route == lan.RouteTailscale {
 		if !a.allowTailscale {
-			a.status = lan.ErrTailscaleDisabled.Error()
+			a.reportStatusError(lan.ErrTailscaleDisabled.Error())
 			return
 		}
 		if err := lan.CheckTailscaleListener(a.listen); err != nil {
-			a.status = err.Error()
+			a.reportStatusError(err.Error())
 			return
 		}
 	}
@@ -280,12 +280,12 @@ func (a *app) tailscaleDeviceAddress(c *ui.Context, dev clipsync.Device, waiting
 
 func (a *app) connectTailscaleAddress(id string) {
 	if !a.isPaired(id) {
-		a.status = "设备已解除配对，请重新添加设备"
+		a.reportStatusError("设备已解除配对，请重新添加设备")
 		return
 	}
 	addr, err := normalizePeer(a.editTailscaleAddr)
 	if err != nil {
-		a.status = err.Error()
+		a.reportStatusError(err.Error())
 		return
 	}
 	a.startConnection(lan.Endpoint{Addr: addr, Route: lan.RouteTailscale}, id, true)
@@ -293,7 +293,7 @@ func (a *app) connectTailscaleAddress(id string) {
 
 func (a *app) removeTailscaleAddress(id string) {
 	if err := a.engine.RemoveTailscaleAddress(id); err != nil {
-		a.status = "删除 Tailscale 地址失败，请检查数据目录权限后重试"
+		a.reportStatusError("删除 Tailscale 地址失败，请检查数据目录权限后重试")
 		return
 	}
 	a.devices = a.engine.Peers.List()
@@ -325,7 +325,7 @@ func (a *app) cancelProbe() {
 func (a *app) probe() {
 	addr, err := normalizePeer(a.peer)
 	if err != nil || addr == "" {
-		a.status = "先填写对端地址"
+		a.reportStatusError("先填写对端地址")
 		return
 	}
 	ep := lan.Endpoint{Addr: addr, Route: lan.RouteLAN}
@@ -333,7 +333,7 @@ func (a *app) probe() {
 		ep.Route = lan.RouteTailscale
 	}
 	if err := ep.Validate(); err != nil {
-		a.status = err.Error()
+		a.reportStatusError(err.Error())
 		return
 	}
 	a.cancelProbe()
@@ -363,6 +363,11 @@ func (a *app) probe() {
 			if a.probeSeq == seq {
 				a.probeCancel = nil
 				a.status = msg
+				if err != nil {
+					a.reportStatusError(msg)
+				} else {
+					a.toast(msg)
+				}
 			}
 		})
 	}()

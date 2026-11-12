@@ -38,7 +38,7 @@ func (a *app) setSendTo(on, save bool) {
 				if a.engine.Log != nil {
 					a.engine.Log.Warn("更新 "+sendToEntryName+" 失败", "enabled", on, "err", err)
 				}
-				a.status = "更新 " + sendToEntryName + " 失败：" + err.Error() + "。请在设置中重新启用"
+				a.reportStatusError("更新 " + sendToEntryName + " 失败：" + err.Error() + "。请在设置中重新启用")
 				return
 			}
 			if save {
@@ -47,7 +47,7 @@ func (a *app) setSendTo(on, save bool) {
 				if err := a.cfg.Save(); err != nil {
 					a.cfg.Values.DisableSendTo = old
 					a.setSendTo(!old, false)
-					a.status = "保存 " + sendToEntryName + " 设置失败，请重试"
+					a.reportStatusError("保存 " + sendToEntryName + " 设置失败，请重试")
 					return
 				}
 				if on {

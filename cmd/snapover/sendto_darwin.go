@@ -24,7 +24,7 @@ func (a *app) initSendTo() {
 		}
 		return err
 	}); err != nil {
-		a.status = "注册 Finder 服务失败：" + err.Error()
+		a.reportStatusError("注册 Finder 服务失败：" + err.Error())
 		if a.engine.Log != nil {
 			a.engine.Log.Error("注册 Finder 服务失败", "err", err)
 		}

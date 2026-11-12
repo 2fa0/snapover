@@ -280,9 +280,6 @@ func (a *app) pickerEntryMenu(m *ui.Menu, entry history.Entry) {
 			a.revealHistoryFile(entry)
 		}
 	}
-	if files && !available {
-		m.Item(a.tr("文件正文未保存在历史中，请重新复制")).Disabled(true)
-	}
 	if entry.Kind == string(clip.KindImage) {
 		if m.Item(a.tr("放大查看")).Chosen() {
 			// The quick history steps aside for the picture, as it does for
@@ -330,9 +327,6 @@ func (a *app) historyEntryMenu(m *ui.Menu, entry history.Entry) {
 		if m.Item(a.tr(revealFileLabel())).Disabled(busy).Chosen() {
 			a.revealHistoryFile(entry)
 		}
-	}
-	if files && !available {
-		m.Item(a.tr("文件正文未保存在历史中，请重新复制")).Disabled(true)
 	}
 	if entry.Kind == string(clip.KindImage) {
 		if m.Item(a.tr("放大查看")).Chosen() {

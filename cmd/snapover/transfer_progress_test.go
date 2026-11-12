@@ -46,11 +46,16 @@ func TestLargeFileTransferShowsProgressUntilPasteable(t *testing.T) {
 		FileTotal:     40 << 20,
 	}, nil)
 	label, ok := a.transferStatusText()
-	if !ok || !strings.Contains(label, "正在同步 movie.mp4") || !strings.Contains(label, "25%") {
-		t.Fatalf("large send missing percent: %q", label)
+	if !ok || label != "正在同步 movie.mp4…" {
+		t.Fatalf("large send label: %q", label)
+	}
+	// The bar shows the share, so the label does not repeat the percentage;
+	// the numbers beside the bar carry what a share cannot.
+	if detail := a.transfer.detail(); detail != "10.0 MB / 40.0 MB" {
+		t.Fatalf("progress detail: %q", detail)
 	}
 	tt := ui.NewTester(a.view, 960, 640)
-	if !tt.HasText("正在同步 movie.mp4 · 25%") || !tt.HasText("文件同步进度") {
+	if !tt.HasText("正在同步 movie.mp4…") || !tt.HasText("文件同步进度") {
 		t.Fatal("large transfer missing from sidebar")
 	}
 	a.apply(clipsync.Notice{Kind: clipsync.NoticeFile, FileClipboard: true, FileState: phaseWaiting, FileName: "movie.mp4", FileDone: 40 << 20, FileTotal: 40 << 20}, nil)
