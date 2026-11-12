@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
@@ -60,6 +61,104 @@ func TestPinnedBackupRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPinnedBackupSplitsAndImportsEveryRecord(t *testing.T) {
+	for _, by := range []string{"bytes", "entries"} {
+		t.Run(by, func(t *testing.T) {
+			source, err := Open(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 5; i++ {
+				item, _ := clip.FromText(fmt.Sprintf("record-%d", i))
+				if _, err := source.add(DirLocal, "", item, true, "note"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			byteLimit, entryLimit := backupTotalLimit, 2
+			if by == "bytes" {
+				byteLimit, entryLimit = 130, backupEntryLimit
+			}
+			dir := t.TempDir()
+			path := filepath.Join(dir, "pins.zip")
+			oldPart := filepath.Join(dir, "pins-part-002-existing.zip")
+			if err := os.WriteFile(oldPart, []byte("keep another backup"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			n, parts, err := source.exportPinnedParts(context.Background(), path, byteLimit, entryLimit)
+			if err != nil || n != 5 || parts != 3 {
+				t.Fatalf("exported %d records in %d parts: %v", n, parts, err)
+			}
+			if data, err := os.ReadFile(oldPart); err != nil || string(data) != "keep another backup" {
+				t.Fatal("another backup was overwritten", err)
+			}
+			paths, err := filepath.Glob(filepath.Join(dir, "*.zip"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			dest, err := Open(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, p := range paths {
+				if p == oldPart {
+					continue
+				}
+				z, err := zip.OpenReader(p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var size uint64
+				for _, f := range z.File[1:] {
+					size += f.UncompressedSize64
+				}
+				if size > uint64(byteLimit) || len(z.File)-1 > entryLimit {
+					t.Fatal("part exceeds the importer limits")
+				}
+				z.Close()
+				if _, err := dest.ImportPinned(context.Background(), p); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, e := range dest.List() {
+				if !e.Pinned || e.Note != "note" {
+					t.Fatal("part lost pin metadata")
+				}
+				got = append(got, e.Text)
+			}
+			sort.Strings(got)
+			if strings.Join(got, ",") != "record-0,record-1,record-2,record-3,record-4" {
+				t.Fatal("split lost or duplicated records", got)
+			}
+		})
+	}
+}
+
+func TestPinnedBackupPartsCleanUpWhenPublicationFails(t *testing.T) {
+	source, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"one", "two"} {
+		item, _ := clip.FromText(text)
+		if _, err := source.add(DirLocal, "", item, true, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pins.zip")
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := source.exportPinnedParts(context.Background(), path, backupTotalLimit, 1); err == nil {
+		t.Fatal("publication to a directory succeeded")
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil || len(files) != 1 || files[0].Name() != "pins.zip" {
+		t.Fatal("failed export retained parts", files, err)
+	}
+}
+
 func TestMalformedBackupDoesNotImportPrefix(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.zip")
 	f, _ := os.Create(path)
@@ -76,7 +175,7 @@ func TestMalformedBackupDoesNotImportPrefix(t *testing.T) {
 	}
 }
 
-func TestPinnedBackupMoreThanThousandAndRange(t *testing.T) {
+func TestPinnedBackupMoreThanThousand(t *testing.T) {
 	source, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -95,19 +194,13 @@ func TestPinnedBackupMoreThanThousandAndRange(t *testing.T) {
 	if n, err := dest.ImportPinned(context.Background(), path); err != nil || n != MaxEntries+1 {
 		t.Fatal(n, err)
 	}
-	if _, err := source.ExportPinnedRange(context.Background(), path, 0, 2); err == nil {
-		t.Fatal("invalid range accepted")
-	}
-	if n, err := source.ExportPinnedRange(context.Background(), path, 2, 3); err != nil || n != 2 {
-		t.Fatal(n, err)
-	}
 	z, err := zip.OpenReader(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer z.Close()
 	record, _, err := readBackupRecord(z.File[1], false)
-	if err != nil || record.Text != source.pinnedEntries()[1].Text {
+	if err != nil || record.Text != source.pinnedEntries()[0].Text {
 		t.Fatal(record, err)
 	}
 }

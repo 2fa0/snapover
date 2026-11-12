@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/2fa0/snapover/internal/clip"
 )
@@ -29,6 +30,79 @@ func (s *Store) ExportPinned(ctx context.Context, path string) (int, error) {
 	return s.exportPinned(ctx, path, s.pinnedEntries())
 }
 
+// ExportPinnedParts keeps each part readable by existing importers. Additional
+// filenames are reserved exclusively so another backup is never overwritten.
+func (s *Store) ExportPinnedParts(ctx context.Context, path string) (int, int, error) {
+	return s.exportPinnedParts(ctx, path, backupTotalLimit, backupEntryLimit)
+}
+
+func (s *Store) exportPinnedParts(ctx context.Context, path string, byteLimit, entryLimit int) (int, int, error) {
+	entries := s.pinnedEntries()
+	var batches [][]Entry
+	first, total := 0, 0
+	for i, e := range entries {
+		if err := ctx.Err(); err != nil {
+			return 0, 0, err
+		}
+		record, err := s.backupRecord(e)
+		if err != nil {
+			return 0, 0, err
+		}
+		raw, err := json.Marshal(record)
+		if err != nil {
+			return 0, 0, err
+		}
+		if len(raw) > backupRecordLimit || len(raw) > byteLimit {
+			return 0, 0, errors.New("历史内容超过备份记录上限")
+		}
+		if i > first && (i-first >= entryLimit || len(raw) > byteLimit-total) {
+			batches = append(batches, entries[first:i])
+			first, total = i, 0
+		}
+		total += len(raw)
+	}
+	batches = append(batches, entries[first:])
+	if len(batches) == 1 {
+		n, err := s.exportPinned(ctx, path, batches[0])
+		return n, 1, err
+	}
+	var paths []string
+	committed := false
+	defer func() {
+		for i, p := range paths {
+			if !committed || i == 0 {
+				_ = os.Remove(p)
+			}
+		}
+	}()
+	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	for i, batch := range batches {
+		pattern := ".snapover-backup-*"
+		if i > 0 {
+			pattern = fmt.Sprintf("%s-part-%03d-*.zip", stem, i+1)
+		}
+		f, err := os.CreateTemp(filepath.Dir(path), pattern)
+		if err != nil {
+			return 0, 0, err
+		}
+		paths = append(paths, f.Name())
+		if err := f.Close(); err != nil {
+			return 0, 0, err
+		}
+		if _, err := s.exportPinned(ctx, f.Name(), batch); err != nil {
+			return 0, 0, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, 0, err
+	}
+	if err := os.Rename(paths[0], path); err != nil {
+		return 0, 0, err
+	}
+	committed = true
+	return len(entries), len(batches), nil
+}
+
 func (s *Store) pinnedEntries() []Entry {
 	var out []Entry
 	for _, e := range s.List() {
@@ -37,15 +111,6 @@ func (s *Store) pinnedEntries() []Entry {
 		}
 	}
 	return out
-}
-
-// ExportPinnedRange uses one-based inclusive positions in the newest-first list.
-func (s *Store) ExportPinnedRange(ctx context.Context, path string, first, last int) (int, error) {
-	entries := s.pinnedEntries()
-	if first < 1 || last < first || last > len(entries) {
-		return 0, errors.New("导出范围超出当前置顶记录")
-	}
-	return s.exportPinned(ctx, path, entries[first-1:last])
 }
 
 func (s *Store) exportPinned(ctx context.Context, path string, entries []Entry) (int, error) {
