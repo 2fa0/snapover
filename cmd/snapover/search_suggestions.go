@@ -69,9 +69,7 @@ func (a *app) sourceSuggestionChips(c *ui.Context, query string, choose func(str
 	if len(names) == 0 {
 		return
 	}
-	t := c.Theme()
 	ui.Row(c).Gap(6).AlignItems(ui.Center).Wrap().Children(func() {
-		ui.Text(c, a.tr("来源：")).FontSize(11).TextColor(t.TextMuted).Shrink(0)
 		for _, name := range names {
 			label := a.tr("按来源筛选：") + name
 			if ui.Button(c, name).Label(label).Tooltip(label).Height(24).MaxWidth(200).

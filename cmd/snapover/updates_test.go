@@ -47,7 +47,7 @@ func TestSettingsPageShowsUpdateGroup(t *testing.T) {
 	if !tt.HasText("关于与更新") {
 		t.Fatal("settings page has no update group")
 	}
-	if !tt.HasText("当前版本 " + appVersionLabel()) {
+	if !tt.HasText(appVersionLabel()) {
 		t.Fatal("update group does not show the version")
 	}
 	if !tt.HasText("这个版本不能自动更新") {

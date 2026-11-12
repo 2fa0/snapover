@@ -163,8 +163,8 @@ func (a *app) shortcutRecorder(c *ui.Context, kind, title, current string, failu
 				label = displayPickerShortcut(r.key)
 			}
 		}
-		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			button := ui.Button(c.Key("record"), "").Label(a.tr("设置" + title)).Grow(1).MinWidth(0)
+		settingRow(c, a.tr(title), "", func() {
+			button := ui.Button(c.Key("record"), "").Label(a.tr("设置" + title))
 			button.Children(func() {
 				if active && r.key == "" {
 					ui.Text(c, label).TextColor(c.Theme().TextMuted).SingleLine()

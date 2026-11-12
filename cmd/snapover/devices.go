@@ -39,9 +39,6 @@ func (a *app) devicesPage(c *ui.Context) {
 	if !waiting {
 		a.networkSetupHint(c)
 	}
-	if len(a.devices) == 0 && !waiting {
-		ui.Text(c, a.tr("同步文字、图片和文件，不保留字体和颜色。")).FontSize(12).TextColor(t.TextMuted)
-	}
 	if waiting {
 		ui.Column(c.Key("pair-confirmation")).Padding(24).Gap(14).Radius(12).
 			Background(t.Surface).Border(1, t.Accent).Transition(ui.ElementTransition{
@@ -74,9 +71,9 @@ func (a *app) devicesPage(c *ui.Context) {
 				ui.Column(c.Key("paired-" + dev.ID)).Gap(12).Children(func() {
 					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, deviceIcon).FontSize(26).TextColor(t.TextMuted)
-						ui.Column(c).Grow(1).Gap(4).Children(func() {
-							ui.Text(c, a.displayName(dev.Peer.Name, dev.ID)).Bold().SingleLine()
-							ui.Text(c, a.tr(platformLabel(dev.Peer.Platform))).FontSize(12).TextColor(t.TextMuted)
+						ui.Row(c).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.Text(c, a.displayName(dev.Peer.Name, dev.ID)).Bold().SingleLine().Shrink(1)
+							ui.Text(c, a.tr(platformLabel(dev.Peer.Platform))).FontSize(12).TextColor(t.TextMuted).Shrink(0)
 						})
 						state, color, pending := "离线", t.TextMuted, false
 						if online {
@@ -108,7 +105,6 @@ func (a *app) devicesPage(c *ui.Context) {
 							ui.Text(c, a.tr("证书指纹")).FontSize(12).TextColor(t.TextMuted)
 							ui.Text(c, identity.FormatFingerprint(dev.Peer.Fingerprint)).Selectable().FontSize(12)
 							if a.confirmRemove == dev.ID {
-								ui.Text(c, a.tr("再次添加需要双方确认。")).FontSize(12).TextColor(t.TextMuted)
 								ui.Row(c).Gap(8).Children(func() {
 									if ui.Button(c, a.tr("确认解除配对")).TextColor(t.Danger).Clicked() {
 										a.forget(dev.ID)
@@ -137,9 +133,9 @@ func (a *app) devicesPage(c *ui.Context) {
 				count++
 				ui.Row(c.Key("found-"+dev.ID)).Gap(12).Padding(4, 0).AlignItems(ui.Center).Children(func() {
 					ui.Icon(c, deviceIcon).FontSize(24).TextColor(t.TextMuted)
-					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, a.displayName(dev.Name, dev.ID)).Bold().SingleLine()
-						ui.Text(c, a.tr(platformLabel(dev.Platform))).FontSize(12).TextColor(t.TextMuted)
+					ui.Row(c).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, a.displayName(dev.Name, dev.ID)).Bold().SingleLine().Shrink(1)
+						ui.Text(c, a.tr(platformLabel(dev.Platform))).FontSize(12).TextColor(t.TextMuted).Shrink(0)
 					})
 					connecting := a.dialCancel != nil && a.targetPeerID == dev.ID
 					label := a.tr("配对")
@@ -171,7 +167,6 @@ func (a *app) devicesPage(c *ui.Context) {
 			placeholder := a.tr("192.168.1.20，端口可省略")
 			if a.addressRoute == 1 {
 				placeholder = a.tr("100.x.y.z，端口可省略")
-				ui.Text(c, a.tr("两端需开启 Tailscale 连接，首次配对仍需双方核对校验码。")).FontSize(12).TextColor(t.TextMuted)
 			}
 			ui.Row(c).Gap(8).Children(func() {
 				submit := ui.TextInput(c.Key("peer"), &a.peer).Label(a.tr("对端地址")).Placeholder(placeholder).Grow(1).Submitted()
@@ -189,7 +184,6 @@ func (a *app) devicesPage(c *ui.Context) {
 				label := a.tr("解除全部配对")
 				if a.confirm {
 					label = a.tr("确认解除全部配对")
-					ui.Text(c, a.tr("再次添加任何设备都需要双方确认。")).FontSize(12).TextColor(t.TextMuted)
 				}
 				ui.Row(c).Gap(8).Children(func() {
 					if ui.Button(c, label).TextColor(t.Danger).Clicked() {
@@ -304,12 +298,12 @@ func (a *app) applyDiscovery(snapshot discovery.Snapshot) {
 func (a *app) clearPairs() {
 	a.confirm = false
 	if err := a.engine.Revoke(""); err != nil {
-		a.status = "解除全部配对失败，请重试"
+		a.reportStatusError("解除全部配对失败，请重试")
 		return
 	}
 	a.stopDial()
 	a.devices = nil
 	a.peer = ""
 	a.targetPeerID = ""
-	a.status = "已解除全部配对并断开连接。再次添加需要双方确认"
+	a.status = "已解除全部配对并断开连接"
 }

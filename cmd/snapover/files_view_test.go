@@ -104,8 +104,8 @@ func TestExplicitFilesHaveNoSizeLimitControl(t *testing.T) {
 		t.Fatal("obsolete file size control")
 	}
 	view := ui.NewTester(a.filesView, 460, 340)
-	if !view.HasText("可多选文件，大小仅受接收磁盘限制") {
-		t.Fatal("missing disk limit hint")
+	if !view.HasText("选择文件…") {
+		t.Fatal("drop zone lost its file picker")
 	}
 }
 

@@ -51,8 +51,6 @@ type app struct {
 	excludedAppsText          string
 	privacyError              string
 	backupBusy                bool
-	backupFirst               string
-	backupLast                string
 	showBackup                bool
 	fileAvailability          map[string]fileAvailabilityResult
 	fileAvailabilityPending   chan fileAvailabilityResult
@@ -104,6 +102,7 @@ type app struct {
 	startupPeerExplicit bool
 	query               string
 	status              string
+	statusError         string
 	syncStatus          string
 	syncFailure         string
 	rdpWatchSeq         uint64
@@ -551,6 +550,9 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 		if !a.engine.Connected() {
 			a.dialAddr = n.Addr
 			a.status = n.Message
+			if n.Failed {
+				a.reportStatusError(n.Message)
+			}
 		}
 	case clipsync.NoticePairing:
 		if n.Message != "" {
@@ -570,6 +572,7 @@ func (a *app) apply(n clipsync.Notice, added *history.Entry) {
 		}
 		if n.Kind == clipsync.NoticeError {
 			a.applySyncStage(n)
+			a.reportStatusError(n.Message)
 		}
 		a.status = n.Message
 		a.devices = a.engine.Peers.List()
@@ -691,34 +694,33 @@ func (a *app) view(c *ui.Context) {
 				a.confirm = false
 			}
 			ui.Column(c).Padding(12).Gap(8).Shrink(0).Children(func() {
-				label := "未连接设备"
 				link, up := a.engine.Link()
-				if up {
-					label = "已连接 · " + link.Route.Label()
-				}
-				if a.paused {
-					label = "同步已暂停"
-				}
-				if a.privacyMode {
+				label := "未连接设备"
+				switch {
+				case a.privacyMode:
 					label = "隐私模式"
+				case a.paused:
+					label = "同步已暂停"
+				case up:
+					label = "已连接 · " + link.Route.Label()
+				case a.dialCancel != nil:
+					label = "正在连接"
 				}
 				ui.Text(c, a.tr(label)).FontSize(12).Bold().SingleLine().ContentTransition(ui.ContentTransition{})
 				if up {
 					name := a.displayName(link.Name, link.ID)
 					ui.Text(c, name).FontSize(12).MaxLines(3).Tooltip(name).ContentTransition(ui.ContentTransition{})
 				}
-				status := a.displayStatus()
-				if up && status == "已通过"+link.Route.Label()+"连接 "+link.Name {
-					status = ""
+				failure := ""
+				if a.status == a.statusError {
+					failure = a.statusError
 				}
-				// Pairing copy is already on the devices page; don't repeat it under the sidebar.
-				if status != "" && status != "未连接" && status != "已连接" && status != "已连接 "+link.Name && !(a.page == pageDevices && repeatsDevicesPage(status)) {
-					shownStatus := a.tr(status)
-					color := t.TextMuted
-					if a.syncFailure != "" && status == a.syncFailure {
-						color = t.Danger
-					}
-					ui.Text(c, shownStatus).FontSize(11).TextColor(color).MaxLines(3).Tooltip(shownStatus).ContentTransition(ui.ContentTransition{})
+				if failure == "" && !a.paused && !a.privacyMode {
+					failure = a.syncFailure
+				}
+				if failure != "" {
+					failure = a.tr(failure)
+					ui.Text(c, failure).FontSize(11).TextColor(t.Danger).MaxLines(3).Tooltip(failure).ContentTransition(ui.ContentTransition{})
 				}
 				a.sidebarTransfer(c, t)
 			})
@@ -770,7 +772,7 @@ func (a *app) settingsPage(c *ui.Context) {
 		ui.Divider(c)
 		ui.Collapsible(c, a.tr("大小限制"), &a.showSyncLimits, func() {
 			ui.Column(c).Gap(14).Padding(12, 0).Children(func() {
-				settingRow(c, a.tr("文本大小上限"), a.tr("1–20 MB，超限不保存、不收发。"), func() {
+				settingRow(c, a.tr("文本大小上限"), "", func() {
 					if a.numberInput(c.Key("maxtextmb"), &a.maxTextText, a.tr("文本大小上限，MB"), 1, settings.MaxTextMB, 88).Submitted() {
 						a.saveTextLimit()
 					}
@@ -783,7 +785,7 @@ func (a *app) settingsPage(c *ui.Context) {
 					errorMessage(c, a.tr(a.maxTextError))
 				}
 				ui.Divider(c)
-				settingRow(c, a.tr("图片大小上限"), a.tr("最多 20 MB，超限仅保留本机历史。"), func() {
+				settingRow(c, a.tr("图片大小上限"), "", func() {
 					if a.numberInput(c.Key("maxmb"), &a.maxImageText, a.tr("图片大小上限，MB"), 1, settings.DefaultMaxImageMB, 88).Submitted() {
 						a.saveSettings()
 					}
@@ -793,7 +795,7 @@ func (a *app) settingsPage(c *ui.Context) {
 					}
 				})
 				ui.Divider(c)
-				settingRow(c, a.tr("文件复制同步上限"), a.tr("默认 20 MB，整批文件和文件夹合计；仅限制复制同步，不影响主动发送。"), func() {
+				settingRow(c, a.tr("文件复制同步上限"), "", func() {
 					if a.numberInput(c.Key("maxfilemb"), &a.maxFileText, a.tr("文件复制同步上限，MB"), 1, settings.MaxFileMB, 152).Submitted() {
 						a.saveFileLimit()
 					}
@@ -812,9 +814,10 @@ func (a *app) settingsPage(c *ui.Context) {
 			ui.Column(c).Padding(12, 0).Gap(10).Children(func() { a.receiveSettings(c) })
 		})
 	})
-	ui.Row(c).Gap(16).AlignItems(ui.Stretch).Children(func() {
-		settingsGroup(c, a.tr("复制并同步快捷键"), func() { a.copyShortcutSettings(c) }).Grow(1).Basis(0).MinWidth(0)
-		settingsGroup(c, a.tr("快速历史快捷键"), func() { a.shortcutSettings(c) }).Grow(1).Basis(0).MinWidth(0)
+	settingsGroup(c, a.tr("快捷键"), func() {
+		a.copyShortcutSettings(c)
+		ui.Divider(c)
+		a.shortcutSettings(c)
 	})
 	settingsGroup(c, a.tr("历史存储"), func() { a.historyStorageSettings(c) })
 	settingsGroup(c, a.tr("通用与外观"), func() {
@@ -929,7 +932,7 @@ func (a *app) historyPage(c *ui.Context) {
 	ui.Column(c).Grow(1).Radius(10).Border(1, t.Border).Clip().Children(func() {
 		switch {
 		case len(a.entries) == 0:
-			emptyState(c, historyIcon, a.tr("还没有复制历史"), a.tr("复制文字、图片、文件或文件夹后会出现在这里"), nil)
+			emptyState(c, historyIcon, a.tr("还没有复制历史"), "", nil)
 		case len(shown) == 0:
 			message := ""
 			if a.query != "" {
@@ -1036,7 +1039,7 @@ func (a *app) forget(id string) {
 		}
 	}
 	if err := a.engine.Revoke(id); err != nil {
-		a.status = "解除配对失败，请重试"
+		a.reportStatusError("解除配对失败，请重试")
 		return
 	}
 	if a.targetPeerID == id || (addr != "" && addr == a.dialAddr) {
@@ -1048,7 +1051,7 @@ func (a *app) forget(id string) {
 	}
 	a.confirmRemove = ""
 	a.devices = a.engine.Peers.List()
-	a.status = "已解除配对并断开连接。再次添加需要双方确认"
+	a.status = "已解除配对并断开连接"
 }
 
 func (a *app) stopDial() {
@@ -1178,7 +1181,7 @@ func (a *app) saveSettings() {
 		a.paused = previousPaused
 		a.textOnly = previousTextOnly
 		a.maxImageText = strconv.Itoa(previousMax)
-		a.status = "保存设置失败，设置未生效，请检查数据目录权限后重试"
+		a.reportStatusError("保存设置失败，设置未生效，请检查数据目录权限后重试")
 		return
 	}
 	a.maxImageText = strconv.Itoa(n)
@@ -1354,11 +1357,6 @@ func (a *app) displayStatus() string {
 	return a.status
 }
 
-func repeatsDevicesPage(status string) bool {
-	switch status {
-	case "核对两台电脑的校验码后确认配对", "已确认，等待另一台电脑确认":
-		return true
-	default:
-		return false
-	}
+func (a *app) reportStatusError(message string) {
+	a.status, a.statusError = message, message
 }

@@ -116,8 +116,8 @@ func (a *app) otherDiskUsageSettings(c *ui.Context) {
 	ui.Collapsible(c, a.tr("占用明细"), &a.showDiskUsage, func() {
 		ui.Column(c).Padding(12, 0).Gap(12).Children(func() {
 			if a.historyUsageValid && a.historyUsageError == "" {
-				a.storageUsageLine(c, "置顶内容", a.historyUsage.PinnedBytes, nil).Tooltip(a.tr("已包含在历史内容占用中"))
-				a.storageUsageLine(c, "历史目录", a.historyUsage.TotalBytes, nil).Tooltip(a.tr("包含历史内容、索引、日志和临时查看副本"))
+				a.storageUsageLine(c, "其中置顶内容", a.historyUsage.PinnedBytes, nil)
+				a.storageUsageLine(c, "历史目录", a.historyUsage.TotalBytes, nil)
 				ui.Divider(c)
 			}
 			if a.diskUsageValid && a.diskUsage.receiveDir != a.engine.ReceiveDir() {
@@ -161,7 +161,7 @@ func (a *app) otherDiskUsageSettings(c *ui.Context) {
 					go func() {
 						if err := mygo.Shell.OpenPath(dir); err != nil {
 							a.update(func() {
-								a.status = "打开历史备份位置失败，请从文件管理器打开数据目录：" + err.Error()
+								a.reportStatusError("打开历史备份位置失败，请从文件管理器打开数据目录：" + err.Error())
 								a.notify(toastFailure, "打开历史备份位置失败，请从文件管理器打开数据目录")
 							})
 						}

@@ -41,8 +41,7 @@ func (a *app) historyStorageSettings(c *ui.Context) {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Row(c).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
 				if a.historyUsageValid && a.historyUsageError == "" {
-					ui.Text(c, a.tr("已用")).FontSize(12).TextColor(t.TextMuted)
-					ui.Textf(c, "%s / %s", storageSize(a.historyUsage.ContentBytes), storageSize(int64(a.cfg.Values.HistoryMaxMB)<<20)).Bold().ContentTransition(ui.ContentTransition{Numeric: true})
+					ui.Textf(c, "%s / %s", storageSize(a.historyUsage.ContentBytes), storageSize(int64(a.cfg.Values.HistoryMaxMB)<<20)).FontSize(12).Bold().ContentTransition(ui.ContentTransition{Numeric: true}).Tooltip(a.tr("历史内容占用与容量上限"))
 				} else if a.historyUsagePending != nil {
 					ui.Text(c, a.tr("正在统计占用…")).FontSize(12).TextColor(t.TextMuted)
 				}

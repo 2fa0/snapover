@@ -385,7 +385,7 @@ func (a *app) savePickerSize() {
 	a.cfg.Values.PickerWidth, a.cfg.Values.PickerHeight = a.pickSizeW, a.pickSizeH
 	if err := a.cfg.Save(); err != nil {
 		a.cfg.Values.PickerWidth, a.cfg.Values.PickerHeight = previousWidth, previousHeight
-		a.status = "快速历史窗口大小没能保存，请检查数据目录权限后重试"
+		a.reportStatusError("快速历史窗口大小没能保存，请检查数据目录权限后重试")
 	}
 }
 
@@ -546,7 +546,7 @@ func (a *app) pickerView(c *ui.Context) {
 		a.noteEditorRow(c, true)
 		switch {
 		case len(a.entries) == 0:
-			emptyState(c, historyIcon, a.tr("还没有记录"), a.tr("复制文字、图片、文件或文件夹后会出现在这里"), nil)
+			emptyState(c, historyIcon, a.tr("还没有记录"), "", nil)
 		case len(shown) == 0:
 			emptyState(c, searchIcon, a.tr(a.pickerSearch.emptyMessage()), "", func() {
 				if a.pickQuery != "" && ui.Button(c, a.tr("清空搜索")).Label(a.tr("清空搜索并查看全部记录")).Clicked() {

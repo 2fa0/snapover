@@ -42,7 +42,7 @@ image editor still syncs as an image.
   native file clipboard only after the whole batch is received and verified.
   Small batches finish silently; from about 20 MB, or when a transfer takes
   longer than roughly 1.5 seconds, the tray, the sidebar and a progress window
-  that does not steal focus show packing, transfer percentage, the peer
+  that does not steal focus show packing, transfer progress, the peer
   processing and finally readiness to paste.
 - Folders keep their structure, empty directories and file contents; nothing
   needs to be zipped or unpacked. Cutting is treated as copying and never
@@ -201,13 +201,15 @@ image editor still syncs as an image.
   the others. Pinned entries from older versions get available shortcuts after
   an upgrade; beyond nine, pinning and selection still work without numeric
   shortcuts.
-- History → Pinned backup exports and imports a single ZIP holding pinned text,
-  images and notes. It contains no device identity, trust records, source
-  information or file contents. The archive is not encrypted. Each archive holds
-  at most 100000 entries and at most 1 GiB of JSON after extraction; the default
-  exports all pinned text and images, and a sequence range can export in
-  batches from newest to oldest. Import appends entries and reassigns available
-  numeric shortcuts, never overwriting existing pins, so importing twice creates
+- History → Pinned backup exports pinned text, images and notes newest first.
+  It contains no device identity, trust records, source information or file
+  contents. Archives are not encrypted. Each ZIP holds at most 100000 entries
+  and at most 1 GiB of JSON after extraction. Larger backups split automatically:
+  the first ZIP uses the chosen filename, with additional `-part-002-*.zip` files
+  beside it; the unique suffix prevents overwriting other backups. Select all
+  parts together when importing. Each part also works with older importers.
+  Import appends entries and reassigns available numeric shortcuts, never
+  overwriting existing pins, so importing twice creates
   duplicates. A damaged archive is rejected before writing; a disk or capacity
   error may leave a partial result and the UI reports how many entries were
   processed. Import respects the history budget and may clean unpinned entries.
@@ -636,7 +638,7 @@ Fixes and measurements are recorded in the performance notes (Chinese:
 # Start with a peer address (port 47821 is assumed when omitted)
 go run ./cmd/snapover -peer 192.168.1.20:47821
 
-# Inspect the current clipboard without connecting
+# Inspect clipboard type and size without connecting or printing its contents
 go run ./cmd/snapover -check
 
 # Restrict the listening address; this never widens the range, and Tailscale
@@ -646,6 +648,10 @@ go run ./cmd/snapover -listen :47821
 # Clear every pairing record
 go run ./cmd/snapover -reset-peers
 ```
+
+`-check` writes only clipboard metadata to the console and does not open or
+maintain the app's history, identity, settings or log files. It can run while the
+background app is active. Other startup flags do not take effect in this mode.
 
 The startup log prints the local LAN address and the certificate fingerprint.
 

@@ -163,13 +163,15 @@ func (a *app) saveSyncMode() {
 
 func (a *app) syncModeSettings(c *ui.Context) {
 	settingRow(c, a.tr("同步方式"), "", func() {
-		if ui.Segmented(c, &a.syncMode, a.tr("自动"), a.tr("手动")).Label(a.tr("同步方式")).Changed() {
+		mode := ui.Segmented(c, &a.syncMode, a.tr("自动"), a.tr("手动")).Label(a.tr("同步方式"))
+		// What 手动 means is one hover away instead of a line that stays.
+		if a.syncMode == 1 {
+			mode.Tooltip(a.tr("普通复制仅保留在本机，按“复制并同步”快捷键发送。仍可接收对端内容。"))
+		}
+		if mode.Changed() {
 			a.saveSyncMode()
 		}
 	})
-	if a.syncMode == 1 {
-		ui.Text(c, a.tr("普通复制仅保留在本机，按“复制并同步”快捷键发送。仍可接收对端内容。")).FontSize(12).TextColor(c.Theme().TextMuted)
-	}
 	if a.syncModeError != "" {
 		errorMessage(c, a.tr(a.syncModeError))
 	}

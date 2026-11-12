@@ -173,14 +173,16 @@ func historyKindIcon(entry history.Entry) *ui.SVG {
 	}
 }
 
+// Most rows are local copies, so the row says nothing about them: only a
+// synced row is marked, and the source application is named when there is one.
 func (a *app) historySource(c *ui.Context, e history.Entry, color ui.Color, fontSize float32) {
+	remote := e.Dir == history.DirRemote
+	if !remote && e.SourceApp == "" {
+		return
+	}
 	ui.Row(c).Grow(1).MinWidth(0).Gap(5).AlignItems(ui.Center).Children(func() {
-		label := a.tr("本机")
-		if e.Dir == history.DirRemote {
-			label = a.tr("同步")
-		}
-		ui.Text(c, label).FontSize(fontSize).TextColor(color).SingleLine().Shrink(0)
-		if e.Dir == history.DirRemote {
+		if remote {
+			ui.Text(c, a.tr("同步")).FontSize(fontSize).TextColor(color).SingleLine().Shrink(0)
 			peer := a.displayName(e.Peer, a.tr("对端"))
 			ui.Text(c, peer).FontSize(fontSize).TextColor(color).SingleLine().MinWidth(fontSize * 2).Tooltip(peer)
 			if e.SourceApp != "" {

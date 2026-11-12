@@ -140,7 +140,7 @@ func TestEnglishUISurfaces(t *testing.T) {
 	// 4. Send File Window
 	fileTester := ui.NewTester(a.filesView, 460, 340)
 	fileTester.Frame()
-	for _, want := range []string{"Send File", "Drop files here", "Choose Files…", "Connect a device to send files"} {
+	for _, want := range []string{"Send File", "Drop files here", "Choose Files…", "Devices"} {
 		if _, ok := fileTester.Find(want); !ok {
 			t.Fatalf("files view missing %q", want)
 		}

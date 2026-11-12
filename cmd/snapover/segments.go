@@ -110,7 +110,7 @@ func (a *app) setDiscovery(sel discovery.Selection) {
 	a.cfg.Values.DiscoverySeen = sel.Seen
 	if err := a.cfg.Save(); err != nil {
 		a.cfg.Values = previous
-		a.status = "保存设置失败"
+		a.reportStatusError("保存设置失败")
 		return
 	}
 	a.discoveryScope.Store(sel.Scope())

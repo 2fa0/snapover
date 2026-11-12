@@ -296,7 +296,7 @@ func reconnect(ctx context.Context, target *DialTarget, e *Engine,
 				break
 			}
 			e.notify(Notice{Kind: NoticeDial, Message: err.Error(), PeerID: id,
-				Addr: ep.Addr, Route: ep.Route, DialSeq: target.Sequence})
+				Addr: ep.Addr, Route: ep.Route, DialSeq: target.Sequence, Failed: true})
 			if errors.Is(err, ErrPairingStopped) {
 				return
 			}

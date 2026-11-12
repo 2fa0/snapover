@@ -450,7 +450,7 @@ func (v *imageViewerState) toolbar(c *ui.Context) {
 			c.Invalidate()
 		}
 		ui.Text(c, percent).FontSize(12).FontFeatures("tnum").
-			MinWidth(44).TextAlign(ui.Center).Tooltip(v.app.tr("相对图片原始像素"))
+			MinWidth(44).TextAlign(ui.Center)
 		if ui.Button(c, "+").Label(v.app.tr("放大")).Tooltip(v.app.tr("放大")).Disabled(v.bmp == nil || v.scale >= v.maxScale()).Clicked() {
 			v.zoomBy(viewerStep)
 			c.Invalidate()
