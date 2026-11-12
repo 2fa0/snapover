@@ -612,6 +612,11 @@ func (e *Engine) attachPeer(ctx context.Context, conn *tls.Conn, weDialed bool, 
 	stop := context.AfterFunc(ctx, func() { _ = conn.NetConn().Close() })
 	defer stop()
 	e.authMu.Lock()
+	// Include the active session so every accepted transport has a bound.
+	if len(e.authConns) >= maxAuthConnections {
+		e.authMu.Unlock()
+		return errors.New("正在处理的连接过多，请稍后重试")
+	}
 	if route == lan.RouteTailscale && !e.allowTailscale {
 		e.authMu.Unlock()
 		return lan.ErrTailscaleDisabled
@@ -777,7 +782,10 @@ func (e *Engine) handshake(conn *tls.Conn) (*identityResult, wire.Hello, error) 
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- wire.WriteMsg(conn, wire.TypeHello, hello) }()
-	typ, payload, err := wire.ReadFrame(conn)
+	typ, payload, err := wire.ReadFrameLimit(conn, wire.MaxHandshakeFrame)
+	if err != nil {
+		_ = conn.NetConn().Close()
+	}
 	werr := <-errCh
 	if err != nil {
 		return nil, wire.Hello{}, err

@@ -64,6 +64,22 @@ func TestRejectHugeFrame(t *testing.T) {
 	}
 }
 
+func TestHandshakeFrameLimitRejectsHeaderWithoutReadingBody(t *testing.T) {
+	var header [4]byte
+	binary.BigEndian.PutUint32(header[:], MaxHandshakeFrame+1)
+	_, _, err := ReadFrameLimit(bytes.NewReader(header[:]), MaxHandshakeFrame)
+	if err == nil || err == io.EOF || err == io.ErrUnexpectedEOF {
+		t.Fatalf("oversized handshake header was not rejected before reading its body: %v", err)
+	}
+	var frame bytes.Buffer
+	if err := WriteMsg(&frame, TypeHello, Hello{DeviceID: "peer", Proto: Proto}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ReadFrameLimit(&frame, MaxHandshakeFrame); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestShortRead(t *testing.T) {
 	_, _, err := ReadFrame(bytes.NewReader([]byte{0, 0, 0, 2, TypePing}))
 	if err == nil || err == io.EOF {

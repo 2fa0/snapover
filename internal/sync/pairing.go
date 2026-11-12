@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	PairingWindow = 2 * time.Minute
-	pairWait      = 90 * time.Second
-	pairCooldown  = 10 * time.Second
+	PairingWindow      = 2 * time.Minute
+	pairWait           = 90 * time.Second
+	pairCooldown       = 10 * time.Second
+	maxAuthConnections = 8
 )
 
 var ErrPairingStopped = errors.New("配对已结束，请在两台电脑上点击「添加设备」后重试")
@@ -161,7 +162,7 @@ func (e *Engine) Stop() {
 func exchangePair(conn *tls.Conn, typ byte, send, recv any) error {
 	written := make(chan error, 1)
 	go func() { written <- wire.WriteMsg(conn, typ, send) }()
-	got, payload, err := wire.ReadFrame(conn)
+	got, payload, err := wire.ReadFrameLimit(conn, wire.MaxHandshakeFrame)
 	if err != nil {
 		_ = conn.NetConn().Close()
 	}
@@ -260,7 +261,7 @@ func (e *Engine) authorizePair(conn *tls.Conn, peer *identityResult, hello wire.
 	// ends the prompt even when the local user has not clicked anything.
 	remoteChoice := make(chan error, 1)
 	go func() {
-		typ, payload, err := wire.ReadFrame(conn)
+		typ, payload, err := wire.ReadFrameLimit(conn, wire.MaxHandshakeFrame)
 		var choice wire.PairChoice
 		if err == nil && typ == wire.TypePairChoice {
 			err = wire.Unmarshal(payload, &choice)
