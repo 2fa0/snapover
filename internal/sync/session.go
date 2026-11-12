@@ -132,7 +132,7 @@ func (s *Session) enqueue(item clip.Item) bool {
 }
 
 func (s *Session) enqueueID(item clip.Item, id string) bool {
-	return s.enqueueCopy(item, id, false)
+	return s.enqueueClipboard(item, id, false, true)
 }
 
 func (s *Session) enqueueCopy(item clip.Item, id string, automatic bool) bool {
@@ -225,10 +225,14 @@ func (s *Session) admitClipboard(item queuedItem) (bool, string) {
 }
 
 func (s *Session) reportClipboardCancel(item queuedItem, reason string) {
-	if item.id == "" || s.onClipboardResult == nil {
+	if item.id == "" {
 		return
 	}
-	s.onClipboardResult(wire.Ack{ItemID: item.id, State: "error", Message: reason})
+	result := wire.Ack{ItemID: item.id, State: "error", Message: reason}
+	s.deliverClipboardResult(result)
+	if s.onClipboardResult != nil {
+		s.onClipboardResult(result)
+	}
 }
 
 func (s *Session) forgetClipboardPending(id string) {
@@ -360,14 +364,7 @@ func (s *Session) readLoop() {
 			var result wire.Ack
 			if wire.Unmarshal(payload, &result) == nil {
 				s.completeClipboard(result)
-				s.clipboardResultMu.Lock()
-				if result.ItemID == s.clipboardSendID && s.clipboardResults != nil {
-					select {
-					case s.clipboardResults <- result:
-					default:
-					}
-				}
-				s.clipboardResultMu.Unlock()
+				s.deliverClipboardResult(result)
 			}
 		case wire.TypeError:
 			var msg wire.Error
