@@ -117,6 +117,34 @@ macOS 从 Cindy 等桌面应用运行测试时，本地网络权限归属于启�
 
 跨编译只能证明目标平台能够编译，不能替代实机剪贴板、快捷键、权限或窗口行为验证。Mac 上编出来的 Windows 程序不能在 Mac 上验证剪贴板，`Win+Shift+S` 和记事本粘贴必须在 Windows 上试。
 
+### 需要桌面会话的测试
+
+下面这些用例只在设置了环境变量时运行，普通 `go test ./...` 会跳过。改到相关代码时手工跑一遍，默认验证不会覆盖它们。
+
+`SNAPOVER_TEST_UI=1`：
+
+| 测试 | 验证内容 |
+| --- | --- |
+| `TestCheckModeLeavesRunningAppDataUntouched` | 使用模拟剪贴板启动诊断，不改后台应用的数据文件，也不输出剪贴板正文 |
+| `TestMainHistoryPreviewLoadsAndKeepsMainWindow` | 文本和图片的悬停预览、全文与图片查看器替换预览、窗口关闭后不重新打开 |
+| `TestMainWindowClosesAndReopensWithoutStoppingBackgroundUpdates` | 关闭并重建主窗口后后台更新继续运行 |
+| `TestMainWindowClosedPickerLoadsAndFileRequestsStillWork` | 主窗口关闭时快速历史和文件请求仍可用 |
+| `TestMainWindowClosedHistoryMaintenanceStillCompletes` | 主窗口关闭后历史维护仍能完成 |
+| `TestPickerTextWindowsLoadAndDismiss` | 快速历史悬停延时后的文本预览、全文替换、分段长文本 |
+| `TestNativeQuickHistoryFolderPreviewAndFileNotices` | 快速历史的文件夹预览与本机/远端文件提示 |
+| `TestViewerReplacementWaitsForCanceledLoad` | 图片查看器替换时等待已取消的加载 |
+| `TestThemeSettingsSwitchAndPersist` | 界面主题切换与持久化 |
+| `TestNativeLanguageFollowsSettings` | 界面语言跟随系统设置 |
+| `TestShortcutRecorderNativeMenuRestoredAfterCancelAndClose` | 快捷键录制取消或关闭后恢复应用菜单 |
+| `TestPickerShortcutNativeChangeKeepsWorkingKeyOnConflict` | 原生快捷键冲突时保留原来可用的键 |
+| `TestNetworkGuideWindowReleasesStateAndCanBeRecreated` | 网络引导窗口释放状态并可重建 |
+| `TestMacNetworkGuideSettingsLaunchAndCancellation` | macOS：打开本地网络系统设置与取消 |
+| `TestMacFileRequestReachesRunningInstanceWithoutOpeningMainWindow` | macOS：Finder 把文件发给正在运行的实例 |
+| `TestFinderServiceUsesExistingFileRequestAndRespectsDisable` | macOS：Finder 服务遵守关闭状态 |
+| `TestNativeServicePreservesPathsAndDoesNotUseGeneralClipboard` | macOS：Finder 服务传递路径且不占用通用剪贴板 |
+
+`SNAPOVER_TEST_LAN=1` 会针对真实网络运行 `TestLANDiscovery`。本地网络权限被拒绝时该用例会失败，先允许宿主应用或从 Terminal 运行，再判断是否为发现功能缺陷。
+
 ## 产物与仓库
 
 `bin/`、`dist/` 和生成的 CLI 二进制是构建产物，不提交。Windows 测试二进制可在 Mac 上编译后拷到 Windows 执行：

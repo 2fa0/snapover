@@ -168,6 +168,38 @@ for testing the clipboard, shortcuts, permissions or windows on real hardware. A
 Windows build made on a Mac cannot verify clipboard behaviour — `Win+Shift+S`
 and pasting into Notepad have to be tried on Windows.
 
+### Checks that need a desktop session
+
+These run only with the environment variable set, so a plain `go test ./...`
+skips them. Run them by hand when changing the surrounding code; none of them is
+covered by the default run.
+
+`SNAPOVER_TEST_UI=1`:
+
+| Test | What it verifies |
+| --- | --- |
+| `TestCheckModeLeavesRunningAppDataUntouched` | Diagnostic startup with a fake clipboard leaves the running app’s files intact and omits clipboard contents |
+| `TestMainHistoryPreviewLoadsAndKeepsMainWindow` | Hover preview for text and images, full text and image viewer replacing it, no reopen after the window closes |
+| `TestMainWindowClosesAndReopensWithoutStoppingBackgroundUpdates` | Closing and rebuilding the main window keeps background updates running |
+| `TestMainWindowClosedPickerLoadsAndFileRequestsStillWork` | Quick history and file requests while the main window is closed |
+| `TestMainWindowClosedHistoryMaintenanceStillCompletes` | History maintenance finishing after the main window closed |
+| `TestPickerTextWindowsLoadAndDismiss` | Quick-history text preview after the hover delay, full text replacing it, segmented long text |
+| `TestNativeQuickHistoryFolderPreviewAndFileNotices` | Folder preview in quick history and local/remote file notices |
+| `TestViewerReplacementWaitsForCanceledLoad` | Image viewer replacement waiting for a cancelled load |
+| `TestThemeSettingsSwitchAndPersist` | Appearance switching and persistence |
+| `TestNativeLanguageFollowsSettings` | Interface language following the system setting |
+| `TestShortcutRecorderNativeMenuRestoredAfterCancelAndClose` | The application menu is restored after recording is cancelled or closed |
+| `TestPickerShortcutNativeChangeKeepsWorkingKeyOnConflict` | A native shortcut conflict keeps the previous working key |
+| `TestNetworkGuideWindowReleasesStateAndCanBeRecreated` | The network guide window releases its state and can be rebuilt |
+| `TestMacNetworkGuideSettingsLaunchAndCancellation` | macOS: opening System Settings for local network, and cancelling it |
+| `TestMacFileRequestReachesRunningInstanceWithoutOpeningMainWindow` | macOS: Finder sends files to the running instance |
+| `TestFinderServiceUsesExistingFileRequestAndRespectsDisable` | macOS: the Finder service respects being turned off |
+| `TestNativeServicePreservesPathsAndDoesNotUseGeneralClipboard` | macOS: the Finder service passes paths without touching the clipboard |
+
+`SNAPOVER_TEST_LAN=1` runs `TestLANDiscovery` against the real network. A denied
+local network permission fails that test; allow the host app or run it from
+Terminal before treating it as a discovery defect.
+
 ## Artifacts and the repository
 
 `bin/`, `dist/` and generated CLI binaries are build artifacts and are not
