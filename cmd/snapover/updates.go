@@ -14,6 +14,12 @@ import (
 // keeps the checks off the feed's back.
 const updateInterval = 24 * time.Hour
 
+// updateCheckWait is how long a check the user asked for may take before the
+// settings page says it did not finish. A check that reaches the network is
+// bounded by the timeouts of updateSource; this covers one that never got
+// that far, such as a request waiting on a proxy that hangs.
+const updateCheckWait = 75 * time.Second
+
 // useUpdater registers the update plugin, which must happen before App.Run.
 // Its preferences are first loaded by startUpdates, after PathUserData is set.
 func useUpdater() {
@@ -25,6 +31,14 @@ func useUpdater() {
 // answering a prompt, or asking for a check.
 func (a *app) startUpdates() {
 	a.updatesEnabled = mygo.Updater.Enabled()
+	if a.updatesEnabled {
+		// The plugin's requests have no deadline: a connection the network
+		// dropped would leave a check, or a download it started on its own,
+		// waiting with no window to cancel it. Its own feed takes over again
+		// if this one cannot find the manifest.
+		mygo.Updater.SetSource(newUpdateSource())
+		a.cleanUpdateLeftovers()
+	}
 	a.readUpdateState()
 	updater.OnChange(func() {
 		a.readUpdateState()
@@ -40,18 +54,62 @@ func (a *app) startUpdates() {
 func (a *app) readUpdateState() {
 	a.autoUpdate = updater.AutomaticChecks()
 	a.lastCheck = updater.LastCheck()
+	if a.updateCheckFailed && a.lastCheck.After(a.updateCheckBegan) {
+		a.updateCheckFailed = false
+	}
 }
 
 // checkForUpdates opens the update window the user asked for. A build that
 // cannot update itself, such as a development build or an app run from a
-// read-only image, says so instead of opening a window that would fail.
+// read-only image, says so instead of opening a window that would fail. A
+// check that fails is reported in the plugin's window when it shows one, and
+// nowhere at all when it ran in the background: the settings page says so
+// instead, once the check has had the time it is allowed.
 func (a *app) checkForUpdates() {
 	if !a.updatesEnabled {
 		a.reportStatusError("这个版本不能自动更新，请从发布页下载新版")
 		a.refreshTray()
 		return
 	}
+	a.beginUpdateCheck()
 	updater.CheckForUpdates()
+}
+
+// beginUpdateCheck notes the check the user asked for, so that the settings
+// page can tell a check that failed from one that never ran. A check that
+// succeeds moves LastCheck past the moment it began, whichever its outcome:
+// up to date, a new version, or a version the user skipped.
+func (a *app) beginUpdateCheck() {
+	a.updateCheckBegan = time.Now()
+	a.updateCheckFailed = false
+	a.updateCheckGen++
+	if a.win != nil {
+		a.win.Invalidate()
+	}
+	gen, began := a.updateCheckGen, a.updateCheckBegan
+	if a.updateCheckTimer != nil {
+		a.updateCheckTimer.Stop()
+	}
+	a.updateCheckTimer = time.AfterFunc(updateCheckWait, func() {
+		if a.updateCheckSettled(began) {
+			return
+		}
+		a.update(func() {
+			// A newer check may have begun meanwhile, and this one may have
+			// finished without a window in between.
+			if a.updateCheckGen != gen || a.updateCheckSettled(began) {
+				return
+			}
+			a.updateCheckFailed = true
+		})
+	})
+}
+
+// updateCheckSettled reports whether the check that began at began has an
+// answer: it moved LastCheck, or it is offering an update, which it only does
+// after a check that worked.
+func (a *app) updateCheckSettled(began time.Time) bool {
+	return updater.LastCheck().After(began) || updater.AvailableVersion() != ""
 }
 
 // updateSettings is the settings page's "关于与更新" group.
@@ -60,15 +118,19 @@ func (a *app) updateSettings(c *ui.Context) {
 		ui.Text(c, appVersionLabel()).FontSize(12).FontFeatures("tnum").TextColor(c.Theme().TextMuted)
 		check := ui.Button(c, a.tr("检查更新"))
 		// When and why the last check happened is one hover away; a build that
-		// cannot update itself says so where the version is, because that is
-		// the state the button cannot show.
+		// cannot update itself, or a check that failed, says so where the
+		// version is, because that is the state the button cannot show.
 		check.Tooltip(a.tr(a.updateStateText()))
 		if check.Clicked() {
 			a.checkForUpdates()
 		}
 	})
-	if !a.updatesEnabled {
+	if !a.updatesEnabled || a.updateCheckFailed {
+		// A check that failed keeps the switch where it was: a row that moves
+		// while the user reads it is worse than a second line.
 		ui.Text(c, a.tr(a.updateStateText())).FontSize(12).TextColor(c.Theme().TextMuted)
+	}
+	if !a.updatesEnabled {
 		return
 	}
 	cardDivider(c)
@@ -78,11 +140,14 @@ func (a *app) updateSettings(c *ui.Context) {
 }
 
 // updateStateText explains what the update row shows: why this build cannot
-// update itself, when it last looked, or that it never has.
+// update itself, that the last check the user asked for did not finish, when
+// the app last looked, or that it never has.
 func (a *app) updateStateText() string {
 	switch {
 	case !a.updatesEnabled:
 		return "这个版本不能自动更新：开发构建，或安装位置不可写（例如直接从磁盘映像运行）。"
+	case a.updateCheckFailed:
+		return "这次检查没有完成：网络不通或太慢，请稍后再试。"
 	case a.lastCheck.IsZero():
 		return "还没有检查过更新。"
 	default:

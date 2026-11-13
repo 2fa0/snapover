@@ -823,6 +823,7 @@ var enStrings = map[string]string{
 	"自动检查更新": "Check for Updates Automatically",
 	"每 24 小时在后台检查一次，有新版本时提示。":                "Check every 24 hours in the background and notify when an update is available.",
 	"这个版本不能自动更新：开发构建，或安装位置不可写（例如直接从磁盘映像运行）。": "Auto-update is unavailable: development build or read-only install location (e.g. running from disk image).",
+	"这次检查没有完成：网络不通或太慢，请稍后再试。":                "The check did not finish: the network is unavailable or too slow. Try again later.",
 	"还没有检查过更新。": "Never checked for updates.",
 
 	// Devices Page & Connections & Segments
