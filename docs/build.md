@@ -103,7 +103,6 @@ The update URL is compiled into the app, so changing the release repository
 requires a rebuild; already installed copies keep the old address and need one
 manual install of a new package.
 
-The plan and its open items are in [update-plan.md](update-plan.md) (Chinese).
 
 ## Resources and icons
 
