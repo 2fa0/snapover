@@ -2,7 +2,7 @@
 
 **简体中文** | [English](build.md)
 
-面向维护者。日常开发用 `go test ./...` 和 `go run ./cmd/snapover`；源码不公开，README 只面向使用者。
+面向维护者。日常开发用 `go test ./...` 和 `go run ./cmd/snapover`；README 面向使用者。
 
 ## 环境
 
