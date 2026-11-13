@@ -2,7 +2,7 @@
 
 **简体中文** | [English](build.md)
 
-面向维护者。日常开发和贡献者只需要 [README](../README_zh.md#-从源码构建) 里那几条命令。
+面向维护者。日常开发用 `go test ./...` 和 `go run ./cmd/snapover`；源码不公开，README 只面向使用者。
 
 ## 环境
 
@@ -80,7 +80,7 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o bin/snapover-cli.exe ./cmd/s
 
 应用图标使用 `resources/app.png`。菜单栏／托盘图标可在设置里选邮筒、小鸟或信封，对应 `internal/resources/icon2.png`、`internal/resources/icon1.png`、`internal/resources/icon3.png`，需保留 PNG 的透明通道；替换后要重新打包并重启程序。
 
-`LICENSE` 通过 `mygo.json` 的 `resources` 列表随包分发（macOS 进 `Contents/Resources`，Windows 放 exe 同目录）；`resources/THIRD_PARTY_NOTICES.txt` 会随整个 `resources/` 目录一起打包。升级依赖或更换第三方素材时应同步更新该清单。
+`resources/THIRD_PARTY_NOTICES.txt` 会随整个 `resources/` 目录一起打包，升级依赖或更换第三方素材时应同步更新该清单；随包文件以它和第三方许可证为准，不再附带 `LICENSE`（源码不公开，`mygo.json` 的 `resources` 列表为空）。
 
 ## 验证
 

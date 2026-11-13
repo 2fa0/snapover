@@ -2,7 +2,7 @@
 
 状态：Phase 0 与 Phase 1 已实施（2026-10-29），代码、配置与打包流程已写入工作区；发布（Phase 2）和 macOS 签名（Phase 3）待办。GUI 内的实际升级仍需在 Mac / Windows 实机上走一遍。
 
-本文保留当时的方案和验证记录，其中源码保持私有及 `snapover-releases` 地址是旧计划。当前发布地址和源码公开计划以 [README](../README_zh.md#-内置升级) 与 `mygo.json` 为准。
+本文保留当时的方案和验证记录，其中源码保持私有及 `snapover-releases` 地址是旧计划。当前发布地址为只放产物的公开仓库 `2fa0/snapover-release`（`mygo.json` 的 `updates.github`），源码不公开：原先的 `2fa0/snapover` 已删除，下载与更新都不再引用它。
 
 已定方向（2026-10-20）：
 

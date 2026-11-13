@@ -12,18 +12,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/2fa0/snapover/releases"><strong>⬇ Download Snapover</strong></a> •
+  <a href="https://github.com/2fa0/snapover-release/releases"><strong>⬇ Download Snapover</strong></a> •
   <a href="#-highlights">Highlights</a> •
   <a href="#-get-started">Get started</a> •
-  <a href="#-command-line">CLI</a> •
-  <a href="#-build-from-source">Build</a>
+  <a href="#-command-line">CLI</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/2fa0/snapover/releases"><img src="https://img.shields.io/github/v/release/2fa0/snapover?style=flat-square&color=blue" alt="Release" /></a>
+  <a href="https://github.com/2fa0/snapover-release/releases"><img src="https://img.shields.io/github/v/release/2fa0/snapover-release?style=flat-square&color=blue" alt="Release" /></a>
   <img src="https://img.shields.io/badge/macOS%2013%2B-000000?style=flat-square&logo=apple" alt="macOS 13+" />
   <img src="https://img.shields.io/badge/Windows%2010%2F11-0078D4?style=flat-square&logo=windows" alt="Windows 10/11" />
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="MIT License" />
   <img src="https://img.shields.io/badge/Go-1.27+-00ADD8.svg?style=flat-square&logo=go" alt="Go 1.27+" />
 </p>
 
@@ -106,7 +104,7 @@
 
 ### 1. Install Snapover on both computers
 
-Download the latest package from [**Releases**](https://github.com/2fa0/snapover/releases):
+Download the latest package from [**Releases**](https://github.com/2fa0/snapover-release/releases):
 
 - **macOS 13+**: choose `snapover-<version>-arm64.dmg` for Apple silicon or `snapover-<version>-amd64.dmg` for Intel, then drag Snapover into **Applications**.
 - **Windows 10/11 x64**: extract `Snapover-<version>-windows11-x64.zip` and run `Snapover.exe`, keeping the accompanying files together. Add an empty `portable.flag` beside it to store data in a local `data/` folder.
@@ -163,18 +161,9 @@ Files land in the other computer’s receiving folder; text and images go to its
 
 See the [CLI guide](docs/cli.md) for macOS and Windows setup, PowerShell examples, options and exit codes.
 
-## 🔧 Build from source
+## 📦 Packages only
 
-Requires **Go 1.27.3+** (see `go.mod`), with no cgo.
-
-```sh
-git clone https://github.com/2fa0/snapover.git
-cd snapover
-go test ./...
-go run ./cmd/snapover
-```
-
-Source builds cannot self-update, and system integrations such as Finder Services require a packaged app. Packaging and release instructions are in [docs/build.md](docs/build.md).
+Snapover ships as prebuilt packages. The source is not published, and building or redistributing it is not licensed.
 
 ## 🚧 Known limitations
 
@@ -188,16 +177,8 @@ Current behaviour, limits and troubleshooting: [docs/features.md](docs/features.
 
 - Clipboard data, paired-device records and history stay on your computers: `~/Library/Application Support/Snapover` on macOS and `%AppData%\Snapover` on Windows.
 - No telemetry or automatic log uploads. Logs do not contain clipboard text, image bytes or private keys.
-- Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/2fa0/snapover/security/advisories/new), not a public issue.
+- Report vulnerabilities to the author privately, rather than disclosing them in public.
 
-## 🤝 Contributing
+## 📄 Copyright
 
-Issues and pull requests are welcome. Please describe protocol, persistence, concurrency or pairing-security changes before implementing them, run the relevant `go test`, and check UI changes on a real Mac or PC.
-
-See [AGENTS.md](AGENTS.md) for the code map and project invariants.
-
-If Snapover makes your computers feel like one workspace, a **⭐ star** helps other people find it.
-
-## 📄 License
-
-[MIT](LICENSE) — free for personal and commercial use, provided the copyright and permission notices are preserved. Third-party components keep their own licenses; see [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt).
+Snapover is closed-source software, all rights reserved. Third-party components bundled with it keep their own licenses; see [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt) for the full list.

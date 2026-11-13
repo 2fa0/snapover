@@ -12,18 +12,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/2fa0/snapover/releases"><strong>⬇ 下载 Snapover</strong></a> •
+  <a href="https://github.com/2fa0/snapover-release/releases"><strong>⬇ 下载 Snapover</strong></a> •
   <a href="#-亮点">亮点</a> •
   <a href="#-快速开始">快速开始</a> •
-  <a href="#-命令行">命令行</a> •
-  <a href="#-从源码构建">构建</a>
+  <a href="#-命令行">命令行</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/2fa0/snapover/releases"><img src="https://img.shields.io/github/v/release/2fa0/snapover?style=flat-square&color=blue" alt="Release" /></a>
+  <a href="https://github.com/2fa0/snapover-release/releases"><img src="https://img.shields.io/github/v/release/2fa0/snapover-release?style=flat-square&color=blue" alt="Release" /></a>
   <img src="https://img.shields.io/badge/macOS%2013%2B-000000?style=flat-square&logo=apple" alt="macOS 13+" />
   <img src="https://img.shields.io/badge/Windows%2010%2F11-0078D4?style=flat-square&logo=windows" alt="Windows 10/11" />
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="MIT 许可证" />
   <img src="https://img.shields.io/badge/Go-1.27+-00ADD8.svg?style=flat-square&logo=go" alt="Go 1.27+" />
 </p>
 
@@ -106,7 +104,7 @@
 
 ### 1. 在两台电脑上安装 Snapover
 
-从 [**Releases**](https://github.com/2fa0/snapover/releases) 下载最新安装包：
+从 [**Releases**](https://github.com/2fa0/snapover-release/releases) 下载最新安装包：
 
 - **macOS 13+**：Apple Silicon 选择 `snapover-<版本>-arm64.dmg`，Intel 选择 `snapover-<版本>-amd64.dmg`，打开后把 Snapover 拖进「应用程序」。
 - **Windows 10/11 x64**：解压 `Snapover-<版本>-windows11-x64.zip`，保留同目录文件并运行 `Snapover.exe`。在 exe 旁放一个空的 `portable.flag`，数据就会保存到同目录的 `data/` 文件夹。
@@ -163,18 +161,9 @@ cat ./notes.txt | snapover send text --stdin
 
 macOS 与 Windows 的配置方法、PowerShell 示例、完整参数和退出码见[命令行指南](docs/cli_zh.md)。
 
-## 🔧 从源码构建
+## 📦 只提供安装包
 
-需要 **Go 1.27.3+**（以 `go.mod` 为准），不需要 cgo。
-
-```sh
-git clone https://github.com/2fa0/snapover.git
-cd snapover
-go test ./...
-go run ./cmd/snapover
-```
-
-源码构建不能自动更新；Finder「服务」等系统集成功能需要打包后的应用。打包与发布步骤见[构建与发布](docs/build_zh.md)。
+Snapover 以预编译安装包发布，不公开源码，也不提供对外构建或再分发授权。
 
 ## 🚧 已知限制
 
@@ -188,16 +177,8 @@ go run ./cmd/snapover
 
 - 剪贴板数据、配对记录和历史都保存在自己的电脑上：macOS 为 `~/Library/Application Support/Snapover`，Windows 为 `%AppData%\Snapover`。
 - 没有遥测，不自动上传日志；日志不记录剪贴板正文、图片字节或私钥。
-- 安全漏洞请通过 [GitHub 私密漏洞报告](https://github.com/2fa0/snapover/security/advisories/new)提交，不要发公开 issue。
+- 安全漏洞请私下联系作者，不要在公开场合披露细节。
 
-## 🤝 参与贡献
+## 📄 版权
 
-欢迎 issue 和 pull request。涉及协议、持久化、并发或配对安全的改动，请先说明方案；提交前运行相关 `go test`，界面改动请在 Mac 或 Windows 实机检查。
-
-代码目录与项目约束见 [AGENTS.md](AGENTS.md)。
-
-如果 Snapover 让你的两台电脑更像一个工作区，欢迎点个 **⭐ Star**，让更多人发现它。
-
-## 📄 许可证
-
-基于 [MIT 许可证](LICENSE)，个人与商业使用均免费，但需保留版权和许可声明。第三方组件遵循各自许可证，完整清单见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。
+Snapover 为闭源软件，版权归作者所有。随包分发的第三方组件遵循各自许可证，完整清单见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。
