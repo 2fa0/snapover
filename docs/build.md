@@ -1,8 +1,7 @@
 # Building and releasing
 
 For maintainers. Day-to-day development is `go test ./...` and
-`go run ./cmd/snapover`; the source is not public, and the README is written for
-users.
+`go run ./cmd/snapover`; the README is written for users.
 
 **English** | [简体中文](build_zh.md)
 
