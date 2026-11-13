@@ -196,6 +196,10 @@ image editor still syncs as an image.
 
 ## Pinning, notes and backups
 
+Status: the export/import buttons are temporarily hidden while the feature is
+reworked; the history-layer implementation is kept. See
+[pinned-backup-plan.md](pinned-backup-plan.md).
+
 - A pinned entry can carry a note or alias of up to 80 characters, shown below
   the entry and persisted with history. Search matches notes and highlights
   them; unpinning clears the note.
@@ -207,18 +211,6 @@ image editor still syncs as an image.
   the others. Pinned entries from older versions get available shortcuts after
   an upgrade; beyond nine, pinning and selection still work without numeric
   shortcuts.
-- History → Pinned backup exports pinned text, images and notes newest first.
-  It contains no device identity, trust records, source information or file
-  contents. Archives are not encrypted. Each ZIP holds at most 100000 entries
-  and at most 1 GiB of JSON after extraction. Larger backups split automatically:
-  the first ZIP uses the chosen filename, with additional `-part-002-*.zip` files
-  beside it; the unique suffix prevents overwriting other backups. Select all
-  parts together when importing. Each part also works with older importers.
-  Import appends entries and reassigns available numeric shortcuts, never
-  overwriting existing pins, so importing twice creates
-  duplicates. A damaged archive is rejected before writing; a disk or capacity
-  error may leave a partial result and the UI reports how many entries were
-  processed. Import respects the history budget and may clean unpinned entries.
 - A file entry shows whether it is still usable. Pinning a file copies its
   contents into `history/pinned-files/` within the history capacity and entry
   limits, so it stays pasteable after the source is deleted, and the copy is

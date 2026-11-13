@@ -1,3 +1,5 @@
+// 置顶备份的界面层。入口暂时下线，见 docs/pinned-backup-plan.md；重做后
+// 在 historyPage 恢复对 backupSettings 的调用即可，历史层能力未改动。
 package main
 
 import (
