@@ -2,7 +2,7 @@
 
 状态：Phase 0 与 Phase 1 已实施（2026-10-29），代码、配置与打包流程已写入工作区；发布（Phase 2）和 macOS 签名（Phase 3）待办。GUI 内的实际升级仍需在 Mac / Windows 实机上走一遍。
 
-本文保留当时的方案和验证记录，其中源码保持私有及 `snapover-releases` 地址是旧计划。当前发布地址为只放产物的公开仓库 `2fa0/snapover-release`（`mygo.json` 的 `updates.github`），源码不公开：原先的 `2fa0/snapover` 已删除，下载与更新都不再引用它。
+本文保留当时的方案和验证记录，其中源码保持私有及 `snapover-releases` 地址是旧计划。当前发布地址为源码仓库 `2fa0/snapover`（`mygo.json` 的 `updates.github`）：源码公开、以 Apache-2.0 授权，只放产物的 `2fa0/snapover-release` 已退出。
 
 已定方向（2026-10-20）：
 
@@ -164,15 +164,15 @@ mv dist/darwin-arm64/*.tar.gz dist/darwin-arm64/*.delta \
 
 ```sh
 # 只传本次版本的产物：dist/releases/ 里可能留着旧版本的 tar.gz，不要一起传
-gh release create v<version> --repo 2fa0/snapover-release --target main \
+gh release create v<version> --repo 2fa0/snapover --target main \
   --title "Snapover <version>" --notes-file /tmp/notes-<version>.md --draft
-gh release upload v<version> --repo 2fa0/snapover-release \
+gh release upload v<version> --repo 2fa0/snapover \
   dist/releases/*<version>*.tar.gz dist/releases/update-*.json dist/releases/install.sh \
   "dist/Snapover-<version>-windows11-x64.zip" \
   "dist/darwin-arm64/snapover-<version>-arm64.dmg" \
   "dist/darwin-amd64/snapover-<version>-amd64.dmg"
-gh release view v<version> --repo 2fa0/snapover-release      # 核对附件
-gh release edit v<version> --repo 2fa0/snapover-release --draft=false --latest
+gh release view v<version> --repo 2fa0/snapover          # 核对附件
+gh release edit v<version> --repo 2fa0/snapover --draft=false --latest
 ```
 
 标签必须与清单里的地址一致（版本 `0.10.5` 对应 `v0.10.5`）。保留旧版本文件：下一个版本的增量要拿它当基线，`build.command` 也会从已发布版本生成增量。发布后用未登录的 `curl` 实测一次，确认外部世界真的拿得到：
@@ -180,7 +180,7 @@ gh release edit v<version> --repo 2fa0/snapover-release --draft=false --latest
 ```sh
 for t in darwin-arm64 darwin-amd64 windows-amd64; do
   curl -sSL -o /dev/null -w "$t %{http_code}\n" \
-    "https://github.com/2fa0/snapover-release/releases/latest/download/update-$t.json"
+    "https://github.com/2fa0/snapover/releases/latest/download/update-$t.json"
 done
 ```
 

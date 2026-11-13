@@ -12,14 +12,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/2fa0/snapover-release/releases"><strong>⬇ 下载 Snapover</strong></a> •
+  <a href="https://github.com/2fa0/snapover/releases"><strong>⬇ 下载 Snapover</strong></a> •
   <a href="#-亮点">亮点</a> •
   <a href="#-快速开始">快速开始</a> •
   <a href="#-命令行">命令行</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/2fa0/snapover-release/releases"><img src="https://img.shields.io/github/v/release/2fa0/snapover-release?style=flat-square&color=blue" alt="Release" /></a>
+  <a href="https://github.com/2fa0/snapover/releases"><img src="https://img.shields.io/github/v/release/2fa0/snapover?style=flat-square&color=blue" alt="Release" /></a>
   <img src="https://img.shields.io/badge/macOS%2013%2B-000000?style=flat-square&logo=apple" alt="macOS 13+" />
   <img src="https://img.shields.io/badge/Windows%2010%2F11-0078D4?style=flat-square&logo=windows" alt="Windows 10/11" />
   <img src="https://img.shields.io/badge/Go-1.27+-00ADD8.svg?style=flat-square&logo=go" alt="Go 1.27+" />
@@ -104,7 +104,7 @@
 
 ### 1. 在两台电脑上安装 Snapover
 
-从 [**Releases**](https://github.com/2fa0/snapover-release/releases) 下载最新安装包：
+从 [**Releases**](https://github.com/2fa0/snapover/releases) 下载最新安装包：
 
 - **macOS 13+**：Apple Silicon 选择 `snapover-<版本>-arm64.dmg`，Intel 选择 `snapover-<版本>-amd64.dmg`，打开后把 Snapover 拖进「应用程序」。
 - **Windows 10/11 x64**：解压 `Snapover-<版本>-windows11-x64.zip`，保留同目录文件并运行 `Snapover.exe`。在 exe 旁放一个空的 `portable.flag`，数据就会保存到同目录的 `data/` 文件夹。

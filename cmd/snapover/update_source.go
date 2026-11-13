@@ -36,7 +36,7 @@ var updateRetries = []time.Duration{time.Second, 3 * time.Second}
 
 // updateRepo is the releases repository of mygo.json's updates.github, which
 // `go tool mygo build` compiles the feed from; a test keeps the two in step.
-const updateRepo = "2fa0/snapover-release"
+const updateRepo = "2fa0/snapover"
 
 // updateFeed returns the manifest of this build's target, as the updater's
 // own feed has it: update-<target>.json in the latest release of updateRepo.
