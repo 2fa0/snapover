@@ -72,7 +72,6 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o bin/snapover-cli.exe ./cmd/s
 
 更新地址会编译进程序，更换发布仓库后必须重新打包；已安装的旧包仍使用旧地址，需要手动安装新包一次。
 
-方案与待办见 [内置升级方案](update-plan.md)。
 
 ## 资源与图标
 

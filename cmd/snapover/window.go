@@ -897,7 +897,7 @@ func (a *app) historyPage(c *ui.Context) {
 	}
 	// 置顶备份入口暂时下线：现有导出／导入（分卷、上限、追加语义、未加密提醒）
 	// 作为用户功能还太糙，需重做后再放回来。历史层的 ExportPinned／ImportPinned
-	// 保留不动，见 docs/pinned-backup-plan.md。
+	// 保留不动，等重做计划落地。
 	// a.backupSettings(c)
 	var searchField ui.Element
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {

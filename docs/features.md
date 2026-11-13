@@ -197,8 +197,7 @@ image editor still syncs as an image.
 ## Pinning, notes and backups
 
 Status: the export/import buttons are temporarily hidden while the feature is
-reworked; the history-layer implementation is kept. See
-[pinned-backup-plan.md](pinned-backup-plan.md).
+reworked; the history-layer implementation is kept.
 
 - A pinned entry can carry a note or alias of up to 80 characters, shown below
   the entry and persisted with history. Search matches notes and highlights
@@ -540,9 +539,8 @@ older version may not use the most recent Tailscale address, and saving again
 may drop the newer fields, so dual addresses are not guaranteed across
 downgrades.
 
-The real-device acceptance steps for cross-network use are in the Tailscale plan
-(Chinese: [tailscale-plan.md](tailscale-plan.md#9-实机验收与完成条件)). Automated
-tests need no real Tailscale but cannot replace two-machine testing on Windows
+Cross-network acceptance needs two real machines. Automated tests need no
+real Tailscale but cannot replace two-machine testing on Windows
 and macOS, with different Tailscale versions and over slow or relayed links.
 
 ## Data directory, logs and diagnostics
@@ -607,8 +605,6 @@ the effect on a real Windows machine — it costs battery, and the steps are in
 - At most 16 notifications are queued and 16 kept.
 - Diagnostic breadcrumbs use a bounded queue that drops ordinary lines when full.
 
-Fixes and measurements are recorded in the performance notes (Chinese:
-[performance-2026-10-16.md](performance-2026-10-16.md)).
 
 ## Pairing and connection internals
 
