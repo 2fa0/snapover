@@ -127,3 +127,40 @@ func TestPickerShortcutNativeChangeKeepsWorkingKeyOnConflict(t *testing.T) {
 		t.Fatalf("shortcut not persisted: %+v %v", restored, err)
 	}
 }
+
+func TestDisplayShortcutUsesPlatformModifierNames(t *testing.T) {
+	// Stored values, defaults included, spell the command key several ways.
+	cases := map[string][2]string{
+		"Super+Alt+C":  {"Alt+Win+C", "⌥+⌘+C"},
+		"Ctrl+Alt+C":   {"Ctrl+Alt+C", "⌃+⌥+C"},
+		"Alt+Cmd+V":    {"Alt+Win+V", "⌥+⌘+V"},
+		"Cmd+Shift+V":  {"Shift+Win+V", "⇧+⌘+V"},
+		"Alt+V":        {"Alt+V", "⌥+V"},
+		"Ctrl+Shift+P": {"Ctrl+Shift+P", "⌃+⇧+P"},
+	}
+	for key, want := range cases {
+		expected := want[0]
+		if runtime.GOOS == "darwin" {
+			expected = want[1]
+		}
+		if got := displayPickerShortcut(key); got != expected {
+			t.Fatalf("displayPickerShortcut(%q) = %q, want %q", key, got, expected)
+		}
+	}
+}
+
+func TestModifierHintsUsePlatformKeyNames(t *testing.T) {
+	invalid, missing := modifierHints()
+	wantInvalid, wantMissing := "修饰键请使用 Ctrl、Alt、Shift、Cmd 或 Win", "请至少使用 Ctrl、Alt、Cmd 或 Win 中的一个修饰键"
+	if runtime.GOOS == "darwin" {
+		wantInvalid, wantMissing = "修饰键请使用 ⌃、⌥、⇧ 或 ⌘", "请至少使用 ⌃、⌥ 或 ⌘ 中的一个修饰键"
+	}
+	if invalid != wantInvalid || missing != wantMissing {
+		t.Fatalf("modifierHints = %q, %q; want %q, %q", invalid, missing, wantInvalid, wantMissing)
+	}
+	for _, text := range []string{invalid, missing} {
+		if en := translateEN(text); en == text {
+			t.Fatalf("%q has no English translation", text)
+		}
+	}
+}

@@ -755,8 +755,10 @@ var enStrings = map[string]string{
 
 	// Shortcut Recorder & Picker Shortcut
 	"修饰键请使用 Ctrl、Alt、Shift、Cmd 或 Win":  "Use Ctrl, Alt, Shift, Cmd, or Win as modifier keys",
+	"修饰键请使用 ⌃、⌥、⇧ 或 ⌘":                 "Use ⌃, ⌥, ⇧, or ⌘ as modifier keys",
 	"快捷键中有重复的修饰键":                      "Shortcut contains duplicate modifier keys",
 	"请至少使用 Ctrl、Alt、Cmd 或 Win 中的一个修饰键": "Include at least one of Ctrl, Alt, Cmd, or Win",
+	"请至少使用 ⌃、⌥ 或 ⌘ 中的一个修饰键":            "Include at least one of ⌃, ⌥, or ⌘",
 	"主键请使用字母、数字、F1–F12、Space 或方向等常用键":  "Use letters, digits, F1–F12, Space, or arrow keys as the main key",
 	"请使用字母、数字、F1–F12 或方向等常用键":          "Use letters, digits, F1–F12, or arrow keys",
 	"快捷键保存失败，请检查数据目录权限后重试":             "Failed to save shortcut; check data directory permissions and try again",

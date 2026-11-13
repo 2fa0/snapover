@@ -27,6 +27,15 @@ func (a *app) windowShortcuts(c *ui.Context) {
 	}
 }
 
+// macOS names the modifiers ⌃⌥⇧⌘, so spelling them Ctrl/Alt/Cmd in an error
+// points at keys its keyboard does not label that way.
+func modifierHints() (invalid, missing string) {
+	if runtime.GOOS == "darwin" {
+		return "修饰键请使用 ⌃、⌥、⇧ 或 ⌘", "请至少使用 ⌃、⌥ 或 ⌘ 中的一个修饰键"
+	}
+	return "修饰键请使用 Ctrl、Alt、Shift、Cmd 或 Win", "请至少使用 Ctrl、Alt、Cmd 或 Win 中的一个修饰键"
+}
+
 func normalizePickerShortcut(value string) (string, error) {
 	parts := strings.Split(strings.TrimSpace(value), "+")
 	mods := make(map[string]bool)
@@ -47,7 +56,8 @@ func normalizePickerShortcut(value string) (string, error) {
 		case "shift":
 			mod = "Shift"
 		default:
-			return "", errors.New("修饰键请使用 Ctrl、Alt、Shift、Cmd 或 Win")
+			invalid, _ := modifierHints()
+			return "", errors.New(invalid)
 		}
 		if mods[mod] {
 			return "", errors.New("快捷键中有重复的修饰键")
@@ -55,7 +65,8 @@ func normalizePickerShortcut(value string) (string, error) {
 		mods[mod] = true
 	}
 	if !mods["Ctrl"] && !mods["Alt"] && !mods["Super"] {
-		return "", errors.New("请至少使用 Ctrl、Alt、Cmd 或 Win 中的一个修饰键")
+		_, missing := modifierHints()
+		return "", errors.New(missing)
 	}
 	key := strings.ToUpper(strings.TrimSpace(parts[len(parts)-1]))
 	valid := len(key) == 1 && (key[0] >= 'A' && key[0] <= 'Z' || key[0] >= '0' && key[0] <= '9')
@@ -129,12 +140,39 @@ func changePickerShortcuts(current, wanted []string, register func(string) error
 	return nil
 }
 
+// macOS labels the same physical key Option and writes ⌘ last. Showing "Alt"
+// in Windows order there names a chord the system does not have.
 func displayPickerShortcut(key string) string {
-	mod := "Win"
+	order := []string{"Super", "Ctrl", "Alt", "Shift"}
+	labels := map[string]string{"Super": "Win", "Ctrl": "Ctrl", "Alt": "Alt", "Shift": "Shift"}
 	if runtime.GOOS == "darwin" {
-		mod = "Cmd"
+		order = []string{"Ctrl", "Alt", "Shift", "Super"}
+		labels = map[string]string{"Super": "⌘", "Ctrl": "⌃", "Alt": "⌥", "Shift": "⇧"}
 	}
-	return strings.ReplaceAll(key, "Super", mod)
+	parts := strings.Split(key, "+")
+	main := parts[len(parts)-1]
+	// Defaults such as pickerShortcuts() spell the command key "Cmd" before
+	// they reach normalizePickerShortcut.
+	var mods []string
+	for _, part := range parts[:len(parts)-1] {
+		switch strings.ToLower(strings.TrimSpace(part)) {
+		case "cmd", "command", "super", "win", "meta":
+			mods = append(mods, "Super")
+		case "ctrl", "control":
+			mods = append(mods, "Ctrl")
+		case "alt", "option":
+			mods = append(mods, "Alt")
+		case "shift":
+			mods = append(mods, "Shift")
+		}
+	}
+	result := make([]string, 0, len(parts))
+	for _, mod := range order {
+		if slices.Contains(mods, mod) {
+			result = append(result, labels[mod])
+		}
+	}
+	return strings.Join(append(result, main), "+")
 }
 
 func (a *app) registerPickerShortcut() {
