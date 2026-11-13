@@ -15,7 +15,8 @@
   <a href="https://github.com/2fa0/snapover/releases"><strong>⬇ 下载 Snapover</strong></a> •
   <a href="#-亮点">亮点</a> •
   <a href="#-快速开始">快速开始</a> •
-  <a href="#-命令行">命令行</a>
+  <a href="#-命令行">命令行</a> •
+  <a href="#-从源码构建">构建</a>
 </p>
 
 <p align="center">
@@ -161,6 +162,19 @@ cat ./notes.txt | snapover send text --stdin
 
 macOS 与 Windows 的配置方法、PowerShell 示例、完整参数和退出码见[命令行指南](docs/cli_zh.md)。
 
+## 🔧 从源码构建
+
+需要 **Go 1.27.3+**（以 `go.mod` 为准），不需要 cgo。
+
+```sh
+git clone https://github.com/2fa0/snapover.git
+cd snapover
+go test ./...
+go run ./cmd/snapover
+```
+
+源码构建不能自动更新；Finder「服务」等系统集成功能需要打包后的应用。打包与发布步骤见[构建与发布](docs/build_zh.md)。
+
 ## 🚧 已知限制
 
 - **远程桌面：**Windows RDP 会话请关闭剪贴板共享，否则 `rdpclip.exe` 可能在 Snapover 接收成功后覆盖内容。
@@ -173,7 +187,7 @@ macOS 与 Windows 的配置方法、PowerShell 示例、完整参数和退出码
 
 - 剪贴板数据、配对记录和历史都保存在自己的电脑上：macOS 为 `~/Library/Application Support/Snapover`，Windows 为 `%AppData%\Snapover`。
 - 没有遥测，不自动上传日志；日志不记录剪贴板正文、图片字节或私钥。
-- 安全漏洞请私下联系作者，不要在公开场合披露细节。
+- 安全漏洞请参照 [SECURITY.md](SECURITY.md) 私下报告，不要在公开场合披露细节。
 
 ## 📄 许可
 

@@ -1,0 +1,8 @@
+# Text is normalised in the repository; shell entry points must also stay LF in
+# the working tree, because a CRLF checkout stops them running on macOS.
+* text=auto
+*.command text eol=lf
+*.sh text eol=lf
+
+*.png binary
+*.icns binary
