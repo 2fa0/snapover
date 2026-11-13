@@ -206,7 +206,7 @@ func (a *app) loadPickPreview(id string, parent *mygo.Window) {
 				Parent: parent, Anchor: s.anchor, Placement: mygo.PlacementRightStart,
 				Gap: 8, Width: winW, Height: winH,
 				Hidden: true, Shadow: true,
-				Content: ui.View(func(c *ui.Context) {
+				Content: appView(func(c *ui.Context) {
 					t := c.Theme()
 					box := ui.Column(c).Fill().Padding(12).Gap(8).Background(t.Surface)
 					if inside := box.Hovered(); a.pickPreview.win == p && inside != a.pickPreview.inside {

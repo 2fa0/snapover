@@ -371,7 +371,7 @@ func (a *app) syncTransferHUD() {
 		SkipTaskbar:       true,
 		AlwaysOnTop:       true,
 		Hidden:            true,
-		Content:           ui.View(a.transferView),
+		Content:           appView(a.transferView),
 	}))
 	a.transferWin = win
 	win.OnClosed(func() {

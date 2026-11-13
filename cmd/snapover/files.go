@@ -25,7 +25,7 @@ func (a *app) openFiles() {
 	}
 	a.fileWin = mygo.NewWindow(a.placeOnWorkingDisplay(mygo.WindowOptions{
 		Title: a.tr("发送文件 · Snapover"), Width: 460, Height: 340,
-		MinWidth: 420, MinHeight: 300, Content: ui.View(a.filesView),
+		MinWidth: 420, MinHeight: 300, Content: appView(a.filesView),
 	}))
 	a.fileWin.OnClosed(func() { a.fileWin = nil })
 }

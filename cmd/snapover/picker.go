@@ -69,7 +69,7 @@ func (a *app) openPicker(atPointer bool) {
 		a.picker = mygo.NewFlyout(mygo.FlyoutOptions{
 			Tray: a.tray, Width: bounds.Width, Height: bounds.Height,
 			Hidden: true, Focusable: true, Shadow: true,
-			Content: ui.View(a.pickerView),
+			Content: appView(a.pickerView),
 		})
 		if runtime.GOOS == "darwin" {
 			// A nonactivating panel can take the keyboard over another app's
@@ -91,7 +91,7 @@ func (a *app) openPicker(atPointer bool) {
 			Height:    height,
 			Focusable: true,
 			Shadow:    true,
-			Content:   ui.View(a.pickerView),
+			Content:   appView(a.pickerView),
 		}
 		if runtime.GOOS == "darwin" {
 			// A status-item NSPopover does not close on outside clicks in

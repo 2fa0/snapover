@@ -1,10 +1,24 @@
 package main
 
 import (
+	"runtime"
+
 	"github.com/2fa0/snapover/internal/settings"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
+
+func appView(view func(*ui.Context)) *ui.Content {
+	return ui.View(func(c *ui.Context) {
+		if runtime.GOOS == "windows" {
+			theme := *c.Theme()
+			// Keep Chinese glyphs in one UI family instead of locale-dependent fallback.
+			theme.Font = "Microsoft YaHei UI, Microsoft YaHei, Segoe UI, sans-serif"
+			c.SetTheme(&theme)
+		}
+		view(c)
+	})
+}
 
 func configureTheme(theme string) {
 	source := mygo.ThemeSystem
