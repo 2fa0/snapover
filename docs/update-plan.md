@@ -107,11 +107,7 @@ func main() {
     mygo.Use(updaterui.New(updater.Options{Interval: 24 * time.Hour}))
 ```
 
-`cmd/snapover/tray.go` 的 `trayMenu()`，在「设置」之后插入：
-
-```go
-{Label: "检查更新…", Click: func(*mygo.MenuItem, *mygo.Window) { updater.CheckForUpdates() }},
-```
+`cmd/snapover/tray.go` 的 `trayMenu()` 原本计划在「设置」之后插入「检查更新…」。实际没有放进托盘：托盘菜单只放高频动作，检查更新是低频操作，入口落在设置页按钮和 macOS 应用菜单里（About 之后，符合系统习惯）。
 
 `cmd/snapover/window.go` 的 `settingsPage()` 末尾加一组（沿用 `settingsGroup` 写法）：
 
@@ -137,6 +133,16 @@ settingsGroup(c, "关于与更新", func() {
 - macOS 的登录项（`SetOpenAtLogin`）指向 bundle 路径，路径不变，不受影响。
 - Windows「发送到」快捷方式指向 exe 路径，路径不变，不受影响。
 - macOS 服务菜单（`NSServices`）由 Info.plist 声明，新版本 Info.plist 生效后由 LaunchServices 重新登记，无需手动操作。
+
+### 4.5 网络异常、卡死与残留（2026-11 补充）
+
+更新器自己的请求没有整体超时：带宽正常但连接被放弃（热点切换、睡眠唤醒、半开连接、代理挂住）时，一次检查或一次后台下载会一直等，期间不再排下一次检查，后台下载又没有窗口可以取消。应用侧用三件事兜住：
+
+- **超时源**（`cmd/snapover/update_source.go`）：`mygo.Updater.SetSource` 换成一个自带期限的实现——manifest 整个请求 30 秒封顶，发布包下载 60 秒没收到任何字节就放弃（慢不算，停算）。验签仍由 mygo 做，超时不会降低安全性，最坏是这次更新失败并报错。
+- **feed 地址与回落**：源要自己拼 feed 地址，所以 `updateFeed()` 里的仓库名与 mygo.json 的 `updates.github` 必须一致，`TestUpdateSourceMatchesBuildConfig` 会在换仓库、改用 `updates.url` 或设置 `tagPrefix` 时失败提醒。万一仍然拼错，404 时会把源清回 mygo 自带 feed，行为退回旧样，不会让所有人永久收不到更新。
+- **残留清理**（`cmd/snapover/update_cleanup.go`）：更新在应用旁解到 `.<名字>.update-*` 目录里，进程被杀或崩溃会留下整包（最大 1 GiB），而 mygo 只清理它自己改名出来的 `.old-<pid>`。应用启动一分钟后清理 24 小时以前的这类目录，避开上一次运行里 macOS 安装辅助脚本可能还在搬运的时间窗。
+
+设置页还会区分“没检查过”和“这次检查没完成”：点了检查更新后 75 秒内 `LastCheck` 没有前进、也没有发现可用版本，就显示网络不通或太慢。后台检查失败仍然静默（插件不暴露失败状态），一小时内自动重试。
 
 ## 5. 发布流水线
 

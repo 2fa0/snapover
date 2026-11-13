@@ -92,6 +92,10 @@ type app struct {
 	updatesEnabled            bool
 	autoUpdate                bool
 	lastCheck                 time.Time
+	updateCheckBegan          time.Time
+	updateCheckFailed         bool
+	updateCheckGen            int
+	updateCheckTimer          *time.Timer
 	historyUsage              history.Usage
 	historyUsageValid         bool
 	historyUsageError         string
@@ -355,23 +359,31 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 	return a
 }
 
-// windowAppMenu 是 macOS 的窗口菜单栏：应用菜单里放系统惯用的「设置…」，页面切换留给侧栏，
-// 不在菜单栏里重复一份。
+// windowAppMenu 是 macOS 的窗口菜单栏：应用菜单里放系统惯用的「关于」「检查更新…」和「设置…」，
+// 页面切换留给侧栏，不在菜单栏里重复一份。
 func (a *app) windowAppMenu() *mygo.Menu {
+	app := []*mygo.MenuItem{
+		{Role: mygo.RoleAbout},
+	}
+	// Where macOS puts it, right after About, and only where the app can
+	// update itself: the settings page explains why it cannot.
+	if a.updatesEnabled {
+		app = append(app, &mygo.MenuItem{Label: a.tr("检查更新…"), Click: func(*mygo.MenuItem, *mygo.Window) { a.checkForUpdates() }})
+	}
+	app = append(app, []*mygo.MenuItem{
+		mygo.Separator(),
+		{Label: a.tr("设置…"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageSettings) }},
+		mygo.Separator(),
+		{Role: mygo.RoleServices},
+		mygo.Separator(),
+		{Role: mygo.RoleHide},
+		{Role: mygo.RoleHideOthers},
+		{Role: mygo.RoleUnhide},
+		mygo.Separator(),
+		{Role: mygo.RoleQuit},
+	}...)
 	return mygo.NewMenu([]*mygo.MenuItem{
-		{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
-			{Role: mygo.RoleAbout},
-			mygo.Separator(),
-			{Label: a.tr("设置…"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(pageSettings) }},
-			mygo.Separator(),
-			{Role: mygo.RoleServices},
-			mygo.Separator(),
-			{Role: mygo.RoleHide},
-			{Role: mygo.RoleHideOthers},
-			{Role: mygo.RoleUnhide},
-			mygo.Separator(),
-			{Role: mygo.RoleQuit},
-		}},
+		{Role: mygo.RoleAppMenu, Submenu: app},
 		{Role: mygo.RoleEditMenu},
 	})
 }
