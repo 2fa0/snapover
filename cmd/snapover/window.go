@@ -883,7 +883,10 @@ func (a *app) historyPage(c *ui.Context) {
 	if a.historyUnavailable(c) {
 		return
 	}
-	a.backupSettings(c)
+	// 置顶备份入口暂时下线：现有导出／导入（分卷、上限、追加语义、未加密提醒）
+	// 作为用户功能还太糙，需重做后再放回来。历史层的 ExportPinned／ImportPinned
+	// 保留不动，见 docs/pinned-backup-plan.md。
+	// a.backupSettings(c)
 	var searchField ui.Element
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 		field, cleared := a.searchBar(c.Key("query"), &a.query, a.tr("搜索复制历史"), a.historySearch.pending != nil)

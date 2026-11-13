@@ -97,7 +97,7 @@
   </tr>
 </table>
 
-**Also inside:** customizable shortcuts, full-text history search, image previews and zoom, pinned text/image backups, automatic updates, English and Chinese interfaces, and optional Tailscale connectivity.
+**Also inside:** customizable shortcuts, full-text history search, image previews and zoom, automatic updates, English and Chinese interfaces, and optional Tailscale connectivity.
 
 > [!NOTE]
 > Clipboard file/folder batches are capped at 20 MB by default and can be adjusted. This limit does **not** apply to sending files directly. See [features and behaviour](docs/features.md) for all limits and edge cases.
