@@ -15,7 +15,8 @@
   <a href="https://github.com/2fa0/snapover/releases"><strong>⬇ Download Snapover</strong></a> •
   <a href="#-highlights">Highlights</a> •
   <a href="#-get-started">Get started</a> •
-  <a href="#-command-line">CLI</a>
+  <a href="#-command-line">CLI</a> •
+  <a href="#-build-from-source">Build</a>
 </p>
 
 <p align="center">
@@ -161,6 +162,19 @@ Files land in the other computer’s receiving folder; text and images go to its
 
 See the [CLI guide](docs/cli.md) for macOS and Windows setup, PowerShell examples, options and exit codes.
 
+## 🔧 Build from source
+
+Requires **Go 1.27.3+** (see `go.mod`), with no cgo.
+
+```sh
+git clone https://github.com/2fa0/snapover.git
+cd snapover
+go test ./...
+go run ./cmd/snapover
+```
+
+Source builds cannot self-update, and system integrations such as Finder Services require a packaged app. Packaging and release instructions are in [docs/build.md](docs/build.md).
+
 ## 🚧 Known limitations
 
 - **Remote desktop:** disable clipboard sharing for Windows RDP sessions. `rdpclip.exe` can overwrite content after Snapover receives it.
@@ -173,7 +187,7 @@ Current behaviour, limits and troubleshooting: [docs/features.md](docs/features.
 
 - Clipboard data, paired-device records and history stay on your computers: `~/Library/Application Support/Snapover` on macOS and `%AppData%\Snapover` on Windows.
 - No telemetry or automatic log uploads. Logs do not contain clipboard text, image bytes or private keys.
-- Report vulnerabilities to the author privately, rather than disclosing them in public.
+- Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), rather than disclosing them in public.
 
 ## 📄 License
 
