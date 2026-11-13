@@ -55,15 +55,15 @@ func privacyRules(values settings.Values) []sync.AppRule {
 }
 
 func (a *app) privacySettings(c *ui.Context) {
-	if settingSwitch(c, &a.privacyMode, a.tr("隐私模式"), "") {
+	if settingSwitchHelp(c, &a.privacyMode, a.tr("隐私模式"), a.tr("开启后不记录本机复制，也不收发剪贴板内容；关闭后从新的复制事件恢复。主动发送文件不受影响。")) {
 		a.savePrivacy()
 	}
 	if a.privacyError != "" {
 		errorMessage(c, a.tr(a.privacyError))
 	}
 	// 排除名单独立于隐私模式生效，与其它折叠项同级，不挂在开关下面。
-	ui.Divider(c)
-	ui.Collapsible(c, a.tr("应用程序"), &a.showPrivacy, func() {
+	cardDivider(c)
+	settingDisclosure(c, a.tr("应用程序"), &a.showPrivacy, func() {
 		a.applicationList(c)
 	})
 }

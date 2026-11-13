@@ -36,6 +36,8 @@ var (
 	pinIcon      = interfaceIcon("bookmark")
 	searchIcon   = interfaceIcon("magnifying-glass")
 	removeIcon   = interfaceIcon("lobe-x")
+	chevronIcon  = interfaceIcon("lobe-chevron-down")
+	helpIcon     = interfaceIcon("question-mark-circle")
 )
 
 var (
@@ -55,16 +57,46 @@ func settingsGroup(c *ui.Context, title string, contents func()) ui.Element {
 	t := c.Theme()
 	return ui.Column(c.Key(title)).AlignSelf(ui.Stretch).Radius(12).Border(1, t.Border).Background(t.Surface).Children(func() {
 		ui.Text(c, title).FontSize(16).FontWeight(600).Padding(16)
-		ui.Divider(c)
+		cardDivider(c)
 		ui.Column(c).Padding(16).Gap(14).Grow(1).MinWidth(0).Children(contents)
+	})
+}
+
+// cardDivider separates the rows of a card. The card's own border already
+// outlines the group, so the lines between rows sit most of the way toward the
+// card's background and leave the labels the strongest thing in it.
+func cardDivider(c *ui.Context) ui.Element {
+	t := c.Theme()
+	return ui.Box(c).Height(1).Shrink(0).AlignSelf(ui.Stretch).Background(t.Border.Mix(t.Surface, 0.7))
+}
+
+// pageScroll scrolls a page that is taller than the window. Only the window's
+// side edges are left to the scroll, so the bar runs along the window's edge
+// and covers no card; the page's own padding sits inside it.
+func pageScroll(c *ui.Context, contents func()) ui.Element {
+	return ui.Column(c).Grow(1).FillWidth().Padding(20, 0).Children(func() {
+		ui.Scroll(c).Grow(1).ScrollbarInsets(0, 2, 0, 0).Children(func() {
+			ui.Column(c).FillWidth().Gap(20).Padding(0, 28, 28, 28).Children(contents)
+		})
 	})
 }
 
 // Adapted from Lobe MyGo's Form.Field; persistence stays with each caller.
 func settingRow(c *ui.Context, title, description string, controls func()) ui.Element {
+	return settingRowHelp(c, title, description, "", controls)
+}
+
+// settingRowHelp is settingRow with a question mark after the title, which a
+// pointer over it explains while the row itself keeps saying only its name.
+func settingRowHelp(c *ui.Context, title, description, help string, controls func()) ui.Element {
 	return ui.Row(c.Key(title)).Gap(12).AlignItems(ui.Center).AlignSelf(ui.Stretch).Children(func() {
 		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(6).Children(func() {
-			ui.Text(c, title).FontSize(14).FontWeight(500)
+			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, title).FontSize(14).FontWeight(500)
+				if help != "" {
+					settingHelp(c, help)
+				}
+			})
 			if description != "" {
 				ui.Text(c, description).FontSize(12).LineHeight(1.44).TextColor(c.Theme().TextMuted)
 			}
@@ -73,12 +105,57 @@ func settingRow(c *ui.Context, title, description string, controls func()) ui.El
 	})
 }
 
+// settingHelp is the question mark that explains a setting on hover: small and
+// muted enough to stay quiet beside the title, with a pointer of its own.
+func settingHelp(c *ui.Context, text string) ui.Element {
+	t := c.Theme()
+	mark := ui.Icon(c, helpIcon).FontSize(14).Padding(2).Shrink(0).
+		Cursor(ui.CursorHelp).Tooltip(text).TextColor(t.TextMuted)
+	if mark.Hovered() {
+		mark.TextColor(t.Text)
+	}
+	return mark
+}
+
 func settingSwitch(c *ui.Context, value *bool, title, description string) bool {
 	changed := false
 	settingRow(c, title, description, func() {
 		changed = ui.Switch(c, value).Label(switchLabel(title)).Changed()
 	})
 	return changed
+}
+
+// settingSwitchHelp is settingSwitch with a question mark that explains it, and
+// the explanation also read out as the switch's description.
+func settingSwitchHelp(c *ui.Context, value *bool, title, help string) bool {
+	changed := false
+	settingRowHelp(c, title, "", help, func() {
+		changed = ui.Switch(c, value).Label(switchLabel(title)).Description(help).Changed()
+	})
+	return changed
+}
+
+// settingDisclosure is a settings section that opens and closes. Its header
+// reads as the rows beside it rather than a level below them: the title at a
+// setting's size, at the row's left edge, with the arrow at the far end.
+func settingDisclosure(c *ui.Context, title string, open *bool, contents func()) ui.Element {
+	t := c.Theme()
+	return ui.Column(c.Key(title)).AlignSelf(ui.Stretch).Children(func() {
+		p := ui.CollapsibleBase(c.Key("section"), open)
+		tr := p.Trigger.AlignSelf(ui.Stretch).AlignItems(ui.Center).Gap(12).
+			Padding(3, 0).Radius(t.Radius)
+		if tr.Hovered() {
+			tr.Background(t.SurfaceHover)
+		}
+		tr.Children(func() {
+			ui.Text(c, title).FontSize(14).FontWeight(500).Grow(1).MinWidth(0).SingleLine()
+			ui.Icon(c, chevronIcon).FontSize(16).TextColor(t.TextMuted).Shrink(0).
+				Rotate(180 * p.Progress())
+		})
+		if panel := p.Panel(contents); panel.Valid() {
+			panel.Padding(8, 0)
+		}
+	})
 }
 
 // switchLabel names a switch for assistive technology: a title of ASCII, as

@@ -161,7 +161,7 @@ func (a *app) devicesPage(c *ui.Context) {
 			}
 		})
 	}
-	ui.Collapsible(c, a.tr("通过地址连接"), &a.showAddress, func() {
+	settingDisclosure(c, a.tr("通过地址连接"), &a.showAddress, func() {
 		ui.Column(c).Gap(10).Padding(12, 0).Children(func() {
 			ui.Segmented(c, &a.addressRoute, a.tr("局域网"), "Tailscale").Label(a.tr("连接方式"))
 			placeholder := a.tr("192.168.1.20，端口可省略")
@@ -176,11 +176,11 @@ func (a *app) devicesPage(c *ui.Context) {
 			})
 		})
 	})
-	ui.Collapsible(c, a.tr("广播网段与配对管理"), &a.showNetwork, func() {
+	settingDisclosure(c, a.tr("广播网段与配对管理"), &a.showNetwork, func() {
 		ui.Column(c).Gap(14).Padding(12, 0).Children(func() {
 			a.broadcastSection(c)
 			if len(a.devices) > 0 {
-				ui.Divider(c)
+				cardDivider(c)
 				label := a.tr("解除全部配对")
 				if a.confirm {
 					label = a.tr("确认解除全部配对")

@@ -51,23 +51,30 @@ func (a *app) buildDiagnosticSummary() string {
 }
 
 func (a *app) diagnosticSettings(c *ui.Context) {
-	if ui.Button(c, a.tr("生成诊断摘要")).Clicked() {
-		a.diagnosticSummary = a.buildDiagnosticSummary()
-	}
+	ui.Row(c).Gap(8).Children(func() {
+		if ui.Button(c, a.tr("生成诊断摘要")).Clicked() {
+			a.diagnosticSummary = a.buildDiagnosticSummary()
+		}
+		if ui.Button(c, a.tr("测试连接")).Clicked() {
+			a.probe()
+		}
+	})
 	if a.diagnosticSummary == "" {
 		return
 	}
 	ui.Text(c, a.diagnosticSummary).Selectable().FontSize(12)
-	if ui.Button(c, a.tr("复制诊断摘要")).Clicked() {
-		a.diagnosticSummary = a.buildDiagnosticSummary()
-		item, err := clip.FromText(a.diagnosticSummary)
-		if err == nil {
-			err = a.board.Write(item)
+	ui.Row(c).Children(func() {
+		if ui.Button(c, a.tr("复制诊断摘要")).Clicked() {
+			a.diagnosticSummary = a.buildDiagnosticSummary()
+			item, err := clip.FromText(a.diagnosticSummary)
+			if err == nil {
+				err = a.board.Write(item)
+			}
+			if err != nil {
+				a.reportStatusError("复制诊断摘要失败，请重试")
+			} else {
+				a.status = "已复制诊断摘要"
+			}
 		}
-		if err != nil {
-			a.reportStatusError("复制诊断摘要失败，请重试")
-		} else {
-			a.status = "已复制诊断摘要"
-		}
-	}
+	})
 }

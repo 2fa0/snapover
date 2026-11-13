@@ -79,10 +79,10 @@ func (a *app) menuBarIconSettings(c *ui.Context) {
 	// instead of three bordered buttons with a small glyph lost inside.
 	settingRow(c, a.tr(title), "", func() {
 		parts := ui.SegmentedBase(c, &selected, len(ids))
-		parts.Track.Label(a.tr(title)).Gap(10).Padding(8).Radius(12).Border(1, t.Border).
+		parts.Track.Label(a.tr(title)).Gap(4).Padding(4).Radius(10).Border(1, t.Border).
 			Background(t.Background).Children(func() {
 			for i, name := range []string{"邮筒", "小鸟", "信封"} {
-				cell := parts.Segment(i).Label(a.tr(name)).Size(44, 44).Radius(10)
+				cell := parts.Segment(i).Label(a.tr(name)).Size(30, 30).Radius(7)
 				if cell.Hovered() {
 					cell.Background(t.SurfaceHover)
 				}
@@ -91,7 +91,7 @@ func (a *app) menuBarIconSettings(c *ui.Context) {
 				}
 				cell.Children(func() {
 					if bmp := a.menuBarIconPreview(ids[i], t.Dark); bmp != nil {
-						ui.Image(c, bmp).Size(30, 30).Fit(ui.Contain)
+						ui.Image(c, bmp).Size(20, 20).Fit(ui.Contain)
 					}
 				})
 			}

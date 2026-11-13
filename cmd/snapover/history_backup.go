@@ -9,7 +9,7 @@ import (
 )
 
 func (a *app) backupSettings(c *ui.Context) {
-	ui.Collapsible(c, a.tr("置顶备份"), &a.showBackup, func() { a.backupControls(c) })
+	settingDisclosure(c, a.tr("置顶备份"), &a.showBackup, func() { a.backupControls(c) })
 }
 
 func (a *app) backupControls(c *ui.Context) {
