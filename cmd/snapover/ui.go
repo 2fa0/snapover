@@ -35,6 +35,7 @@ var (
 	folderIcon   = interfaceIcon("folder")
 	pinIcon      = interfaceIcon("bookmark")
 	searchIcon   = interfaceIcon("magnifying-glass")
+	removeIcon   = interfaceIcon("lobe-x")
 )
 
 var (
@@ -74,14 +75,19 @@ func settingRow(c *ui.Context, title, description string, controls func()) ui.El
 
 func settingSwitch(c *ui.Context, value *bool, title, description string) bool {
 	changed := false
-	switchLabel := title + "开关"
-	if title != "" && title[0] < 0x80 {
-		switchLabel = title + " switch"
-	}
 	settingRow(c, title, description, func() {
-		changed = ui.Switch(c, value).Label(switchLabel).Changed()
+		changed = ui.Switch(c, value).Label(switchLabel(title)).Changed()
 	})
 	return changed
+}
+
+// switchLabel names a switch for assistive technology: a title of ASCII, as
+// app names usually are, takes the English word.
+func switchLabel(title string) string {
+	if title != "" && title[0] < 0x80 {
+		return title + " switch"
+	}
+	return title + "开关"
 }
 
 // Adapted from Lobe MyGo's Empty, including its optional action area.

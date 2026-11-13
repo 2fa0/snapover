@@ -8,11 +8,21 @@ import (
 	"github.com/2fa0/snapover/internal/clip"
 )
 
+// AppRule is one entry of the application list. ID is the app's stable
+// identifier, empty for a rule that only knows a name.
+type AppRule struct {
+	ID   string
+	Name string
+}
+
 // SetPrivacyPolicy also invalidates copies queued before the policy changed.
-func (e *Engine) SetPrivacyPolicy(on bool, apps []string) {
+// onlyListed turns the list around: the apps it names are the ones that keep
+// being recorded and synced, and every other app is left alone.
+func (e *Engine) SetPrivacyPolicy(on bool, rules []AppRule, onlyListed bool) {
 	e.mu.Lock()
 	e.privacyMode = on
-	e.excludedApps = append([]string(nil), apps...)
+	e.appRules = append([]AppRule(nil), rules...)
+	e.onlyListed = onlyListed
 	e.privacyEpoch++
 	s := e.sess
 	e.mu.Unlock()
@@ -21,12 +31,30 @@ func (e *Engine) SetPrivacyPolicy(on bool, apps []string) {
 	}
 }
 
+// blockedLocalLocked reports whether a local copy is left out of history and
+// sync. The identifier decides when both sides have one, so that renaming an
+// app keeps its rule; otherwise the name does.
 func (e *Engine) blockedLocalLocked(item clip.Item) bool {
 	if e.privacyMode {
 		return true
 	}
-	for _, app := range e.excludedApps {
-		if name := strings.TrimSpace(app); name != "" && strings.EqualFold(name, item.SourceApp) {
+	listed := e.listedLocked(item)
+	if e.onlyListed {
+		return !listed
+	}
+	return listed
+}
+
+// listedLocked reports whether the app a copy came from is in the list.
+func (e *Engine) listedLocked(item clip.Item) bool {
+	for _, rule := range e.appRules {
+		if rule.ID != "" && item.SourceID != "" {
+			if strings.EqualFold(rule.ID, item.SourceID) {
+				return true
+			}
+			continue
+		}
+		if name := strings.TrimSpace(rule.Name); name != "" && strings.EqualFold(name, item.SourceApp) {
 			return true
 		}
 	}
