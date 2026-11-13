@@ -82,13 +82,13 @@ GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 "$go_bin" build -trimpath -ldflags="-s -w
 GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 "$go_bin" build -trimpath -ldflags="-s -w" \
     -o resources/darwin-amd64/snapover-cli ./cmd/snapover-cli
 
-echo "正在打包 Windows 11 x64…"
+echo "正在打包 Windows 10/11 x64…"
 # MyGo always invokes NSIS when found. Exclude Homebrew's crashing
 # makensis while retaining MyGo's executable icons, manifest and resources.
 PATH="$build_tools:/usr/bin:/bin:/usr/sbin:/sbin" CGO_ENABLED=0 \
     "$go_bin" tool mygo build -platform windows/amd64 -o "$out_dir" "$project_dir"
 
-windows_zip="$out_dir/Snapover-${version}-windows11-x64.zip"
+windows_zip="$out_dir/Snapover-${version}-windows-x64.zip"
 # Before the ZIP, so that it holds the app and nothing else.
 collect_updates "$out_dir/windows-amd64"
 /usr/bin/ditto -c -k --keepParent "$out_dir/windows-amd64" "$build_tools/windows.zip"
@@ -103,7 +103,7 @@ CGO_ENABLED=0 "$go_bin" tool mygo build -platform darwin/amd64 -o "$out_dir" "$p
 collect_updates "$out_dir/darwin-amd64"
 
 echo "打包完成："
-echo "  Windows 11 x64：$windows_zip"
+echo "  Windows 10/11 x64：$windows_zip"
 echo "  Windows CLI：$out_dir/windows-amd64/snapover-cli.exe"
 echo "  Mac 应用：$out_dir/darwin-arm64/Snapover.app"
 echo "  Mac CLI：$out_dir/darwin-arm64/Snapover.app/Contents/Resources/snapover-cli"

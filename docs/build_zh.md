@@ -16,9 +16,9 @@
 ./build.command
 ```
 
-生成 Windows 11 x64、Mac M 系列（arm64）和 Intel Mac（amd64）的包，Mac 均要求 macOS 13 及以上版本：
+生成 Windows 10/11 x64、Mac M 系列（arm64）和 Intel Mac（amd64）的包，Mac 均要求 macOS 13 及以上版本：
 
-- `dist/Snapover-<版本>-windows11-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
+- `dist/Snapover-<版本>-windows-x64.zip`：解压后运行文件夹里的 `Snapover.exe`，保留旁边的资源文件
 - `dist/darwin-arm64/Snapover.app` 与 `dist/darwin-arm64/snapover-<版本>-arm64.dmg`
 - `dist/darwin-amd64/Snapover.app` 与 `dist/darwin-amd64/snapover-<版本>-amd64.dmg`
 - `dist/releases/`：`*.tar.gz`、`*.delta`、`update-*.json`、`install.sh` 等更新产物
