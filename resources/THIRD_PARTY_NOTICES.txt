@@ -1,10 +1,9 @@
 Snapover third-party notices
 
-This file covers third-party software and assets included in Snapover 0.10.1.
+This file covers third-party software and assets included in Snapover.
 Each component remains subject to its own license below; those licenses are not
-changed by Snapover's own MIT license. Snapover's own source code is MIT
-licensed (see LICENSE in the source repository), which these notices do not
-replace.
+changed by Snapover's own terms. Snapover itself is closed-source software with
+all rights reserved, which these notices do not replace.
 
 The MPL-2.0 component github.com/hashicorp/golang-lru/v2 is available in source
 form at https://github.com/hashicorp/golang-lru/tree/v2.0.7 . The simplelru

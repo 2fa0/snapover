@@ -8,7 +8,7 @@
   "main": "./cmd/snapover",
   "icon": "resources/app.png",
   "out": "dist",
-  "resources": ["LICENSE"],
+  "resources": [],
   "updates": {
     "publicKey": "OOzAOkBfq4xG7K3e216vyE3WHcMAoDrIAyxJq/X4PPg=",
     "github": "2fa0/snapover-release",

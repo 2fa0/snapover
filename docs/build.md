@@ -1,7 +1,8 @@
 # Building and releasing
 
-For maintainers. Day-to-day development and contributions only need the commands
-in the [README](../README.md#-build-from-source).
+For maintainers. Day-to-day development is `go test ./...` and
+`go run ./cmd/snapover`; the source is not public, and the README is written for
+users.
 
 **English** | [简体中文](build_zh.md)
 
@@ -115,10 +116,10 @@ Settings among mailbox, bird and envelope — `internal/resources/icon2.png`,
 `internal/resources/icon1.png` and `internal/resources/icon3.png`, which must keep
 their alpha channel; replacing them requires repackaging and restarting.
 
-`LICENSE` ships through the `resources` list in `mygo.json` (`Contents/Resources`
-on macOS, next to the executable on Windows), and
-`resources/THIRD_PARTY_NOTICES.txt` ships with the whole `resources/` directory.
-Update that list when upgrading dependencies or swapping third-party assets.
+`resources/THIRD_PARTY_NOTICES.txt` ships with the whole `resources/` directory;
+update that list when upgrading dependencies or swapping third-party assets. The
+package carries it and the third-party licenses, and no longer a `LICENSE` of its
+own: the source is not public, and the `resources` list in `mygo.json` is empty.
 
 ## Verification
 
