@@ -118,8 +118,8 @@ their alpha channel; replacing them requires repackaging and restarting.
 
 `resources/THIRD_PARTY_NOTICES.txt` ships with the whole `resources/` directory;
 update that list when upgrading dependencies or swapping third-party assets. The
-package carries it and the third-party licenses, and no longer a `LICENSE` of its
-own: the source is not public, and the `resources` list in `mygo.json` is empty.
+package also carries `LICENSE`: Apache-2.0 requires the license text to travel
+with every distribution, so it stays in the `resources` list in `mygo.json`.
 
 ## Verification
 

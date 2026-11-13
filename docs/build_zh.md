@@ -80,7 +80,7 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o bin/snapover-cli.exe ./cmd/s
 
 应用图标使用 `resources/app.png`。菜单栏／托盘图标可在设置里选邮筒、小鸟或信封，对应 `internal/resources/icon2.png`、`internal/resources/icon1.png`、`internal/resources/icon3.png`，需保留 PNG 的透明通道；替换后要重新打包并重启程序。
 
-`resources/THIRD_PARTY_NOTICES.txt` 会随整个 `resources/` 目录一起打包，升级依赖或更换第三方素材时应同步更新该清单；随包文件以它和第三方许可证为准，不再附带 `LICENSE`（源码不公开，`mygo.json` 的 `resources` 列表为空）。
+`resources/THIRD_PARTY_NOTICES.txt` 会随整个 `resources/` 目录一起打包，升级依赖或更换第三方素材时应同步更新该清单；安装包同时附带 `LICENSE`——Apache-2.0 要求每次分发都带上许可证全文，因此它留在 `mygo.json` 的 `resources` 列表里。
 
 ## 验证
 
