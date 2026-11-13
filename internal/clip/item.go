@@ -61,6 +61,10 @@ type Item struct {
 	// SourceApp is the foreground app that owned this copy. Empty when unknown.
 	// It is not part of the content hash.
 	SourceApp string
+	// SourceID identifies that app however its display name changes: the
+	// bundle identifier on macOS, the executable path on Windows. It is local
+	// only, set where the copy is observed, and never sent to a peer.
+	SourceID string
 	// pixels is a transient decode for the next native publish. History and
 	// network payloads must not retain it.
 	pixels image.Image

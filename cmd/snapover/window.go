@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/2fa0/snapover/internal/apps"
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/discovery"
 	"github.com/2fa0/snapover/internal/history"
@@ -48,7 +49,13 @@ type app struct {
 	languageError             string
 	themeError                string
 	privacyMode               bool
-	excludedAppsText          string
+	excludedWhitelist         bool
+	runningApps               []apps.App
+	runningAppsAt             time.Time
+	runningAppsBusy           bool
+	appIcons                  map[string][]byte
+	appBitmaps                map[string]*ui.Bitmap
+	menuIcons                 map[string]*mygo.MenuIcon
 	privacyError              string
 	backupBusy                bool
 	showBackup                bool
@@ -275,7 +282,7 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		paused:              cfg.Values.Paused,
 		privacyMode:         cfg.Values.PrivacyMode,
 		clipboardOwner:      clip.OwnerProcess,
-		excludedAppsText:    strings.Join(cfg.Values.ExcludedApps, "; "),
+		excludedWhitelist:   cfg.Values.ExcludedWhitelist,
 		textOnly:            cfg.Values.TextOnly,
 		keepAwake:           cfg.Values.KeepAwake,
 		allowTailscale:      cfg.Values.AllowTailscale,

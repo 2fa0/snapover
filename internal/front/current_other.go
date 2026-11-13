@@ -2,4 +2,4 @@
 
 package front
 
-func Current() string { return "" }
+func CurrentSource() Source { return Source{} }

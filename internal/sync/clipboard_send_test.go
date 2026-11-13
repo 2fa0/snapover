@@ -74,7 +74,7 @@ func TestQueuedCLIReceivesLocalPolicyRejection(t *testing.T) {
 			if policy == "pause" {
 				e.SetPolicy(true, false, 0)
 			} else {
-				e.SetPrivacyPolicy(true, nil)
+				e.SetPrivacyPolicy(true, nil, false)
 			}
 			select {
 			case err := <-result:

@@ -114,11 +114,17 @@ image editor still syncs as an image.
 - Privacy mode in Settings and the tray: while on, local copies are not recorded
   and nothing is sent or received, and the setting survives a restart. Sending
   files on purpose still works. Turning it off resumes from the next copy event
-  without replaying what was ignored. Settings → Clipboard sync → Excluded
-  source apps takes the full application names shown in history, separated by
-  semicolons and case-insensitive: copies made in those apps are neither
-  recorded nor synced. An unrecognised source is treated as an ordinary copy,
-  and remote source names are not used for exclusion.
+  without replaying what was ignored.
+- Settings → Clipboard sync → Applications is a list of applications:
+  each row has a switch that silences its rule for now, and a button that
+  removes it. "Add App" offers the apps that are running now, with their icons,
+  and any app chosen from Finder or File Explorer. Rules match the app's
+  identifier (the bundle identifier on macOS, the executable path on Windows),
+  so renaming an app keeps its rule; a name-based list saved by an older
+  version keeps working by name. With "Whitelist Mode" on the list turns
+  around: only the listed apps whose switch is on are recorded and synced, so
+  an empty list records and syncs nothing. Remote source names are not used for
+  matching.
 - The tray can enable "Ignore the next copy": that copy is neither recorded nor
   synced, and clicking the item again cancels it. It resets after the next local
   copy settles, without touching the system clipboard or deleting past history;
@@ -304,6 +310,8 @@ image editor still syncs as an image.
 
 ## Interface, motion and feedback
 
+- Windows uses Microsoft YaHei UI (with Microsoft YaHei as a fallback) to keep
+  Chinese interface glyphs consistent across windows.
 - Page changes, sidebar selection colour, connection state and record counts use
   MyGo's native motion, and device details expand with a short transition. The
   system "Reduce motion" setting is respected, while keyboard selection and
@@ -339,8 +347,9 @@ image editor still syncs as an image.
   state and the sidebar switches pages (the macOS window menu bar keeps only the
   application and edit menus, with "Settings…" in the application menu under
   `⌘,`). The shortcut still opens quick history directly.
-- Settings → Menu bar icon on macOS and Settings → Tray icon on Windows offer a
-  horizontal preview of the mailbox, bird and envelope icons. The mailbox is the
+- Settings → General & Appearance holds one horizontal strip of previews, titled
+  "Menu Bar Icon" on macOS and "Tray Icon" on Windows: clicking the mailbox, bird
+  or envelope outlines the chosen one. The mailbox is the
   default, a change applies immediately and is remembered. The old original icon
   is gone and that choice now means the mailbox, while bird and envelope choices
   are kept. The resources are `internal/resources/icon2.png`,

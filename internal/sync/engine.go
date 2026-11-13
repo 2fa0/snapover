@@ -65,7 +65,8 @@ type Engine struct {
 	clipMu       sync.Mutex
 	mu           sync.Mutex
 	privacyMode  bool
-	excludedApps []string
+	appRules     []AppRule
+	onlyListed   bool
 	privacyEpoch uint64
 	paused       bool
 	manualSync   bool

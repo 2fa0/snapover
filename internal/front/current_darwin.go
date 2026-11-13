@@ -16,21 +16,27 @@ var (
 	selUTF8String      = objc.RegisterName("UTF8String")
 )
 
-// Current is the localized name of the foreground app.
-// It does not need Accessibility permission. An empty string means unknown.
-func Current() string {
+// CurrentSource is the app in front.
+// It does not need Accessibility permission. Zero means unknown.
+func CurrentSource() Source {
 	ws := objc.ID(objc.GetClass("NSWorkspace")).Send(selSharedWorkspace)
 	if ws == 0 {
-		return ""
+		return Source{}
 	}
-	app := ws.Send(selFrontmost)
+	return describe(ws.Send(selFrontmost))
+}
+
+// describe names a running application, preferring its localized name and
+// falling back to the identifier when it has none.
+func describe(app objc.ID) Source {
 	if app == 0 {
-		return ""
+		return Source{}
 	}
-	if name := nsString(app.Send(selLocalizedName)); name != "" {
-		return name
+	s := Source{Name: nsString(app.Send(selLocalizedName)), ID: nsString(app.Send(selBundleID))}
+	if s.Name == "" {
+		s.Name = s.ID
 	}
-	return nsString(app.Send(selBundleID))
+	return s
 }
 
 func nsString(id objc.ID) string {

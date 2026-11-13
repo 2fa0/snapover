@@ -194,7 +194,7 @@ func main() {
 	engine.Board = clip.MyGoBoard{TextLimit: engine.TextLimit}
 	engine.SetPolicy(cfg.Values.Paused, cfg.Values.TextOnly, cfg.Values.MaxImageMB<<20)
 	engine.SetManualSync(cfg.Values.ManualSync)
-	engine.SetPrivacyPolicy(cfg.Values.PrivacyMode, cfg.Values.ExcludedApps)
+	engine.SetPrivacyPolicy(cfg.Values.PrivacyMode, privacyRules(cfg.Values), cfg.Values.ExcludedWhitelist)
 	receiveDir := cfg.Values.ReceiveDir
 	if receiveDir == "" {
 		receiveDir = defaultReceiveDir()
@@ -250,7 +250,9 @@ func main() {
 		engine.StartLocalQueue(ctx)
 		go clip.Watch(ctx, engine.Board, clip.PollEvery, func(seq uint64, item clip.Item) {
 			if item.Kind != "" && !item.Sensitive && item.Skip == "" && item.SourceApp == "" {
-				item.SourceApp = clip.CleanSource(front.Current())
+				source := front.CurrentSource()
+				item.SourceApp = clip.CleanSource(source.Name)
+				item.SourceID = source.ID
 			}
 			engine.ObserveLocal(seq, item)
 		})
