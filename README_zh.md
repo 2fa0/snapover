@@ -161,10 +161,6 @@ cat ./notes.txt | snapover send text --stdin
 
 macOS 与 Windows 的配置方法、PowerShell 示例、完整参数和退出码见[命令行指南](docs/cli_zh.md)。
 
-## 📦 只提供安装包
-
-Snapover 以预编译安装包发布，不公开源码，也不提供对外构建或再分发授权。
-
 ## 🚧 已知限制
 
 - **远程桌面：**Windows RDP 会话请关闭剪贴板共享，否则 `rdpclip.exe` 可能在 Snapover 接收成功后覆盖内容。
@@ -179,6 +175,6 @@ Snapover 以预编译安装包发布，不公开源码，也不提供对外构�
 - 没有遥测，不自动上传日志；日志不记录剪贴板正文、图片字节或私钥。
 - 安全漏洞请私下联系作者，不要在公开场合披露细节。
 
-## 📄 版权
+## 📄 许可
 
-Snapover 为闭源软件，版权归作者所有。随包分发的第三方组件遵循各自许可证，完整清单见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。
+Snapover 以 [Apache License 2.0](LICENSE) 授权，版权归作者所有（© 2026 2fa0）。你可以自由使用、修改和分发，包括商业用途，条件是保留版权与许可声明、随分发附带许可证全文，并遵守其中的专利与商标条款。随包分发的第三方组件遵循各自许可证，完整清单见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。

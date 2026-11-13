@@ -161,10 +161,6 @@ Files land in the other computer’s receiving folder; text and images go to its
 
 See the [CLI guide](docs/cli.md) for macOS and Windows setup, PowerShell examples, options and exit codes.
 
-## 📦 Packages only
-
-Snapover ships as prebuilt packages. The source is not published, and building or redistributing it is not licensed.
-
 ## 🚧 Known limitations
 
 - **Remote desktop:** disable clipboard sharing for Windows RDP sessions. `rdpclip.exe` can overwrite content after Snapover receives it.
@@ -179,6 +175,6 @@ Current behaviour, limits and troubleshooting: [docs/features.md](docs/features.
 - No telemetry or automatic log uploads. Logs do not contain clipboard text, image bytes or private keys.
 - Report vulnerabilities to the author privately, rather than disclosing them in public.
 
-## 📄 Copyright
+## 📄 License
 
-Snapover is closed-source software, all rights reserved. Third-party components bundled with it keep their own licenses; see [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt) for the full list.
+Snapover is licensed under the [Apache License 2.0](LICENSE), copyright © 2026 2fa0. You may use, modify and distribute it, including commercially, provided you keep the copyright and license notices, ship the license text with every distribution, and follow its patent and trademark terms. Third-party components bundled with it keep their own licenses; see [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt) for the full list.
