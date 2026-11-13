@@ -2,7 +2,7 @@
   "name": "Snapover",
   "slug": "snapover",
   "identifier": "app.snapover.desktop",
-  "version": "0.10.4",
+  "version": "0.10.5",
   "license": "MIT",
   "copyright": "© 2026 2fa0",
   "main": "./cmd/snapover",
@@ -11,7 +11,7 @@
   "resources": ["LICENSE"],
   "updates": {
     "publicKey": "OOzAOkBfq4xG7K3e216vyE3WHcMAoDrIAyxJq/X4PPg=",
-    "github": "2fa0/snapover",
+    "github": "2fa0/snapover-release",
     "changelog": "docs/CHANGELOG.md",
     "privateKey": "~/.config/snapover/update-keys/mygo-update.key"
   },
