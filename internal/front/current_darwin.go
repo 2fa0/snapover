@@ -3,6 +3,7 @@
 package front
 
 import (
+	"strings"
 	"unsafe"
 
 	"github.com/ebitengine/purego/objc"
@@ -39,6 +40,9 @@ func describe(app objc.ID) Source {
 	return s
 }
 
+// nsString copies what a string answers with: the buffer belongs to the
+// autorelease pool it was made in, so a string that aliased it would change
+// with whatever that memory is used for next.
 func nsString(id objc.ID) string {
 	if id == 0 {
 		return ""
@@ -54,5 +58,5 @@ func nsString(id objc.ID) string {
 			break
 		}
 	}
-	return unsafe.String((*byte)(ptr), n)
+	return strings.Clone(unsafe.String((*byte)(ptr), n))
 }

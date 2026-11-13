@@ -126,7 +126,7 @@ func running() []App {
 			if app == 0 || objc.Send[int64](app, selPolicy) != activationRegular {
 				continue
 			}
-			entry := App{Name: nsString(app.Send(selLocalizedName)), ID: nsString(app.Send(selBundleID))}
+			entry := App{Name: printable(nsString(app.Send(selLocalizedName))), ID: nsString(app.Send(selBundleID))}
 			if entry.Name == "" {
 				entry.Name = entry.ID
 			}
@@ -155,7 +155,7 @@ func describe(path string) (App, error) {
 			return
 		}
 		entry = App{ID: nsString(bundle.Send(selBundleID))}
-		entry.Name = bundleName(bundle)
+		entry.Name = printable(bundleName(bundle))
 		if entry.Name == "" {
 			entry.Name = strings.TrimSuffix(filepath.Base(strings.TrimSuffix(path, "/")), ".app")
 		}
@@ -172,6 +172,18 @@ func describe(path string) (App, error) {
 		err = errors.New("不是应用程序")
 	}
 	return entry, err
+}
+
+// printable drops the control characters a name cannot be shown with, such
+// as what a string that answered from replaced memory would carry: a label
+// of NULs shows as a row with no name at all.
+func printable(name string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, name)
 }
 
 // bundleName is the name the app shows, which is its display name rather
@@ -287,6 +299,9 @@ func smallPNG(data []byte) []byte {
 	return out.Bytes()
 }
 
+// nsString copies what a string answers with: the buffer belongs to the
+// autorelease pool, which drains when the app it was read for is done, and a
+// string that aliased it would show whatever the pool reused the memory for.
 func nsString(id objc.ID) string {
 	if id == 0 {
 		return ""
@@ -302,7 +317,7 @@ func nsString(id objc.ID) string {
 			break
 		}
 	}
-	return unsafe.String((*byte)(ptr), n)
+	return strings.Clone(unsafe.String((*byte)(ptr), n))
 }
 
 // nsStringWith makes an NSString of s, which the runtime copies.
