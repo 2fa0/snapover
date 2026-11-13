@@ -18,10 +18,10 @@ For maintainers. Day-to-day development is `go test ./...` and
 ./build.command
 ```
 
-This produces Windows 11 x64, Apple silicon (arm64) and Intel (amd64) packages;
+This produces Windows 10/11 x64, Apple silicon (arm64) and Intel (amd64) packages;
 macOS requires 13 or later:
 
-- `dist/Snapover-<version>-windows11-x64.zip` — extract and run `Snapover.exe`
+- `dist/Snapover-<version>-windows-x64.zip` — extract and run `Snapover.exe`
   from the folder, keeping the resource files beside it
 - `dist/darwin-arm64/Snapover.app` and
   `dist/darwin-arm64/snapover-<version>-arm64.dmg`

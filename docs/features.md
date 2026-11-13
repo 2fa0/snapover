@@ -29,6 +29,13 @@ shortcuts are described in the README.
   fit. TIFF and DIB payloads are size-checked before they are copied into Go,
   and conversion happens in the background. After a run of large images the app
   waits for idle before reclaiming memory instead of forcing a GC per image.
+- Images are published as PNG, the only format both platforms write and read
+  with straight alpha intact. On Windows the clipboard also carries a 24-bit
+  `CF_DIB`, because applications such as Feishu convert `CF_DIB` to
+  `CF_BITMAP` and would otherwise paste nothing from a Snapover copy. That
+  bitmap cannot express transparency, so an application reading only it pastes
+  the image with the transparent area flattened. Do not "fix" this by adding
+  `CF_DIBV5`: it reintroduces the 32-bit form those applications reject.
 
 ## Files and folders
 

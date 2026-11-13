@@ -33,7 +33,7 @@
 | --- | --- |
 | Apple 芯片 Mac（M 系列） | `snapover-<版本>-arm64.dmg` |
 | Intel Mac | `snapover-<版本>-amd64.dmg` |
-| Windows 10/11 x64 | `Snapover-<版本>-windows11-x64.zip`，或 `snapover-<版本>-windows-amd64.tar.gz` |
+| Windows 10/11 x64 | `Snapover-<版本>-windows-x64.zip`，或 `snapover-<版本>-windows-amd64.tar.gz` |
 
 不确定 Mac 是哪一种：左上角苹果菜单 → 关于本机。芯片一栏写 Apple 就下 arm64，写 Intel 就下 amd64。
 

@@ -1,5 +1,9 @@
 # 更新记录
 
+## 未发布
+
+- Windows 安装包改名为 `Snapover-<版本>-windows-x64.zip`（原为 `windows11-x64`），与实际支持的 Windows 10/11 一致；包内容不变，升级包和自动更新仍走 `*.tar.gz`，不受影响。
+
 ## 0.10.6
 
 - 源码重新公开在 `2fa0/snapover`，以 Apache-2.0 授权：安装包重新带上 `LICENSE`，第三方清单不再声称应用闭源。

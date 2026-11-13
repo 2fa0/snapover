@@ -8,11 +8,13 @@
   <strong>Copy here. Paste there.</strong><br><br>
   One shared clipboard for your Mac and Windows PC.<br>
   Move text, screenshots, files and entire folders between computers<br>
-  over a direct, encrypted connection. No account. No cloud.
+  over a direct, encrypted connection.<br>
+  <strong>No account. No cloud. No embedded browser.</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/2fa0/snapover/releases"><strong>⬇ Download Snapover</strong></a> •
+  <a href="#-who-its-for">Who it's for</a> •
   <a href="#-highlights">Highlights</a> •
   <a href="#-get-started">Get started</a> •
   <a href="#-command-line">CLI</a> •
@@ -24,6 +26,7 @@
   <img src="https://img.shields.io/badge/macOS%2013%2B-000000?style=flat-square&logo=apple" alt="macOS 13+" />
   <img src="https://img.shields.io/badge/Windows%2010%2F11-0078D4?style=flat-square&logo=windows" alt="Windows 10/11" />
   <img src="https://img.shields.io/badge/Go-1.27+-00ADD8.svg?style=flat-square&logo=go" alt="Go 1.27+" />
+  <img src="https://img.shields.io/badge/license-Apache--2.0-green.svg?style=flat-square" alt="Apache-2.0 License" />
 </p>
 
 <p align="center">
@@ -36,30 +39,19 @@
 
 ---
 
-<table align="center">
-  <tr>
-    <td align="center" width="33%">
-      <strong>1 · COPY</strong><br><br>
-      💻 <strong>Computer A</strong><br>
-      <code>⌘C</code> or <code>Ctrl+C</code>
-    </td>
-    <td align="center" width="33%">
-      <strong>2 · SYNC</strong><br><br>
-      ⚡ <strong>Snapover</strong><br>
-      Direct, encrypted connection
-    </td>
-    <td align="center" width="33%">
-      <strong>3 · PASTE</strong><br><br>
-      🖥️ <strong>Computer B</strong><br>
-      <code>⌘V</code> or <code>Ctrl+V</code>
-    </td>
-  </tr>
-</table>
-
 <p align="center">
   <strong>Text · Images · Files · Folders</strong><br>
   No upload button. No chat app. No USB drive. Just copy and paste.
 </p>
+
+## 🎯 Who it's for
+
+Snapover overlaps with a few good, focused tools. If one of them is all you need, use it:
+
+- **Clipboard history on one Mac** → [Maccy](https://maccy.app).
+- **Clipboard history on one Windows PC** → [Ditto](https://ditto-cp.sourceforge.io).
+- **Moving files between devices** → [LocalSend](https://localsend.org).
+- **Two computers on the same desk, moving text, screenshots, files and folders both ways** → Snapover. Any pairing works: a Mac and a Windows PC, two Macs, or two Windows PCs.
 
 ## ✨ Highlights
 
@@ -91,7 +83,7 @@
     </td>
     <td width="50%" valign="top">
       <h3>🪶 Native app. Terminal friendly.</h3>
-      Built with Go and MyGo using native controls, not an embedded browser. The bundled <code>snapover-cli</code> brings text, images and files into scripts and terminal workflows.
+      Built with Go and MyGo using native OS controls, which keeps the memory footprint lean. The bundled <code>snapover-cli</code> brings text, images and files into scripts and terminal workflows.
     </td>
   </tr>
 </table>
@@ -108,7 +100,7 @@
 Download the latest package from [**Releases**](https://github.com/2fa0/snapover/releases):
 
 - **macOS 13+**: choose `snapover-<version>-arm64.dmg` for Apple silicon or `snapover-<version>-amd64.dmg` for Intel, then drag Snapover into **Applications**.
-- **Windows 10/11 x64**: extract `Snapover-<version>-windows11-x64.zip` and run `Snapover.exe`, keeping the accompanying files together. Add an empty `portable.flag` beside it to store data in a local `data/` folder.
+- **Windows 10/11 x64**: extract `Snapover-<version>-windows-x64.zip` and run `Snapover.exe`, keeping the accompanying files together. Add an empty `portable.flag` beside it to store data in a local `data/` folder.
 
 <details>
 <summary><strong>First-launch notes: Gatekeeper, SmartScreen and firewall</strong></summary>
@@ -178,7 +170,7 @@ Source builds cannot self-update, and system integrations such as Finder Service
 ## 🚧 Known limitations
 
 - **Remote desktop:** disable clipboard sharing for Windows RDP sessions. `rdpclip.exe` can overwrite content after Snapover receives it.
-- **Images:** transport uses PNG. Transparency may be lost when pasting into some third-party apps; see the detailed format notes.
+- **Images:** transport uses PNG, which keeps transparency. Windows also publishes a 24-bit bitmap for applications that accept only that form, and those paste it flattened. See [image formats](docs/features.md#images) for the details.
 - **Not built in:** internet discovery/relaying and rich-text sync. For separate networks, connect both computers with Tailscale and enable it in Snapover.
 
 Current behaviour, limits and troubleshooting: [docs/features.md](docs/features.md).
@@ -189,6 +181,14 @@ Current behaviour, limits and troubleshooting: [docs/features.md](docs/features.
 - No telemetry or automatic log uploads. Logs do not contain clipboard text, image bytes or private keys.
 - Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), rather than disclosing them in public.
 
+## 🙏 Thanks
+
+The native UI, packaging and auto-update plumbing come from [MyGo](https://github.com/egoist/mygo). Thanks to egoist and everyone who has contributed to it.
+
 ## 📄 License
 
 Snapover is licensed under the [Apache License 2.0](LICENSE), copyright © 2026 2fa0. You may use, modify and distribute it, including commercially, provided you keep the copyright and license notices, ship the license text with every distribution, and follow its patent and trademark terms. Third-party components bundled with it keep their own licenses; see [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt) for the full list.
+
+<p align="center">
+  Found a bug or have a workflow in mind? <a href="https://github.com/2fa0/snapover/issues">Open an issue</a> — feedback is welcome.
+</p>
