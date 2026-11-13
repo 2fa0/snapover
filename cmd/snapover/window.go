@@ -743,14 +743,14 @@ func (a *app) view(c *ui.Context) {
 				if bar.Height > 0 {
 					ui.Box(c).Height(bar.Height).Shrink(0).DragWindow()
 				}
-				ui.Column(c).Grow(1).FillWidth().Padding(20, 28, 28, 28).Gap(20).Children(func() {
+				ui.Column(c).Grow(1).FillWidth().Children(func() {
 					switch a.page {
 					case pageDevices:
-						ui.Scroll(c.Key("devices-scroll")).Grow(1).Gap(20).Children(func() { a.devicesPage(c) })
+						pageScroll(c.Key("devices-scroll"), func() { a.devicesPage(c) })
 					case pageHistory:
-						a.historyPage(c)
+						ui.Column(c).Grow(1).FillWidth().Padding(20, 28, 28, 28).Gap(20).Children(func() { a.historyPage(c) })
 					default:
-						ui.Scroll(c.Key("settings-scroll")).Grow(1).Gap(20).Children(func() { a.settingsPage(c) })
+						pageScroll(c.Key("settings-scroll"), func() { a.settingsPage(c) })
 					}
 				})
 			})
@@ -768,18 +768,18 @@ func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
 	settingsGroup(c, a.tr("剪贴板同步"), func() {
 		a.privacySettings(c)
-		ui.Divider(c)
+		cardDivider(c)
 		a.syncModeSettings(c)
-		ui.Divider(c)
+		cardDivider(c)
 		if settingSwitch(c, &a.paused, a.tr("暂停同步"), "") {
 			a.saveSettings()
 		}
-		ui.Divider(c)
+		cardDivider(c)
 		if settingSwitch(c, &a.textOnly, a.tr("只同步文本"), "") {
 			a.saveSettings()
 		}
-		ui.Divider(c)
-		ui.Collapsible(c, a.tr("大小限制"), &a.showSyncLimits, func() {
+		cardDivider(c)
+		settingDisclosure(c, a.tr("大小限制"), &a.showSyncLimits, func() {
 			ui.Column(c).Gap(14).Padding(12, 0).Children(func() {
 				settingRow(c, a.tr("文本大小上限"), "", func() {
 					if a.numberInput(c.Key("maxtextmb"), &a.maxTextText, a.tr("文本大小上限，MB"), 1, settings.MaxTextMB, 88).Submitted() {
@@ -793,7 +793,7 @@ func (a *app) settingsPage(c *ui.Context) {
 				if a.maxTextError != "" {
 					errorMessage(c, a.tr(a.maxTextError))
 				}
-				ui.Divider(c)
+				cardDivider(c)
 				settingRow(c, a.tr("图片大小上限"), "", func() {
 					if a.numberInput(c.Key("maxmb"), &a.maxImageText, a.tr("图片大小上限，MB"), 1, settings.DefaultMaxImageMB, 88).Submitted() {
 						a.saveSettings()
@@ -803,7 +803,7 @@ func (a *app) settingsPage(c *ui.Context) {
 						a.saveSettings()
 					}
 				})
-				ui.Divider(c)
+				cardDivider(c)
 				settingRow(c, a.tr("文件复制同步上限"), "", func() {
 					if a.numberInput(c.Key("maxfilemb"), &a.maxFileText, a.tr("文件复制同步上限，MB"), 1, settings.MaxFileMB, 152).Submitted() {
 						a.saveFileLimit()
@@ -818,38 +818,38 @@ func (a *app) settingsPage(c *ui.Context) {
 				}
 			})
 		})
-		ui.Divider(c)
-		ui.Collapsible(c, a.tr("接收文件夹"), &a.showReceiveFolder, func() {
+		cardDivider(c)
+		settingDisclosure(c, a.tr("接收文件夹"), &a.showReceiveFolder, func() {
 			ui.Column(c).Padding(12, 0).Gap(10).Children(func() { a.receiveSettings(c) })
 		})
 	})
 	settingsGroup(c, a.tr("快捷键"), func() {
 		a.copyShortcutSettings(c)
-		ui.Divider(c)
+		cardDivider(c)
 		a.shortcutSettings(c)
 	})
 	settingsGroup(c, a.tr("历史存储"), func() { a.historyStorageSettings(c) })
 	settingsGroup(c, a.tr("通用与外观"), func() {
-		a.languageSettings(c)
-		ui.Divider(c)
 		if settingSwitch(c, &a.openAtLogin, a.tr("开机启动"), "") {
 			a.setOpenAtLogin(a.openAtLogin)
 		}
+		cardDivider(c)
+		a.languageSettings(c)
 		if keepawake.Supported {
-			ui.Divider(c)
+			cardDivider(c)
 			a.keepAwakeSettings(c)
 		}
-		ui.Divider(c)
+		cardDivider(c)
 		a.themeSettings(c)
 		if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-			ui.Divider(c)
+			cardDivider(c)
 			a.menuBarIconSettings(c)
 		}
 	})
 	settingsGroup(c, a.tr("本机与诊断"), func() {
 		a.tailscaleSettings(c)
-		ui.Divider(c)
-		ui.Collapsible(c, a.tr("设备信息"), &a.showIdentity, func() {
+		cardDivider(c)
+		settingDisclosure(c, a.tr("设备信息"), &a.showIdentity, func() {
 			ui.Column(c).Padding(12, 0).Gap(10).Children(func() {
 				kv(c, a.tr("名称"), a.name)
 				kv(c, a.tr("设备 ID"), a.deviceID)
@@ -868,13 +868,8 @@ func (a *app) settingsPage(c *ui.Context) {
 				}
 			})
 		})
-		ui.Collapsible(c, a.tr("连接诊断"), &a.showDiagnostics, func() {
-			ui.Column(c).Padding(12, 0).Children(func() {
-				a.diagnosticSettings(c)
-				if ui.Button(c, a.tr("测试连接")).Clicked() {
-					a.probe()
-				}
-			})
+		settingDisclosure(c, a.tr("连接诊断"), &a.showDiagnostics, func() {
+			ui.Column(c).Padding(12, 0).Gap(10).Children(func() { a.diagnosticSettings(c) })
 		})
 	})
 	settingsGroup(c, a.tr("关于与更新"), func() { a.updateSettings(c) })

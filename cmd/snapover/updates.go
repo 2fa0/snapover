@@ -71,7 +71,7 @@ func (a *app) updateSettings(c *ui.Context) {
 		ui.Text(c, a.tr(a.updateStateText())).FontSize(12).TextColor(c.Theme().TextMuted)
 		return
 	}
-	ui.Divider(c)
+	cardDivider(c)
 	if settingSwitch(c, &a.autoUpdate, a.tr("自动检查更新"), a.tr("每 24 小时在后台检查一次，有新版本时提示。")) {
 		updater.SetAutomaticChecks(a.autoUpdate)
 	}

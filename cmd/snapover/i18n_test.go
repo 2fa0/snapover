@@ -43,7 +43,7 @@ func TestLanguageSettingsSwitchAndPersist(t *testing.T) {
 	a.systemLang = settings.LangEN
 	a.page = pageSettings
 
-	tester := ui.NewTester(a.view, 960, 1400)
+	tester := ui.NewTester(a.view, 960, 1500)
 	tester.Frame()
 
 	// Follow system (systemLang = en) renders in English
