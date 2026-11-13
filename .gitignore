@@ -1,5 +1,6 @@
 bin/
 dist/
+.mygo/
 *.exe
 .DS_Store
 resources/windows-*/snapover-cli.exe
