@@ -160,7 +160,31 @@ mv dist/darwin-arm64/*.tar.gz dist/darwin-arm64/*.delta \
 ```
 
 3. Windows ZIP 继续用 `ditto` 压 `dist/windows-amd64`（此时只剩 `Snapover.exe`、`snapover-cli.exe`、`resources/`）。
-4. 手动上传：在公开仓库创建标签为 `v<version>` 的草稿 Release，上传 `dist/releases/` 的归档、增量和脚本，同时上传 Windows ZIP 与 macOS DMG，**manifest 最后传**（避免清单先到而文件还没到），两个平台齐全后再发布。标签必须与清单 URL 一致，例如版本 `0.8.1` 对应 `v0.8.1`。保留旧版本文件（增量要拿它当基线）。MyGo 的 `build -upload` 会重新构建并上传所选平台的产物，不是上传现有 `dist/releases/`；当前项目应先沿用 `build.command`，避免绕过 CLI 构建和 Windows NSIS 规避步骤。
+4. 发版（可用 `gh` 全命令行完成；草稿对外不可见，所以不需要再讲究「manifest 最后传」——发布那一下才是原子的）：
+
+```sh
+# 只传本次版本的产物：dist/releases/ 里可能留着旧版本的 tar.gz，不要一起传
+gh release create v<version> --repo 2fa0/snapover-release --target main \
+  --title "Snapover <version>" --notes-file /tmp/notes-<version>.md --draft
+gh release upload v<version> --repo 2fa0/snapover-release \
+  dist/releases/*<version>*.tar.gz dist/releases/update-*.json dist/releases/install.sh \
+  "dist/Snapover-<version>-windows11-x64.zip" \
+  "dist/darwin-arm64/snapover-<version>-arm64.dmg" \
+  "dist/darwin-amd64/snapover-<version>-amd64.dmg"
+gh release view v<version> --repo 2fa0/snapover-release      # 核对附件
+gh release edit v<version> --repo 2fa0/snapover-release --draft=false --latest
+```
+
+标签必须与清单里的地址一致（版本 `0.10.5` 对应 `v0.10.5`）。保留旧版本文件：下一个版本的增量要拿它当基线，`build.command` 也会从已发布版本生成增量。发布后用未登录的 `curl` 实测一次，确认外部世界真的拿得到：
+
+```sh
+for t in darwin-arm64 darwin-amd64 windows-amd64; do
+  curl -sSL -o /dev/null -w "$t %{http_code}\n" \
+    "https://github.com/2fa0/snapover-release/releases/latest/download/update-$t.json"
+done
+```
+
+MyGo 的 `build -upload` 会重新构建并上传所选平台的产物，不是上传现有 `dist/releases/`；当前项目沿用 `build.command`，避免绕过 CLI 构建和 Windows NSIS 规避步骤。
 5. 版本升级顺序：改 `mygo.json` 的 `version` → 在 `docs/CHANGELOG.md` 加 `## x.y.z` 小节 → 构建 → 上传 → 发布 Release。
 
 ### 5.2 独立 HTTPS 测试源验收（不用正式发布）
