@@ -669,7 +669,6 @@ var enStrings = map[string]string{
 	// Tray & Menu Bar Icon
 	"菜单栏图标": "Menu Bar Icon",
 	"托盘图标":  "Tray Icon",
-	"图标样式":  "Icon Style",
 	"邮筒":    "Mailbox",
 	"小鸟":    "Bird",
 	"信封":    "Envelope",

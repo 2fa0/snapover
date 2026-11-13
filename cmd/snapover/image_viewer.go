@@ -96,7 +96,7 @@ func (a *app) openImageViewer(entry history.Entry) {
 		Height:   680,
 		MinWidth: 360, MinHeight: 240,
 		Hidden: true, UseContentSize: true,
-		Content: ui.View(func(c *ui.Context) { v.view(c) }),
+		Content: appView(func(c *ui.Context) { v.view(c) }),
 	}))
 	// An empty menu overrides the application menu; nil inherits it on Windows.
 	win.SetMenu(mygo.NewMenu(nil))

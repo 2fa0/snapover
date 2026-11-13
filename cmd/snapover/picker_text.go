@@ -200,7 +200,7 @@ func (a *app) openPickText(text string) {
 	viewer = mygo.NewWindow(a.placeOnWorkingDisplay(mygo.WindowOptions{
 		Title: a.tr("文本全文"), Width: 720, Height: 560,
 		Hidden: true, UseContentSize: true,
-		Content: ui.View(func(c *ui.Context) {
+		Content: appView(func(c *ui.Context) {
 			if c.Shortcut(0, ui.KeyEscape) {
 				viewer.Update(viewer.Close)
 			}

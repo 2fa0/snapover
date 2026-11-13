@@ -294,6 +294,8 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		peer:                peer,
 		startupPeerExplicit: explicitPeer,
 		status:              "未连接",
+		showSyncLimits:      true,
+		showReceiveFolder:   true,
 		histSel:             -1,
 		pickSel:             -1,
 
@@ -442,7 +444,7 @@ func (a *app) openMainWindow() {
 		// after a band of empty title bar.
 		TrafficLightPosition: &mygo.Point{X: 18, Y: 12},
 		TitleBarHeight:       mainTitleBarHeight,
-		Content:              ui.View(a.view),
+		Content:              appView(a.view),
 	})
 	a.win = win
 	a.syncTransferHUD()
@@ -830,23 +832,18 @@ func (a *app) settingsPage(c *ui.Context) {
 	settingsGroup(c, a.tr("通用与外观"), func() {
 		a.languageSettings(c)
 		ui.Divider(c)
-		a.themeSettings(c)
-		if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-			ui.Divider(c)
-			title := "菜单栏图标"
-			if runtime.GOOS == "windows" {
-				title = "托盘图标"
-			}
-			ui.Text(c, a.tr(title)).Bold()
-			a.menuBarIconSettings(c)
-		}
-		ui.Divider(c)
 		if settingSwitch(c, &a.openAtLogin, a.tr("开机启动"), "") {
 			a.setOpenAtLogin(a.openAtLogin)
 		}
 		if keepawake.Supported {
 			ui.Divider(c)
 			a.keepAwakeSettings(c)
+		}
+		ui.Divider(c)
+		a.themeSettings(c)
+		if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+			ui.Divider(c)
+			a.menuBarIconSettings(c)
 		}
 	})
 	settingsGroup(c, a.tr("本机与诊断"), func() {

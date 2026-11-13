@@ -99,7 +99,6 @@ func TestExplicitFilesHaveNoSizeLimitControl(t *testing.T) {
 	a := interfaceTestApp(t)
 	tt := ui.NewTester(a.settingsPage, 960, 1200)
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
-	clickInterface(t, tt, "大小限制")
 	if tt.HasText("文件大小上限，MB") {
 		t.Fatal("obsolete file size control")
 	}
@@ -139,7 +138,6 @@ func TestFileClipboardLimitSetting(t *testing.T) {
 	}
 	tt := ui.NewTester(a.settingsPage, 960, 1200)
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
-	clickInterface(t, tt, "大小限制")
 	clickInterface(t, tt, "文件复制同步上限，MB")
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("64")

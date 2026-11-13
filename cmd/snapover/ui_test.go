@@ -240,13 +240,9 @@ func TestSettingsControlsPersistPolicy(t *testing.T) {
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
 	clickInterface(t, tt, "暂停同步开关")
 	clickInterface(t, tt, "只同步文本开关")
-	if tt.HasText("图片大小上限，MB") || tt.HasText("文本大小上限，MB") || tt.HasText("文件大小上限，MB") {
-		t.Fatal("size limits should stay collapsed until requested")
+	if !tt.HasText("图片大小上限，MB") || !tt.HasText("文本大小上限，MB") || !tt.HasText("更改接收文件夹…") {
+		t.Fatal("size limits and receive folder should be visible without expanding")
 	}
-	if tt.HasText("更改接收文件夹…") {
-		t.Fatal("receive folder should stay collapsed until requested")
-	}
-	clickInterface(t, tt, "大小限制")
 	clickInterface(t, tt, "图片大小上限，MB")
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("8")
@@ -264,7 +260,6 @@ func TestTextLimitInputAppliesAndRejectsInvalidValues(t *testing.T) {
 	a := interfaceTestApp(t)
 	tt := ui.NewTester(a.settingsPage, 960, 1200)
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
-	clickInterface(t, tt, "大小限制")
 	clickInterface(t, tt, "文本大小上限，MB")
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("8")

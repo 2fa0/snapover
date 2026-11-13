@@ -146,7 +146,7 @@ func (a *app) openNetworkGuide() {
 	g := &networkGuide{app: a, kind: kind, ctx: ctx, cancel: cancel, searchStarted: time.Now()}
 	win := mygo.NewWindow(a.placeOnWorkingDisplay(mygo.WindowOptions{
 		Title: a.tr("连接指引 · Snapover"), Width: 600, Height: 620,
-		MinWidth: 500, MinHeight: 480, Content: ui.View(g.view),
+		MinWidth: 500, MinHeight: 480, Content: appView(g.view),
 	}))
 	g.win, a.networkGuide = win, g
 	offFocus := win.OnFocus(g.retry)

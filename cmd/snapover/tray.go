@@ -63,6 +63,10 @@ func (a *app) menuIcon(template bool) ([]byte, error) {
 
 func (a *app) menuBarIconSettings(c *ui.Context) {
 	t := c.Theme()
+	title := "菜单栏图标"
+	if runtime.GOOS == "windows" {
+		title = "托盘图标"
+	}
 	ids := [...]int{2, 1, 3}
 	selected := 0
 	for i, id := range ids {
@@ -70,29 +74,32 @@ func (a *app) menuBarIconSettings(c *ui.Context) {
 			selected = i
 		}
 	}
-	parts := ui.SegmentedBase(c, &selected, len(ids))
-	parts.Track.Label(a.tr("图标样式")).Gap(12).FillWidth().MaxWidth(360).Children(func() {
-		for i, label := range []string{a.tr("邮筒"), a.tr("小鸟"), a.tr("信封")} {
-			option := parts.Segment(i).Label(label).Grow(1).Basis(0).MinWidth(0).
-				Padding(12, 8).Radius(8).Border(1, t.Border).Background(t.Background)
-			if option.Hovered() {
-				option.Background(t.SurfaceHover)
-			}
-			if selected == i {
-				option.BorderColor(t.Accent)
-			}
-			option.Children(func() {
-				ui.Column(c).AlignItems(ui.Center).Children(func() {
+	// One soft strip holding all three previews, as Cindy's Dock icon row: the
+	// chosen icon carries a ring of its own, so the picker reads as one set
+	// instead of three bordered buttons with a small glyph lost inside.
+	settingRow(c, a.tr(title), "", func() {
+		parts := ui.SegmentedBase(c, &selected, len(ids))
+		parts.Track.Label(a.tr(title)).Gap(10).Padding(8).Radius(12).Border(1, t.Border).
+			Background(t.Background).Children(func() {
+			for i, name := range []string{"邮筒", "小鸟", "信封"} {
+				cell := parts.Segment(i).Label(a.tr(name)).Size(44, 44).Radius(10)
+				if cell.Hovered() {
+					cell.Background(t.SurfaceHover)
+				}
+				if selected == i {
+					cell.Border(2, t.Accent)
+				}
+				cell.Children(func() {
 					if bmp := a.menuBarIconPreview(ids[i], t.Dark); bmp != nil {
-						ui.Image(c, bmp).Size(32, 32).Fit(ui.Contain)
+						ui.Image(c, bmp).Size(30, 30).Fit(ui.Contain)
 					}
 				})
-			})
+			}
+		})
+		if parts.Track.Changed() {
+			a.saveMenuBarIcon(ids[selected])
 		}
 	})
-	if parts.Track.Changed() {
-		a.saveMenuBarIcon(ids[selected])
-	}
 	if a.menuBarIconError != "" {
 		ui.Text(c, a.tr(a.menuBarIconError)).FontSize(12).TextColor(c.Theme().Danger)
 	}
