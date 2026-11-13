@@ -2,7 +2,7 @@
   "name": "Snapover",
   "slug": "snapover",
   "identifier": "app.snapover.desktop",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "license": "MIT",
   "copyright": "© 2026 2fa0",
   "main": "./cmd/snapover",
