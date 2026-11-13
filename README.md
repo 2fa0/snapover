@@ -12,14 +12,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/2fa0/snapover-release/releases"><strong>⬇ Download Snapover</strong></a> •
+  <a href="https://github.com/2fa0/snapover/releases"><strong>⬇ Download Snapover</strong></a> •
   <a href="#-highlights">Highlights</a> •
   <a href="#-get-started">Get started</a> •
   <a href="#-command-line">CLI</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/2fa0/snapover-release/releases"><img src="https://img.shields.io/github/v/release/2fa0/snapover-release?style=flat-square&color=blue" alt="Release" /></a>
+  <a href="https://github.com/2fa0/snapover/releases"><img src="https://img.shields.io/github/v/release/2fa0/snapover?style=flat-square&color=blue" alt="Release" /></a>
   <img src="https://img.shields.io/badge/macOS%2013%2B-000000?style=flat-square&logo=apple" alt="macOS 13+" />
   <img src="https://img.shields.io/badge/Windows%2010%2F11-0078D4?style=flat-square&logo=windows" alt="Windows 10/11" />
   <img src="https://img.shields.io/badge/Go-1.27+-00ADD8.svg?style=flat-square&logo=go" alt="Go 1.27+" />
@@ -104,7 +104,7 @@
 
 ### 1. Install Snapover on both computers
 
-Download the latest package from [**Releases**](https://github.com/2fa0/snapover-release/releases):
+Download the latest package from [**Releases**](https://github.com/2fa0/snapover/releases):
 
 - **macOS 13+**: choose `snapover-<version>-arm64.dmg` for Apple silicon or `snapover-<version>-amd64.dmg` for Intel, then drag Snapover into **Applications**.
 - **Windows 10/11 x64**: extract `Snapover-<version>-windows11-x64.zip` and run `Snapover.exe`, keeping the accompanying files together. Add an empty `portable.flag` beside it to store data in a local `data/` folder.
