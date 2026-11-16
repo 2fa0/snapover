@@ -338,11 +338,11 @@ reworked; the history-layer implementation is kept.
 
 ## Tray, icon and launch at login
 
-- Left-clicking the tray icon on Windows or the menu bar icon on macOS opens an
-  options menu (quick history, settings, pause sync, ignore the next copy, quit)
-  while right-clicking opens quick history. The menu holds frequent actions
-  only, without version or connection state — the tray tooltip shows connection
-  state and the sidebar switches pages (the macOS window menu bar keeps only the
+- Left-clicking the tray icon on Windows or the menu bar icon on macOS toggles
+  quick history, while right-clicking (or Control-clicking on macOS) opens an
+  options menu (quick history, settings, pause sync, ignore the next copy, quit).
+  The menu holds frequent actions only, without version or connection state —
+  the tray tooltip shows connection state and the sidebar switches pages (the macOS window menu bar keeps only the
   application and edit menus, with "Settings…" in the application menu under
   `⌘,`). The shortcut still opens quick history directly.
 - Settings → General & Appearance holds one horizontal strip of previews, titled

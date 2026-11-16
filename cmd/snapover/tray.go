@@ -38,8 +38,8 @@ func (a *app) startTray() {
 		a.refreshTray()
 		return
 	}
-	a.tray.OnClick(a.handleTrayClick)
-	a.tray.OnRightClick(func() { a.togglePicker() })
+	a.tray.OnClick(a.togglePicker)
+	a.tray.OnRightClick(a.handleTrayMenu)
 	if !template {
 		mygo.Theme.OnUpdated(func() {
 			icon, err := a.menuIcon(false)
@@ -146,16 +146,13 @@ func (a *app) saveMenuBarIcon(selected int) {
 	}
 }
 
-func (a *app) handleTrayClick() {
+func (a *app) handleTrayMenu() {
 	if runtime.GOOS == "darwin" {
 		if a.trayMenuOpen {
 			return
 		}
-		if a.picker != nil {
-			a.closePicker()
-			return
-		}
-		// performClick from inside the status item's left-up action does
+		a.closePicker()
+		// performClick from inside the status item's mouse-up action does
 		// not start menu tracking, so the menu stays until another click
 		// on the icon. Run it on the next turn of the main loop.
 		a.trayMenuOpen = true
