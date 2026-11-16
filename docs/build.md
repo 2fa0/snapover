@@ -9,7 +9,7 @@ For maintainers. Day-to-day development is `go test ./...` and
 
 - Go 1.27.3 or a compatible newer version; see `go.mod` for the exact
   requirement. No cgo.
-- MyGo is pinned to v0.9.0.
+- MyGo is pinned to v0.9.1.
 - Packaging runs on macOS only.
 
 ## One-shot packaging
