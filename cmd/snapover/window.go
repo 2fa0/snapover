@@ -443,7 +443,7 @@ func (a *app) openMainWindow() {
 		return
 	}
 	win := mygo.NewWindow(mygo.WindowOptions{
-		Title:         "Snapover",
+		Title:         a.tr("桌临鸽"),
 		Width:         960,
 		Height:        640,
 		MinWidth:      720,
@@ -704,7 +704,7 @@ func (a *app) view(c *ui.Context) {
 					if logo := a.sidebarLogo(); logo != nil {
 						ui.Image(c, logo).Size(sidebarLogoSize, sidebarLogoSize).Fit(ui.Contain)
 					}
-					ui.Text(c, "Snapover").FontSize(18).Bold()
+					ui.Text(c, a.tr("桌临鸽")).FontSize(18).Bold()
 				})
 			})
 			if ui.Sidebar(c, &a.page, func() {

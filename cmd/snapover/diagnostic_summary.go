@@ -47,7 +47,7 @@ func (a *app) buildDiagnosticSummary() string {
 	if a.syncFailure != "" {
 		result = a.syncFailure
 	}
-	return fmt.Sprintf("Snapover\n%s/%s\n%s：%s\n%s：%s\n%s：%t\n%s：%t\n%s：%t\n%s：%s\n%s", runtime.GOOS, runtime.GOARCH, a.tr("连接"), a.tr(connection), a.tr("同步方式"), a.tr(mode), a.tr("隐私模式"), a.privacyMode, a.tr("暂停同步"), a.paused, a.tr("只同步文本"), a.textOnly, a.tr("最近同步结果"), a.tr(syncResultCategory(result)), a.tr("摘要不含剪贴板正文、文件路径、设备名、地址或证书。TCP 测试通过不代表剪贴板写入成功。"))
+	return fmt.Sprintf("%s\n%s/%s\n%s：%s\n%s：%s\n%s：%t\n%s：%t\n%s：%t\n%s：%s\n%s", a.tr("桌临鸽"), runtime.GOOS, runtime.GOARCH, a.tr("连接"), a.tr(connection), a.tr("同步方式"), a.tr(mode), a.tr("隐私模式"), a.privacyMode, a.tr("暂停同步"), a.paused, a.tr("只同步文本"), a.textOnly, a.tr("最近同步结果"), a.tr(syncResultCategory(result)), a.tr("摘要不含剪贴板正文、文件路径、设备名、地址或证书。TCP 测试通过不代表剪贴板写入成功。"))
 }
 
 func (a *app) diagnosticSettings(c *ui.Context) {
