@@ -359,7 +359,7 @@ func (a *app) syncTransferHUD() {
 	}
 	gen := a.transfer.gen
 	win := mygo.NewWindow(a.placeHUDOnWorkingDisplay(mygo.WindowOptions{
-		Title:             a.tr("文件同步 · Snapover"),
+		Title:             a.tr("文件同步 · 桌临鸽"),
 		Width:             360,
 		Height:            132,
 		MinWidth:          320,

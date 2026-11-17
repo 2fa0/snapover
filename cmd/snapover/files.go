@@ -24,7 +24,7 @@ func (a *app) openFiles() {
 		return
 	}
 	a.fileWin = mygo.NewWindow(a.placeOnWorkingDisplay(mygo.WindowOptions{
-		Title: a.tr("发送文件 · Snapover"), Width: 460, Height: 340,
+		Title: a.tr("发送文件 · 桌临鸽"), Width: 460, Height: 340,
 		MinWidth: 420, MinHeight: 300, Content: appView(a.filesView),
 	}))
 	a.fileWin.OnClosed(func() { a.fileWin = nil })
@@ -95,7 +95,7 @@ func (a *app) filesView(c *ui.Context) {
 		case a.fileCommandHint != "":
 			message = a.fileCommandHint
 		case online && !a.fileBusy && !a.fileSent && !link.FileTransfer:
-			message = "对方暂不支持接收文件，请更新对方的 Snapover"
+			message = "对方暂不支持接收文件，请更新对方的桌临鸽"
 		}
 		if message != "" {
 			ui.Text(c, a.tr(message)).TextColor(t.TextMuted).MaxLines(4)
@@ -300,9 +300,9 @@ func (a *app) sendSelectedFile(background bool) {
 					a.fileMessage = fmt.Sprintf("已发送 %d/%d 个文件。%s", len(saved), len(paths), a.fileMessage)
 				}
 				if a.fileWin == nil && (large || !background) {
-					title := "文件发送失败 · Snapover"
+					title := "文件发送失败 · 桌临鸽"
 					if errors.Is(err, context.Canceled) {
-						title = "传输已取消 · Snapover"
+						title = "传输已取消 · 桌临鸽"
 					}
 					a.queueFileNotification(fileNotification{title: title, body: a.fileMessage})
 				} else if background {
@@ -328,7 +328,7 @@ func (a *app) sentFilesNotification(names []string, peer string) {
 	if len(names) == 1 {
 		body = names[0] + " 已保存到 " + peer + " 的接收文件夹"
 	}
-	a.queueFileNotification(fileNotification{title: "文件已发送 · Snapover", body: body})
+	a.queueFileNotification(fileNotification{title: "文件已发送 · 桌临鸽", body: body})
 }
 
 func receivedMessage(n clipsync.Notice) string {
@@ -342,7 +342,7 @@ func receivedMessage(n clipsync.Notice) string {
 }
 
 func (a *app) receivedNotification(n clipsync.Notice) {
-	a.queueFileNotification(fileNotification{title: "收到文件 · Snapover", body: n.FileName + " 已保存到接收文件夹", path: n.FilePath})
+	a.queueFileNotification(fileNotification{title: "收到文件 · 桌临鸽", body: n.FileName + " 已保存到接收文件夹", path: n.FilePath})
 }
 
 func (a *app) openReceiveFolder() {

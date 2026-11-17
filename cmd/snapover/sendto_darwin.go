@@ -37,7 +37,7 @@ func (a *app) initSendTo() {
 
 func (a *app) receiveFinderFiles(paths []string, cold bool) error {
 	if a.quitting || a.cfg.Values.DisableSendTo {
-		return errors.New("请在 Snapover 设置中启用 Finder 发送文件服务")
+		return errors.New("请在桌临鸽设置中启用 Finder 发送文件服务")
 	}
 	a.handleFileRequest(paths, cold)
 	return nil

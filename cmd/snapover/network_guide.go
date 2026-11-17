@@ -68,9 +68,9 @@ func (a *app) networkSetupHint(c *ui.Context) {
 		access := a.tr("打开本地网络设置")
 		if kind == guideWindows {
 			access = a.tr("打开防火墙设置")
-			alertMessage(c, a.tr("允许 Snapover 连接另一台电脑"), a.tr("出现防火墙提示时，允许 Snapover 在可信的专用网络上通信。"), infoIcon, t.Accent)
+			alertMessage(c, a.tr("允许桌临鸽连接另一台电脑"), a.tr("出现防火墙提示时，允许桌临鸽在可信的专用网络上通信。"), infoIcon, t.Accent)
 		} else {
-			alertMessage(c, a.tr("允许 Snapover 查找另一台电脑"), a.tr("系统询问本地网络权限时，选择「允许」。"), infoIcon, t.Accent)
+			alertMessage(c, a.tr("允许桌临鸽查找另一台电脑"), a.tr("系统询问本地网络权限时，选择「允许」。"), infoIcon, t.Accent)
 		}
 		ui.Row(c).Gap(8).Children(func() {
 			if ui.PrimaryButton(c, access).Disabled(a.openingNetworkSettings).Clicked() {
@@ -145,7 +145,7 @@ func (a *app) openNetworkGuide() {
 	kind := currentNetworkGuideKind
 	g := &networkGuide{app: a, kind: kind, ctx: ctx, cancel: cancel, searchStarted: time.Now()}
 	win := mygo.NewWindow(a.placeOnWorkingDisplay(mygo.WindowOptions{
-		Title: a.tr("连接指引 · Snapover"), Width: 600, Height: 620,
+		Title: a.tr("连接指引 · 桌临鸽"), Width: 600, Height: 620,
 		MinWidth: 500, MinHeight: 480, Content: appView(g.view),
 	}))
 	g.win, a.networkGuide = win, g

@@ -150,7 +150,7 @@ func TestHiddenTitleBarKeepsSidebarAndActionsClearOfWindowControls(t *testing.T)
 	a := interfaceTestApp(t)
 	tt := ui.NewTester(a.view, 960, 640)
 	tt.SetTitleBar(ui.TitleBar{Height: 52, Left: 78})
-	title, ok := tt.Find("Snapover")
+	title, ok := tt.Find("桌临鸽")
 	if !ok {
 		t.Fatal("app name missing under a hidden title bar")
 	}
@@ -651,7 +651,7 @@ func TestSidebarHeaderShowsTheLogoOnce(t *testing.T) {
 	if a.logo != logo {
 		t.Fatal("the logo was decoded again for the next frame")
 	}
-	if !tt.HasText("Snapover") {
+	if !tt.HasText("桌临鸽") {
 		t.Fatal("the wordmark left the header the logo joined")
 	}
 }

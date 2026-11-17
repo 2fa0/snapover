@@ -1,19 +1,19 @@
 <p align="center">
-  <img src="resources/app.png" alt="Snapover" width="96" height="96" />
+  <img src="resources/app.png" alt="桌临鸽 (Snapover)" width="96" height="96" />
 </p>
 
-<h1 align="center">Snapover</h1>
+<h1 align="center">桌临鸽（Snapover）</h1>
 
 <p align="center">
   <strong>这里复制，那边粘贴。</strong><br><br>
   苹果通用剪贴板很好用——前提是你的另一台电脑不是 Windows。<br>
-  Snapover 让桌上的 Mac 和 Windows 共用同一块剪贴板：左边 <code>⌘C</code>，右边 <code>Ctrl+V</code>。<br>
+  桌临鸽让桌上的 Mac 和 Windows 共用同一块剪贴板：左边 <code>⌘C</code>，右边 <code>Ctrl+V</code>。<br>
   文字、截图、文件甚至整个文件夹，局域网加密直连秒达。<br>
   <strong>不用账号，不经云端，不套壳浏览器。</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/2fa0/snapover/releases"><strong>⬇ 下载 Snapover</strong></a> •
+  <a href="https://github.com/2fa0/snapover/releases"><strong>⬇ 下载桌临鸽</strong></a> •
   <a href="#-典型日常">典型日常</a> •
   <a href="#-核心亮点">核心亮点</a> •
   <a href="#-快速开始">快速开始</a> •
@@ -34,7 +34,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/showcase_zh.png" alt="Snapover 主界面与快捷粘贴" width="900" />
+  <img src="docs/images/showcase_zh.png" alt="桌临鸽主界面与快捷粘贴" width="900" />
 </p>
 
 ---
@@ -97,20 +97,20 @@
 
 <br>
 
-Snapover 和这几个优秀的开源工具各有侧重，只想要其中一样时用对应工具就够轻巧：
+桌临鸽和这几个优秀的开源工具各有侧重，只想要其中一样时用对应工具就够轻巧：
 
 | 你的主要需求 | 更合适的选择 |
 | :--- | :--- |
 | 只在一台 Mac 上管理复制历史 | [Maccy](https://maccy.app) |
 | 只在一台 Windows 上管理复制历史 | [Ditto](https://ditto-cp.sourceforge.io) |
 | 偶尔在设备之间发文件 | [LocalSend](https://localsend.org) |
-| **两台电脑摆在同一个桌面，文字、截图、文件、历史、终端高频来回走** | **Snapover** |
+| **两台电脑摆在同一个桌面，文字、截图、文件、历史、终端高频来回走** | **桌临鸽（Snapover）** |
 
 </details>
 
 ## 🚀 快速开始
 
-### 1. 在两台电脑上安装 Snapover
+### 1. 在两台电脑上安装桌临鸽
 
 从 [**Releases**](https://github.com/2fa0/snapover/releases) 下载最新安装包：
 
@@ -133,11 +133,11 @@ Snapover 和这几个优秀的开源工具各有侧重，只想要其中一样�
 2. 选择另一台电脑；发现不到时手动填写地址，默认端口为 `47821`。
 3. 核对两边显示相同的**六位配对码**，然后在**两台电脑上分别确认**。
 
-Snapover 会记住已配对设备并自动重连。双方确认前不会同步任何内容。
+桌临鸽会记住已配对设备并自动重连。双方确认前不会同步任何内容。
 
 ### 3. 复制，切到另一台，粘贴
 
-日常用法就只有这一步。Snapover 常驻菜单栏或系统托盘，关闭窗口不会停止同步。
+日常用法就只有这一步。桌临鸽常驻菜单栏或系统托盘，关闭窗口不会停止同步。
 
 手动同步、网段选择、多设备与连接排查见[功能与行为细节](docs/features_zh.md)。
 
@@ -184,9 +184,9 @@ go run ./cmd/snapover
 
 ## 🚧 已知限制
 
-- **远程桌面：**Windows RDP 会话请关闭剪贴板共享，否则 `rdpclip.exe` 可能在 Snapover 接收成功后覆盖内容。
+- **远程桌面：**Windows RDP 会话请关闭剪贴板共享，否则 `rdpclip.exe` 可能在桌临鸽接收成功后覆盖内容。
 - **图片：**以 PNG 传输，透明通道得以保留；Windows 上另提供一份 24 位位图给只认该格式的应用，在这些应用里粘贴会丢掉透明区域。细节见[图片格式说明](docs/features_zh.md#图片)。
-- **暂未内置：**公网发现／中继和富文本同步。跨网络使用时，请让两台电脑接入 Tailscale，再在 Snapover 中开启支持。
+- **暂未内置：**公网发现／中继和富文本同步。跨网络使用时，请让两台电脑接入 Tailscale，再在桌临鸽中开启支持。
 
 当前行为、完整限制与故障排查见[功能与行为细节](docs/features_zh.md)。
 
@@ -202,7 +202,7 @@ go run ./cmd/snapover
 
 ## 📄 开源协议
 
-Snapover 以 [Apache License 2.0](LICENSE) 授权，版权归作者所有（© 2026 2fa0）。你可以自由使用、修改和分发，包括商业用途，条件是保留版权与许可声明、随分发附带许可证全文，并遵守其中的专利与商标条款。随包分发的第三方组件遵循各自许可证，完整清单见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。
+桌临鸽（Snapover）以 [Apache License 2.0](LICENSE) 授权，版权归作者所有（© 2026 2fa0）。你可以自由使用、修改和分发，包括商业用途，条件是保留版权与许可声明、随分发附带许可证全文，并遵守其中的专利与商标条款。随包分发的第三方组件遵循各自许可证，完整清单见 [THIRD_PARTY_NOTICES.txt](resources/THIRD_PARTY_NOTICES.txt)。
 
 <p align="center">
   遇到 Bug 或有工作流改进建议？欢迎 <a href="https://github.com/2fa0/snapover/issues">提交 Issue</a>。
