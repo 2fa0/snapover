@@ -2,7 +2,7 @@
 
 **简体中文** | [English](features.md)
 
-本文是 [README](../README_zh.md) 的补充：写作时按主题整理，内容以当前代码和实机验证为准。界面上的入口和快捷键见 README。
+本文是 [README](../README.md) 的补充：写作时按主题整理，内容以当前代码和实机验证为准。界面上的入口和快捷键见 README。
 
 ## 文字
 
