@@ -290,7 +290,6 @@ func TestTailscaleControlsAndSavedAddressesAreAvailableInNativeUI(t *testing.T) 
 		t.Fatal("address editor did not restore current address")
 	}
 	clickInterface(t, tt, "取消编辑")
-	clickInterface(t, tt, "通过地址连接")
 	if !tt.HasText("连接方式") || !tt.HasText("对端地址") {
 		t.Fatal("manual route selection missing")
 	}

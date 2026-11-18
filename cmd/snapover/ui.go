@@ -11,7 +11,8 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Heroicons (MIT) and selected Lucide icons (ISC/MIT); see icons/LICENSE*.
+// Heroicons (MIT), selected Lucide icons (ISC/MIT) and the Apple mark from
+// Simple Icons (CC0); see icons/LICENSE*.
 // Adapted Lobe MyGo component notices are also included in the application.
 //
 //go:embed icons/*.svg icons/LICENSE* licenses/*.txt
@@ -28,6 +29,8 @@ func interfaceIcon(name string) *ui.SVG {
 var (
 	settingsIcon = interfaceIcon("adjustments-horizontal")
 	deviceIcon   = interfaceIcon("computer-desktop")
+	appleIcon    = interfaceIcon("platform-apple")
+	windowsIcon  = interfaceIcon("platform-windows")
 	historyIcon  = interfaceIcon("clipboard-document-list")
 	textIcon     = interfaceIcon("document-text")
 	fileIcon     = interfaceIcon("document")
@@ -154,6 +157,36 @@ func settingDisclosure(c *ui.Context, title string, open *bool, contents func())
 		})
 		if panel := p.Panel(contents); panel.Valid() {
 			panel.Padding(8, 0)
+		}
+	})
+}
+
+// settingCardDisclosure is settingDisclosure for a page whose sections are
+// cards: the header row carries the card's own title, so the section reads as
+// a peer of the cards above it instead of as a row inside one.
+func settingCardDisclosure(c *ui.Context, title string, open *bool, contents func()) ui.Element {
+	t := c.Theme()
+	return ui.Column(c.Key(title)).AlignSelf(ui.Stretch).Radius(12).
+		Border(1, t.Border).Background(t.Surface).Children(func() {
+		p := ui.CollapsibleBase(c.Key("section"), open)
+		// The header's own hover fills the card's top: its lower corners stay
+		// square while the panel takes the card's bottom edge.
+		corners := []float32{12}
+		if open != nil && *open {
+			corners = []float32{12, 12, 0, 0}
+		}
+		tr := p.Trigger.AlignSelf(ui.Stretch).AlignItems(ui.Center).Gap(12).
+			Padding(16).Radius(corners...)
+		if tr.Hovered() {
+			tr.Background(t.SurfaceHover)
+		}
+		tr.Children(func() {
+			ui.Text(c, title).FontSize(16).FontWeight(600).Grow(1).MinWidth(0).SingleLine()
+			ui.Icon(c, chevronIcon).FontSize(16).TextColor(t.TextMuted).Shrink(0).
+				Rotate(180 * p.Progress())
+		})
+		if panel := p.Panel(contents); panel.Valid() {
+			panel.Padding(2, 16, 16, 16)
 		}
 	})
 }

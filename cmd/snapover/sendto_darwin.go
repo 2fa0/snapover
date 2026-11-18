@@ -49,7 +49,9 @@ func (a *app) sendToSettings(c *ui.Context) {
 		Tooltip(a.tr("右键文件 → 服务 → Snapover 发送文件。菜单是否显示可在系统设置的「服务」中调整。")).Disabled(a.sendToBusy).Changed() {
 		a.setSendTo(on, true)
 	}
-	if ui.Button(c, a.tr("刷新 Finder 服务")).Disabled(a.sendToBusy || !on).Clicked() {
-		a.setSendTo(true, true)
-	}
+	ui.Row(c).Children(func() {
+		if ui.Button(c, a.tr("刷新 Finder 服务")).Disabled(a.sendToBusy || !on).Clicked() {
+			a.setSendTo(true, true)
+		}
+	})
 }

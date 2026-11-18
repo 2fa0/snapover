@@ -265,16 +265,17 @@ func (a *app) tailscaleDeviceAddress(c *ui.Context, dev clipsync.Device, waiting
 			if dev.Peer.TailscaleAddr != "" {
 				label = a.tr("修改 Tailscale 地址")
 			}
-			if ui.Button(c, label).Disabled(waiting || !a.allowTailscale).Clicked() {
+			btn := ui.Button(c, label).Disabled(waiting || !a.allowTailscale)
+			if !a.allowTailscale {
+				btn.Tooltip(a.tr("在设置中开启 Tailscale 连接后，可添加或使用此地址。"))
+			}
+			if btn.Clicked() {
 				a.editTailscaleID, a.editTailscaleAddr = dev.ID, dev.Peer.TailscaleAddr
 			}
 			if dev.Peer.TailscaleAddr != "" && ui.Button(c, a.tr("删除 Tailscale 地址")).Disabled(waiting).Clicked() {
 				a.removeTailscaleAddress(dev.ID)
 			}
 		})
-	}
-	if !a.allowTailscale {
-		ui.Text(c, a.tr("在设置中开启 Tailscale 连接后，可添加或使用此地址。")).FontSize(12).TextColor(c.Theme().TextMuted)
 	}
 }
 

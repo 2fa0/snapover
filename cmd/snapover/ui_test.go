@@ -324,12 +324,16 @@ func TestPairedDevicesRevealSearchOnlyWhenAdding(t *testing.T) {
 	a.devices = a.engine.Peers.List()
 	tt := ui.NewTester(a.view, 960, 640)
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
-	if !tt.HasText("工作电脑") || tt.HasText("附近的设备") || tt.HasText("对端地址") {
-		t.Fatal("paired devices should take priority over search and address input")
+	if !tt.HasText("工作电脑") || tt.HasText("附近的设备") || !tt.HasText("对端地址") {
+		t.Fatal("paired devices should hide nearby search while keeping address input expanded")
+	}
+	clickInterface(t, tt, "通过地址连接")
+	if tt.HasText("对端地址") {
+		t.Fatal("manual connection should collapse when toggled")
 	}
 	clickInterface(t, tt, "通过地址连接")
 	if !tt.HasText("对端地址") {
-		t.Fatal("manual connection should remain available on demand")
+		t.Fatal("manual connection should expand again on click")
 	}
 	clickInterface(t, tt, "添加设备")
 	if !tt.HasText("附近的设备") || !tt.HasText("等待配对") {
@@ -356,8 +360,8 @@ func TestNetworkPermissionReminderAppearsBeforeAdding(t *testing.T) {
 	if !tt.HasText("打开本地网络设置") || !tt.HasText("本地网络权限") {
 		t.Fatal("unpaired devices page should offer local network access before adding")
 	}
-	if !tt.HasText("手填地址") {
-		t.Fatal("unpaired empty devices page should offer a manual address")
+	if !tt.HasText("对端地址") {
+		t.Fatal("unpaired empty devices page should offer manual address input")
 	}
 	if tt.HasText("查看连接指引") {
 		t.Fatal("first-run should not send people to the guide before the system permission")
