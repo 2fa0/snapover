@@ -127,6 +127,7 @@ type app struct {
 	showIdentity        bool
 	showDiagnostics     bool
 	showNetwork         bool
+	showIgnoredSegments bool
 	showAddress         bool
 	showSyncLimits      bool
 	showReceiveFolder   bool
@@ -290,6 +291,9 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		textOnly:            cfg.Values.TextOnly,
 		keepAwake:           cfg.Values.KeepAwake,
 		allowTailscale:      cfg.Values.AllowTailscale,
+		showNetwork:         true,
+		showIgnoredSegments: true,
+		showAddress:         true,
 		maxImageText:        strconv.Itoa(cfg.Values.MaxImageMB),
 		maxTextText:         strconv.Itoa(cfg.Values.MaxTextMB),
 		maxFileText:         strconv.FormatInt(cfg.Values.MaxFileMB, 10),
@@ -1265,7 +1269,7 @@ func (a *app) toast(msg string) {
 func kv(c *ui.Context, k, v string) {
 	t := c.Theme()
 	ui.Row(c).Gap(12).Children(func() {
-		ui.Text(c, k).MinWidth(48).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, k).MinWidth(76).TextColor(t.TextMuted).SingleLine()
 		ui.Text(c, v).Selectable().SingleLine()
 	})
 }
@@ -1338,6 +1342,18 @@ func platformLabel(p string) string {
 	default:
 		return p
 	}
+}
+
+// platformIcon marks the peer's system with the mark its users recognize; the
+// generic desktop stays for peers that have not reported a platform yet.
+func platformIcon(p string) *ui.SVG {
+	switch p {
+	case "macos":
+		return appleIcon
+	case "windows":
+		return windowsIcon
+	}
+	return deviceIcon
 }
 
 func lanAddrs(listen string) []string {

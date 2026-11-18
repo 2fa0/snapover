@@ -9,10 +9,13 @@ import (
 )
 
 type segmentRow struct {
-	key     string
-	label   string
-	virtual bool
-	checked bool
+	key       string
+	label     string
+	cidr      string
+	meta      string
+	tailscale bool
+	virtual   bool
+	checked   bool
 }
 
 func liveSegmentRows() []segmentRow {
@@ -29,7 +32,16 @@ func segmentRows(addrs []lan.Addr) []segmentRow {
 	var virtual []segmentRow
 	for _, addr := range addrs {
 		if addr.Virtual {
-			virtual = append(virtual, segmentRow{key: lan.SegmentKey(addr), label: segmentLabel(addr, []string{addr.IP.String()}), virtual: true})
+			ips := []string{addr.IP.String()}
+			cidr, meta := segmentParts(addr, ips)
+			virtual = append(virtual, segmentRow{
+				key:       lan.SegmentKey(addr),
+				label:     segmentLabel(addr, ips),
+				cidr:      cidr,
+				meta:      meta,
+				tailscale: lan.TailscaleInterface(addr),
+				virtual:   true,
+			})
 			continue
 		}
 		key := lan.SegmentKey(addr)
@@ -45,20 +57,29 @@ func segmentRows(addrs []lan.Addr) []segmentRow {
 	rows := make([]segmentRow, 0, len(order)+len(virtual))
 	for _, key := range order {
 		g := groups[key]
-		rows = append(rows, segmentRow{key: key, label: segmentLabel(g.addr, g.ips)})
+		cidr, meta := segmentParts(g.addr, g.ips)
+		rows = append(rows, segmentRow{key: key, label: segmentLabel(g.addr, g.ips), cidr: cidr, meta: meta})
 	}
 	sort.Slice(virtual, func(i, j int) bool { return virtual[i].label < virtual[j].label })
 	return append(rows, virtual...)
 }
 
-func segmentLabel(addr lan.Addr, ips []string) string {
-	cidr := ""
+func segmentParts(addr lan.Addr, ips []string) (cidr, meta string) {
 	if addr.IP != nil {
 		cidr = addr.IP.String()
 	}
 	if addr.Net != nil {
 		cidr = addr.Net.String()
 	}
+	shown := uniqueIPs(ips)
+	meta = addr.Name
+	if len(shown) > 0 {
+		meta += " · " + strings.Join(shown, "、")
+	}
+	return cidr, meta
+}
+
+func uniqueIPs(ips []string) []string {
 	shown := make([]string, 0, len(ips))
 	seen := map[string]bool{}
 	for _, ip := range ips {
@@ -68,6 +89,12 @@ func segmentLabel(addr lan.Addr, ips []string) string {
 		seen[ip] = true
 		shown = append(shown, ip)
 	}
+	return shown
+}
+
+func segmentLabel(addr lan.Addr, ips []string) string {
+	cidr, _ := segmentParts(addr, ips)
+	shown := uniqueIPs(ips)
 	label := cidr + " · " + addr.Name
 	if len(shown) > 0 {
 		label += " · 本机 " + strings.Join(shown, "、")

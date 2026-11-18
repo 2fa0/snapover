@@ -51,6 +51,7 @@ type networkGuide struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	searchStarted   time.Time
+	openedConnected bool
 	showSettings    bool
 	autoExpanded    bool
 	showDiagnostics bool
@@ -58,11 +59,21 @@ type networkGuide struct {
 	message         string
 }
 
-func (a *app) networkSetupHint(c *ui.Context) {
+// networkSetupShown reports whether the first-run network reminder is on the
+// devices page, and so already carries the manual help entry beside it.
+func (a *app) networkSetupShown() bool {
 	kind := currentNetworkGuideKind
-	if (kind != guideWindows && kind != guideMacLocalNetwork) || a.cfg == nil || *networkGuideDismissed(&a.cfg.Values, kind) || len(a.devices) != 0 {
+	if kind != guideWindows && kind != guideMacLocalNetwork {
+		return false
+	}
+	return a.cfg != nil && !*networkGuideDismissed(&a.cfg.Values, kind) && len(a.devices) == 0
+}
+
+func (a *app) networkSetupHint(c *ui.Context) {
+	if !a.networkSetupShown() {
 		return
 	}
+	kind := currentNetworkGuideKind
 	t := c.Theme()
 	ui.Column(c).Gap(8).Children(func() {
 		access := a.tr("打开本地网络设置")
@@ -109,7 +120,10 @@ func (a *app) openNetworkAccessSettings() {
 }
 
 func (a *app) networkHelp(c *ui.Context) {
-	if currentNetworkGuideKind != guideUnsupported && ui.Button(c, a.tr("连接帮助")).Clicked() {
+	if currentNetworkGuideKind == guideUnsupported || a.networkSetupShown() {
+		return
+	}
+	if ui.Button(c, a.tr("连接帮助")).Clicked() {
 		a.openNetworkGuide()
 	}
 }
@@ -143,7 +157,14 @@ func (a *app) openNetworkGuide() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	kind := currentNetworkGuideKind
-	g := &networkGuide{app: a, kind: kind, ctx: ctx, cancel: cancel, searchStarted: time.Now()}
+	g := &networkGuide{
+		app:             a,
+		kind:            kind,
+		ctx:             ctx,
+		cancel:          cancel,
+		searchStarted:   time.Now(),
+		openedConnected: a.engine.Connected(),
+	}
 	win := mygo.NewWindow(a.placeOnWorkingDisplay(mygo.WindowOptions{
 		Title: a.tr("连接指引 · 桌临鸽"), Width: 600, Height: 620,
 		MinWidth: 500, MinHeight: 480, Content: appView(g.view),
@@ -164,7 +185,7 @@ func (a *app) openNetworkGuide() {
 
 func (a *app) refreshNetworkGuide() {
 	if g := a.networkGuide; g != nil {
-		if a.engine.Connected() {
+		if !g.openedConnected && a.engine.Connected() {
 			g.win.Close()
 		} else {
 			g.win.Invalidate()

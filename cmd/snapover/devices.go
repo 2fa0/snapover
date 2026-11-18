@@ -23,6 +23,7 @@ func (a *app) devicesPage(c *ui.Context) {
 				ui.Text(c, a.trf("等待配对 · %d 秒", "Waiting to pair · %ds", max(0, int(time.Until(until).Seconds())+1))).FontSize(12).TextColor(t.TextMuted)
 			}
 		})
+		a.networkHelp(c)
 		if !adding && !waiting {
 			if press(ui.PrimaryButton(c, a.tr("添加设备"))).Clicked() {
 				a.engine.SetPairing(true)
@@ -70,10 +71,11 @@ func (a *app) devicesPage(c *ui.Context) {
 				online := up && link.ID == dev.ID
 				ui.Column(c.Key("paired-" + dev.ID)).Gap(12).Children(func() {
 					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, deviceIcon).FontSize(26).TextColor(t.TextMuted)
+						ui.Icon(c, platformIcon(dev.Peer.Platform)).FontSize(26).TextColor(t.TextMuted).
+							Label(a.tr(platformLabel(dev.Peer.Platform)))
 						ui.Row(c).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
 							ui.Text(c, a.displayName(dev.Peer.Name, dev.ID)).Bold().SingleLine().Shrink(1)
-							ui.Text(c, a.tr(platformLabel(dev.Peer.Platform))).FontSize(12).TextColor(t.TextMuted).Shrink(0)
+							a.unknownPlatformLabel(c, dev.Peer.Platform)
 						})
 						state, color, pending := "离线", t.TextMuted, false
 						if online {
@@ -102,8 +104,10 @@ func (a *app) devicesPage(c *ui.Context) {
 								Exit:     &ui.Motion{Collapse: true},
 							}).Children(func() {
 							a.tailscaleDeviceAddress(c, dev, waiting)
-							ui.Text(c, a.tr("证书指纹")).FontSize(12).TextColor(t.TextMuted)
-							ui.Text(c, identity.FormatFingerprint(dev.Peer.Fingerprint)).Selectable().FontSize(12)
+							ui.Column(c).Gap(4).Children(func() {
+								ui.Text(c, a.tr("证书指纹")).FontSize(12).TextColor(t.TextMuted)
+								ui.Text(c, identity.FormatFingerprint(dev.Peer.Fingerprint)).Selectable().FontSize(12).FontFeatures("tnum")
+							})
 							if a.confirmRemove == dev.ID {
 								ui.Row(c).Gap(8).Children(func() {
 									if ui.Button(c, a.tr("确认解除配对")).TextColor(t.Danger).Clicked() {
@@ -113,8 +117,14 @@ func (a *app) devicesPage(c *ui.Context) {
 										a.confirmRemove = ""
 									}
 								})
-							} else if ui.Button(c, a.tr("解除配对")).TextColor(t.Danger).Clicked() {
-								a.confirmRemove = dev.ID
+							} else {
+								// The details column stretches its children; the button
+								// is an action, so it keeps the width of its label.
+								ui.Row(c).Children(func() {
+									if ui.Button(c, a.tr("解除配对")).TextColor(t.Danger).Clicked() {
+										a.confirmRemove = dev.ID
+									}
+								})
 							}
 						})
 					}
@@ -132,10 +142,11 @@ func (a *app) devicesPage(c *ui.Context) {
 				}
 				count++
 				ui.Row(c.Key("found-"+dev.ID)).Gap(12).Padding(4, 0).AlignItems(ui.Center).Children(func() {
-					ui.Icon(c, deviceIcon).FontSize(24).TextColor(t.TextMuted)
+					ui.Icon(c, platformIcon(dev.Platform)).FontSize(24).TextColor(t.TextMuted).
+						Label(a.tr(platformLabel(dev.Platform)))
 					ui.Row(c).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, a.displayName(dev.Name, dev.ID)).Bold().SingleLine().Shrink(1)
-						ui.Text(c, a.tr(platformLabel(dev.Platform))).FontSize(12).TextColor(t.TextMuted).Shrink(0)
+						a.unknownPlatformLabel(c, dev.Platform)
 					})
 					connecting := a.dialCancel != nil && a.targetPeerID == dev.ID
 					label := a.tr("配对")
@@ -161,31 +172,30 @@ func (a *app) devicesPage(c *ui.Context) {
 			}
 		})
 	}
-	settingDisclosure(c, a.tr("通过地址连接"), &a.showAddress, func() {
-		ui.Column(c).Gap(10).Padding(12, 0).Children(func() {
-			ui.Segmented(c, &a.addressRoute, a.tr("局域网"), "Tailscale").Label(a.tr("连接方式"))
-			placeholder := a.tr("192.168.1.20，端口可省略")
-			if a.addressRoute == 1 {
-				placeholder = a.tr("100.x.y.z，端口可省略")
+	settingCardDisclosure(c, a.tr("通过地址连接"), &a.showAddress, func() {
+		placeholder := a.tr("192.168.1.20，端口可省略")
+		if a.addressRoute == 1 {
+			placeholder = a.tr("100.x.y.z，端口可省略")
+		}
+		ui.Row(c).Gap(8).AlignItems(ui.Center).AlignSelf(ui.Stretch).Children(func() {
+			ui.Segmented(c, &a.addressRoute, a.tr("局域网"), "Tailscale").Label(a.tr("连接方式")).Shrink(0)
+			submit := ui.TextInput(c.Key("peer"), &a.peer).Label(a.tr("对端地址")).
+				Placeholder(placeholder).Grow(1).MinWidth(180).Submitted()
+			if ui.Button(c, a.tr("连接地址")).Disabled(waiting).Shrink(0).Clicked() || (submit && !waiting) {
+				a.connectAddress()
 			}
-			ui.Row(c).Gap(8).Children(func() {
-				submit := ui.TextInput(c.Key("peer"), &a.peer).Label(a.tr("对端地址")).Placeholder(placeholder).Grow(1).Submitted()
-				if ui.Button(c, a.tr("连接地址")).Disabled(waiting).Clicked() || (submit && !waiting) {
-					a.connectAddress()
-				}
-			})
 		})
 	})
-	settingDisclosure(c, a.tr("广播网段与配对管理"), &a.showNetwork, func() {
-		ui.Column(c).Gap(14).Padding(12, 0).Children(func() {
+	settingCardDisclosure(c, a.tr("广播网段与配对管理"), &a.showNetwork, func() {
+		ui.Column(c).Gap(14).Children(func() {
 			a.broadcastSection(c)
 			if len(a.devices) > 0 {
 				cardDivider(c)
-				label := a.tr("解除全部配对")
-				if a.confirm {
-					label = a.tr("确认解除全部配对")
-				}
-				ui.Row(c).Gap(8).Children(func() {
+				settingRow(c, a.tr("全部配对"), "", func() {
+					label := a.tr("解除全部配对")
+					if a.confirm {
+						label = a.tr("确认解除全部配对")
+					}
 					if ui.Button(c, label).TextColor(t.Danger).Clicked() {
 						if !a.confirm {
 							a.confirm = true
@@ -200,7 +210,6 @@ func (a *app) devicesPage(c *ui.Context) {
 			}
 		})
 	})
-	a.networkHelp(c)
 }
 
 func (a *app) broadcastSection(c *ui.Context) {
@@ -217,7 +226,8 @@ func (a *app) broadcastSection(c *ui.Context) {
 		physical = append(physical, row)
 		keys = append(keys, row.key)
 	}
-	ui.Row(c).Gap(8).Children(func() {
+	ui.Row(c).Gap(8).AlignItems(ui.Center).AlignSelf(ui.Stretch).Children(func() {
+		ui.Text(c, a.tr("发现网段")).FontSize(13).FontWeight(500).TextColor(t.TextMuted).Grow(1)
 		if ui.Button(c, a.tr("全选")).Disabled(sel.All()).Clicked() {
 			a.setDiscovery(discovery.SelectAll())
 		}
@@ -230,21 +240,49 @@ func (a *app) broadcastSection(c *ui.Context) {
 		ui.Text(c, a.tr("没有可用的局域网网段。连接 Wi-Fi 或网线后会出现在这里。")).TextColor(t.TextMuted)
 	}
 	a.syncSegmentChecks(physical, sel)
-	for i := range a.segments {
-		row := &a.segments[i]
-		if ui.Checkbox(c.Key("seg-"+row.key), &row.checked, a.tr(row.label)).Changed() {
-			a.setDiscovery(discovery.Toggle(sel, keys, row.key, row.checked))
-			sel = a.selection()
+	ui.Column(c).Gap(8).AlignSelf(ui.Stretch).Children(func() {
+		for i := range a.segments {
+			row := &a.segments[i]
+			ui.Row(c.Key("seg-row-" + row.key)).Gap(12).AlignItems(ui.Center).AlignSelf(ui.Stretch).Children(func() {
+				if ui.Checkbox(c.Key("seg-"+row.key), &row.checked, row.cidr).Changed() {
+					a.setDiscovery(discovery.Toggle(sel, keys, row.key, row.checked))
+					sel = a.selection()
+				}
+				ui.Spacer(c)
+				ui.Text(c, row.meta).FontSize(12).TextColor(t.TextMuted).FontFeatures("tnum").SingleLine()
+			})
 		}
-	}
+	})
 	if sel.HasNew(keys) {
 		ui.Text(c, a.tr("有新网段未加入广播。")).FontSize(12).TextColor(t.TextMuted)
 	} else if sel.Stopped() && len(physical) > 0 {
 		ui.Text(c, a.tr("发现已停止。勾选网段或通过地址连接。")).FontSize(12).TextColor(t.TextMuted)
 	}
-	for _, row := range virtual {
-		ui.Text(c, a.tr(row.label)).FontSize(12).TextColor(t.TextMuted)
+	if len(virtual) > 0 {
+		settingDisclosure(c, a.trf("已忽略的虚拟网卡 (%d)", "Ignored virtual adapters (%d)", len(virtual)), &a.showIgnoredSegments, func() {
+			ui.Column(c).Gap(6).Padding(4, 0, 0, 0).AlignSelf(ui.Stretch).Children(func() {
+				for _, row := range virtual {
+					ui.Row(c.Key("vseg-" + row.key)).Gap(12).AlignItems(ui.Center).AlignSelf(ui.Stretch).Children(func() {
+						ui.Text(c, row.cidr).FontSize(12).TextColor(t.TextMuted).FontFeatures("tnum").SingleLine()
+						if row.tailscale {
+							ui.Text(c, a.tr("仅 Tailscale")).FontSize(12).TextColor(t.TextMuted).SingleLine()
+						}
+						ui.Spacer(c)
+						ui.Text(c, row.meta).FontSize(12).TextColor(t.TextMuted).FontFeatures("tnum").SingleLine()
+					})
+				}
+			})
+		})
 	}
+}
+
+// unknownPlatformLabel names the system only when the icon cannot: a peer that
+// has not reported its platform yet.
+func (a *app) unknownPlatformLabel(c *ui.Context, platform string) {
+	if platform != "" {
+		return
+	}
+	ui.Text(c, a.tr(platformLabel(platform))).FontSize(12).TextColor(c.Theme().TextMuted).Shrink(0)
 }
 
 func (a *app) isPaired(id string) bool {
