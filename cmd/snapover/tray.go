@@ -25,7 +25,7 @@ func (a *app) startTray() {
 	tray, err := mygo.NewTray(mygo.TrayOptions{
 		Icon:           icon,
 		IconIsTemplate: template,
-		ToolTip:        a.tr("桌临鸽"),
+		ToolTip:        "Snapover",
 	})
 	if err != nil {
 		if a.engine.Log != nil {
@@ -141,7 +141,7 @@ func (a *app) saveMenuBarIcon(selected int) {
 			err = a.tray.SetIcon(icon, template)
 		}
 		if err != nil {
-			a.menuBarIconError = "图标已保存，但切换失败，请重启桌临鸽后重试"
+			a.menuBarIconError = "图标已保存，但切换失败，请重启 Snapover 后重试"
 		}
 	}
 }
@@ -192,7 +192,7 @@ func (a *app) refreshTray() {
 		status = label
 	}
 	if status == "" {
-		status = "桌临鸽"
+		status = "Snapover"
 	}
 	a.tray.SetToolTip(a.tr(status))
 	if runtime.GOOS == "linux" {

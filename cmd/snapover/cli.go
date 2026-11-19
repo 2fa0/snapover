@@ -26,7 +26,7 @@ func (a *app) handleCLI(ctx context.Context, request control.Request, progress f
 	}
 	link, online := a.engine.Link()
 	if !online {
-		return "", errors.New("没有在线设备，请先在桌临鸽中连接设备后重试")
+		return "", errors.New("没有在线设备，请先在 Snapover 中连接设备后重试")
 	}
 	if request.Kind == "file" {
 		paths := request.Paths
