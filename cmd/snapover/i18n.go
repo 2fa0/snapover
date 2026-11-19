@@ -159,15 +159,15 @@ func (a *app) refreshLanguageUI() {
 	}
 	a.refreshTray()
 	if a.fileWin != nil {
-		a.fileWin.SetTitle(a.tr("发送文件 · 桌临鸽"))
+		a.fileWin.SetTitle(a.tr("发送文件 · Snapover"))
 		a.fileWin.Invalidate()
 	}
 	if a.transferWin != nil {
-		a.transferWin.SetTitle(a.tr("文件同步 · 桌临鸽"))
+		a.transferWin.SetTitle(a.tr("文件同步 · Snapover"))
 		a.transferWin.Invalidate()
 	}
 	if a.networkGuide != nil && a.networkGuide.win != nil {
-		a.networkGuide.win.SetTitle(a.tr("连接指引 · 桌临鸽"))
+		a.networkGuide.win.SetTitle(a.tr("连接指引 · Snapover"))
 		a.networkGuide.win.Invalidate()
 	}
 	if a.pickOriginal != nil {
@@ -182,7 +182,6 @@ func (a *app) refreshLanguageUI() {
 		a.picker.Invalidate()
 	}
 	if a.win != nil {
-		a.win.SetTitle(a.tr("桌临鸽"))
 		a.win.Invalidate()
 	}
 }
@@ -669,14 +668,13 @@ var enStrings = map[string]string{
 	"跟随系统":                   "Follow System",
 
 	// Tray & Menu Bar Icon
-	"桌临鸽":   "Snapover",
 	"菜单栏图标": "Menu Bar Icon",
 	"托盘图标":  "Tray Icon",
 	"邮筒":    "Mailbox",
 	"小鸟":    "Bird",
 	"信封":    "Envelope",
-	"保存图标失败，选择未生效，请检查数据目录权限后重试": "Failed to save icon; check data directory permissions and try again",
-	"图标已保存，但切换失败，请重启桌临鸽后重试":     "Icon saved, but switching failed; restart Snapover and try again",
+	"保存图标失败，选择未生效，请检查数据目录权限后重试":    "Failed to save icon; check data directory permissions and try again",
+	"图标已保存，但切换失败，请重启 Snapover 后重试": "Icon saved, but switching failed; restart Snapover and try again",
 	"已暂停": "Paused",
 	"等待忽略下一次复制（不记录、不同步）": "Ignoring next copy (won't record or sync)",
 	"快速历史":      "Quick History",
@@ -897,20 +895,20 @@ var enStrings = map[string]string{
 	"TCP 端口已连通，尚未验证设备身份；同步前仍需完成双方配对确认": "TCP port is reachable (device identity not yet verified; pairing confirmation is still required)",
 
 	// Network Guide
-	"允许桌临鸽连接另一台电脑":               "Allow Snapover to connect to another computer",
-	"出现防火墙提示时，允许桌临鸽在可信的专用网络上通信。": "When prompted by the firewall, allow Snapover on trusted private networks.",
-	"允许桌临鸽查找另一台电脑":               "Allow Snapover to find another computer",
-	"系统询问本地网络权限时，选择「允许」。":        "When prompted for Local Network access, choose \"Allow\".",
+	"允许 Snapover 连接另一台电脑":               "Allow Snapover to connect to another computer",
+	"出现防火墙提示时，允许 Snapover 在可信的专用网络上通信。": "When prompted by the firewall, allow Snapover on trusted private networks.",
+	"允许 Snapover 查找另一台电脑":               "Allow Snapover to find another computer",
+	"系统询问本地网络权限时，选择「允许」。":               "When prompted for Local Network access, choose \"Allow\".",
 	"查看连接指引": "Connection Guide",
 	"不再提示":   "Don't Show Again",
 	"连接帮助":   "Connection Help",
 	"保存指引设置失败，请检查数据目录权限后重新关闭指引重试": "Failed to save guide setting; check data directory permissions and try again",
-	"连接指引 · 桌临鸽":    "Connection Guide · Snapover",
-	"连接另一台电脑":       "Connect to Another Computer",
-	"正在搜索同一网络内的电脑…": "Searching for computers on the same network…",
-	"重新搜索":          "Search Again",
-	"返回连接设备":        "Back to Devices",
-	"仍然无法连接？":       "Still can't connect?",
+	"连接指引 · Snapover": "Connection Guide · Snapover",
+	"连接另一台电脑":         "Connect to Another Computer",
+	"正在搜索同一网络内的电脑…":   "Searching for computers on the same network…",
+	"重新搜索":            "Search Again",
+	"返回连接设备":          "Back to Devices",
+	"仍然无法连接？":         "Still can't connect?",
 	"请在两台电脑上分别检查。访客 Wi-Fi 或网络隔离可能阻止电脑互相连接。":     "Check on both computers. Guest Wi-Fi or AP isolation may block peer-to-peer connections.",
 	"可以在「连接设备」中手填对端地址，绕过自动发现；仍需允许本地网络访问和防火墙连接。": "You can manually enter the peer address in \"Devices\" to bypass auto-discovery; Local Network permission and firewall access are still required.",
 	"可以在「连接设备」中手填对端地址，绕过自动发现；仍需防火墙允许连接。":        "You can manually enter the peer address in \"Devices\" to bypass auto-discovery; firewall access is still required.",
@@ -1060,17 +1058,17 @@ var enStrings = map[string]string{
 	"尺寸":                     "Dimensions",
 
 	// Send File Window & File Transfer
-	"发送文件 · 桌临鸽": "Send File · Snapover",
-	"发送文件":       "Send File",
-	"把文件拖到这里":    "Drop files here",
-	"选择文件…":      "Choose Files…",
-	"更换…":        "Change…",
-	"文件发送进度":     "File transfer progress",
-	"文件同步进度":     "File sync progress",
-	"文件同步 · 桌临鸽": "File Sync · Snapover",
-	"对方处理中…":     "Waiting for the other computer…",
-	"文件同步失败":     "File sync failed",
-	"对方暂不支持接收文件，请更新对方的桌临鸽": "Peer does not support receiving files; update Snapover on the peer",
+	"发送文件 · Snapover": "Send File · Snapover",
+	"发送文件":            "Send File",
+	"把文件拖到这里":         "Drop files here",
+	"选择文件…":           "Choose Files…",
+	"更换…":             "Change…",
+	"文件发送进度":          "File transfer progress",
+	"文件同步进度":          "File sync progress",
+	"文件同步 · Snapover": "File Sync · Snapover",
+	"对方处理中…":          "Waiting for the other computer…",
+	"文件同步失败":          "File sync failed",
+	"对方暂不支持接收文件，请更新对方的 Snapover": "Peer does not support receiving files; update Snapover on the peer",
 	"暂停":    "Pause",
 	"继续发送":  "Resume",
 	"取消传输":  "Cancel transfer",
@@ -1088,10 +1086,10 @@ var enStrings = map[string]string{
 	"正在等待对方接收…":   "Waiting for peer to accept…",
 	"传输完成，正在等待对方确认保存…": "Transfer finished; waiting for peer to confirm save…",
 	"已发送":               "Sent",
-	"文件已发送 · 桌临鸽":       "File Sent · Snapover",
-	"文件发送失败 · 桌临鸽":      "File Send Failed · Snapover",
-	"传输已取消 · 桌临鸽":       "Transfer Cancelled · Snapover",
-	"收到文件 · 桌临鸽":        "File Received · Snapover",
+	"文件已发送 · Snapover":  "File Sent · Snapover",
+	"文件发送失败 · Snapover": "File Send Failed · Snapover",
+	"传输已取消 · Snapover":  "Transfer Cancelled · Snapover",
+	"收到文件 · Snapover":   "File Received · Snapover",
 	"接收失败":              "Receive failed",
 	"更改接收文件夹…":          "Change Receive Folder…",
 	"选择接收文件夹":           "Choose Receive Folder",
@@ -1105,11 +1103,11 @@ var enStrings = map[string]string{
 	"正在连接最近的设备，连接成功后会自动发送…":   "Connecting to recent device; will send automatically once connected…",
 	"连接或文件已改变，请确认后点击「发送」":     "Connection or files changed; verify and click \"Send\"",
 	"暂时未能连接设备。请先连接设备，再点击「发送」": "Could not connect to device in time. Connect first, then click \"Send\"",
-	"Finder 服务":                "Finder Service",
-	"Windows「发送到」入口":           "Windows \"Send to\" Menu",
-	"注册 Finder 服务失败":           "Failed to register Finder service",
-	"请在桌临鸽设置中启用 Finder 发送文件服务": "Enable the Finder Send File service in Snapover Settings first",
-	"允许从 Finder 发送文件":          "Allow Sending Files from Finder",
+	"Finder 服务":                       "Finder Service",
+	"Windows「发送到」入口":                  "Windows \"Send to\" Menu",
+	"注册 Finder 服务失败":                  "Failed to register Finder service",
+	"请在 Snapover 设置中启用 Finder 发送文件服务": "Enable the Finder Send File service in Snapover Settings first",
+	"允许从 Finder 发送文件":                 "Allow Sending Files from Finder",
 	"右键文件 → 服务 → Snapover 发送文件。菜单是否显示可在系统设置的「服务」中调整。": "Right-click file → Services → Send with Snapover. Visibility can be managed in System Settings → Services.",
 	"刷新 Finder 服务":                 "Refresh Finder Service",
 	"在 Windows「发送到」菜单中显示 Snapover": "Show Snapover in Windows \"Send to\" menu",

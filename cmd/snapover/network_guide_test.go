@@ -95,7 +95,7 @@ func TestMacNetworkGuideReminderCanBeDismissedWithoutLoadingWindow(t *testing.T)
 	}
 	currentNetworkGuideKind = guideMacLocalNetwork
 	tt = ui.NewTester(a.networkSetupHint, 600, 260)
-	if !tt.HasText("允许桌临鸽查找另一台电脑") {
+	if !tt.HasText("允许 Snapover 查找另一台电脑") {
 		t.Fatal("first setup should explain local network access")
 	}
 	clickInterface(t, tt, "不再提示")
