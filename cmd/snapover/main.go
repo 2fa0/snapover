@@ -84,6 +84,15 @@ func main() {
 		log.Error("创建数据目录失败", "dir", dataDir, "err", err)
 		die(1)
 	}
+	// MyGo's single-instance lock is keyed by bundle identifier, so a packaged app
+	// and a dev build can both pass it. Enforce exclusivity per dataDir before
+	// touching logs or state.
+	instanceLock, err := control.LockInstance(dataDir)
+	if err != nil {
+		log.Warn("已有 Snapover 实例正在使用该数据目录，本次启动将退出", "dir", dataDir, "err", err)
+		return
+	}
+	defer instanceLock.Close()
 	mygo.App.SetPath(mygo.PathUserData, dataDir)
 	removedLogs := crashlog.Maintain(dataDir)
 	crashPath, crashErr := crashlog.Install(dataDir)

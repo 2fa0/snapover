@@ -274,3 +274,35 @@ func TestLongProgressStreamHasNoCumulativeSizeLimit(t *testing.T) {
 		t.Fatalf("progress stream truncated at %d", received)
 	}
 }
+
+func TestLockInstanceEnforcesDataDirExclusivity(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+
+	lock1, err := LockInstance(dir1)
+	if err != nil {
+		t.Fatalf("first LockInstance failed: %v", err)
+	}
+	t.Cleanup(func() { _ = lock1.Close() })
+
+	if dup, err := LockInstance(dir1); err == nil {
+		_ = dup.Close()
+		t.Fatal("expected second LockInstance in same dataDir to fail")
+	}
+
+	other, err := LockInstance(dir2)
+	if err != nil {
+		t.Fatalf("LockInstance in separate dataDir failed: %v", err)
+	}
+	_ = other.Close()
+
+	if err := lock1.Close(); err != nil {
+		t.Fatalf("close first lock: %v", err)
+	}
+
+	reacquired, err := LockInstance(dir1)
+	if err != nil {
+		t.Fatalf("LockInstance after release failed: %v", err)
+	}
+	_ = reacquired.Close()
+}

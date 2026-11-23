@@ -61,6 +61,13 @@ type Server struct {
 	cancel context.CancelFunc
 }
 
+// LockInstance acquires an exclusive lock in dataDir so distinct app bundles
+// (such as a packaged release and a mygo dev build) cannot share the same data
+// directory concurrently.
+func LockInstance(dataDir string) (io.Closer, error) {
+	return lockFile(filepath.Join(dataDir, "app.lock"))
+}
+
 func Start(ctx context.Context, dataDir string, handler Handler) (*Server, error) {
 	return start(ctx, dataDir, handler, idleTimeout)
 }
