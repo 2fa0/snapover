@@ -165,7 +165,7 @@ func TestMainWindowClosedPickerLoadsAndFileRequestsStillWork(t *testing.T) {
 			t.Error("could not create the tray")
 			return
 		}
-		a.openPicker(false)
+		a.openPicker(false, "tray_icon")
 		a.openMainWindow()
 		a.win.Close()
 		if a.win != nil || a.picker == nil || a.picker.IsDestroyed() {

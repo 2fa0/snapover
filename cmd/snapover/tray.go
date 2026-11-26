@@ -38,7 +38,7 @@ func (a *app) startTray() {
 		a.refreshTray()
 		return
 	}
-	a.tray.OnClick(a.togglePicker)
+	a.tray.OnClick(func() { a.openPicker(false, "tray_icon") })
 	a.tray.OnRightClick(a.handleTrayMenu)
 	if !template {
 		mygo.Theme.OnUpdated(func() {
@@ -203,7 +203,7 @@ func (a *app) refreshTray() {
 func (a *app) trayMenu() *mygo.Menu {
 	// 菜单只放高频动作，不放版本号、连接状态和低频设置项：状态在托盘提示里，页面切换和低频配置在主窗口里。
 	return mygo.NewMenu([]*mygo.MenuItem{
-		{Label: a.tr("快速历史"), Click: func(*mygo.MenuItem, *mygo.Window) { a.togglePicker() }},
+		{Label: a.tr("快速历史"), Click: func(*mygo.MenuItem, *mygo.Window) { a.openPicker(false, "tray_menu") }},
 		{Label: a.tr("设置"), Click: func(*mygo.MenuItem, *mygo.Window) { a.reveal(pageSettings) }},
 		mygo.Separator(),
 		{ID: "privacy-mode", Label: a.tr("隐私模式"), Type: mygo.MenuItemCheckbox, Checked: a.privacyMode, Click: func(item *mygo.MenuItem, _ *mygo.Window) { a.privacyMode = item.Checked; a.savePrivacy() }},

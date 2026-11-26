@@ -37,6 +37,27 @@ func TestRemoteMarkerRequiresSameClipboardGeneration(t *testing.T) {
 	}
 }
 
+func TestLocalMarkerRequiresLocalFormat(t *testing.T) {
+	oldRead, oldSeq := readClipboardData, clipboardSequence
+	t.Cleanup(func() { readClipboardData, clipboardSequence = oldRead, oldSeq })
+	clipboardSequence = func() (uint64, error) { return 2, nil }
+	board := MyGoBoard{}
+	for _, format := range []transfer.Format{remoteFormat, localFormat} {
+		readClipboardData = func(f transfer.Format) ([]byte, error) {
+			if f != format {
+				return nil, errors.New("format missing")
+			}
+			return remoteMarker, nil
+		}
+		if got := board.OwnsLocalSequence(2); got != (format == localFormat) {
+			t.Fatalf("OwnsLocalSequence with %s = %v", format, got)
+		}
+		if board.OwnsLocalSequence(1) {
+			t.Fatal("previous sequence still reports local ownership")
+		}
+	}
+}
+
 type markedBoard struct {
 	*fakeBoard
 	ready            chan struct{}

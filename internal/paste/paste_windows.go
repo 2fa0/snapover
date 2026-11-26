@@ -99,6 +99,8 @@ func ModifiersDown() bool {
 	return false
 }
 
+func (t Target) CheckPasteTarget(bool) error { return nil }
+
 func (t Target) SendCopy() error {
 	if !t.Valid() || Capture() != t {
 		return ErrActivate

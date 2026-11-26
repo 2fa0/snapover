@@ -186,11 +186,17 @@ func (a *app) completeHistoryPaste(r *pasteRequest) {
 			if r.copyOnly {
 				return
 			}
+			serial := a.pasteSerial.Add(1)
 			if !r.target.Valid() {
-				a.notePaste("已复制。没有记住刚才的窗口，请在目标处再按一次粘贴")
+				a.notePaste(serial, "已复制。没有记住刚才的窗口，请在目标处再按一次粘贴", false)
 				return
 			}
-			go a.deliverPaste(r.target)
+			sequence, err := historyPasteSequence(a.board)
+			if err != nil {
+				a.notePaste(serial, pasteFailure(err), true)
+				return
+			}
+			go a.deliverPaste(serial, sequence, r.target, result.item.Kind == clip.KindFiles)
 			return
 		}
 		message = "写回剪贴板失败"
@@ -203,4 +209,30 @@ func (a *app) completeHistoryPaste(r *pasteRequest) {
 		// failure to wherever the user is looking.
 		a.notify(toastFailure, message)
 	}
+}
+
+var errPasteClipboardChanged = errors.New("could not confirm history clipboard write")
+
+func historyPasteSequence(board clip.Board) (uint64, error) {
+	sequence, err := board.Sequence()
+	if err != nil {
+		return 0, errPasteClipboardChanged
+	}
+	// Another process can replace the clipboard between publication and this read.
+	if owner, ok := board.(interface{ OwnsLocalSequence(uint64) bool }); ok && !owner.OwnsLocalSequence(sequence) {
+		return 0, errPasteClipboardChanged
+	}
+	return sequence, nil
+}
+
+func sendHistoryPaste(board clip.Board, sequence uint64, checkTarget, send func() error) error {
+	targetErr := checkTarget()
+	// The Finder query can wait on another process. Check the sequence after it.
+	if current, err := board.Sequence(); err != nil || current != sequence {
+		return errPasteClipboardChanged
+	}
+	if targetErr != nil {
+		return targetErr
+	}
+	return send()
 }

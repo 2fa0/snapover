@@ -184,6 +184,8 @@ type app struct {
 	menuBarPreviews     [3]*ui.Bitmap
 	menuBarPreviewDark  bool
 	picker              *mygo.Window
+	pickerOpening       bool
+	pasteNotice         *mygo.Window
 	pickPreview         pickerPreview
 	pickLoading         bool
 	pickOriginal        *mygo.Window

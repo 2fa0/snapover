@@ -244,6 +244,10 @@ reworked; the history-layer implementation is kept.
 - The first paste requires allowing Snapover under System Settings → Privacy &
   Security → Accessibility. Without a remembered window, the content is only
   written to the clipboard and you paste it yourself.
+- On macOS, selecting text or an image from quick history on the Finder desktop
+  or in a Finder file list copies it to the clipboard. Snapover sends the paste
+  shortcut for these entries only when it can confirm focus in a text field.
+  Files and folders can paste directly into the Finder file area.
 - Both the main window and quick history have a context menu: paste (or copy),
   pin/unpin, set/edit/clear note, delete. In quick history Enter and a double
   click still paste directly; `⌥Enter` (`Alt+Enter` on Windows) only writes to

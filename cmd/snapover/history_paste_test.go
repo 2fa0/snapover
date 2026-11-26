@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/paste"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -13,9 +14,11 @@ import (
 type pasteTestBoard struct {
 	writes []clip.Item
 	err    error
+	seq    uint64
+	seqErr error
 }
 
-func (*pasteTestBoard) Sequence() (uint64, error)    { return 0, nil }
+func (b *pasteTestBoard) Sequence() (uint64, error)  { return b.seq, b.seqErr }
 func (*pasteTestBoard) Snapshot() (clip.Item, error) { return clip.Item{}, nil }
 func (b *pasteTestBoard) Write(item clip.Item) error {
 	if b.err != nil {
@@ -23,6 +26,44 @@ func (b *pasteTestBoard) Write(item clip.Item) error {
 	}
 	b.writes = append(b.writes, item)
 	return nil
+}
+
+func TestHistoryPasteChecksClipboardAfterCheckingTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		change  bool
+		seqErr  error
+		focus   error
+		wantErr error
+	}{
+		{name: "unchanged"},
+		{name: "replaced during focus check", change: true, wantErr: errPasteClipboardChanged},
+		{name: "sequence unavailable", seqErr: errors.New("clipboard unavailable"), wantErr: errPasteClipboardChanged},
+		{name: "Finder outside input", focus: paste.ErrNonTextTarget, wantErr: paste.ErrNonTextTarget},
+		{name: "Finder focus unknown", focus: paste.ErrUnknownFocus, wantErr: paste.ErrUnknownFocus},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			board := &pasteTestBoard{seq: 7}
+			sequence, err := historyPasteSequence(board)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sent := false
+			err = sendHistoryPaste(board, sequence, func() error {
+				if tc.change {
+					board.seq++
+				}
+				board.seqErr = tc.seqErr
+				return tc.focus
+			}, func() error {
+				sent = true
+				return nil
+			})
+			if !errors.Is(err, tc.wantErr) || sent != (tc.wantErr == nil) {
+				t.Fatalf("paste sent = %v, err = %v", sent, err)
+			}
+		})
+	}
 }
 
 func TestHistoryPasteLoadsBeforePublishingOnUIThread(t *testing.T) {

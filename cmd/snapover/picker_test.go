@@ -10,6 +10,25 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestPickerOpenBreadcrumbOmitsTitles(t *testing.T) {
+	a := &app{}
+	entries := []history.Entry{
+		{Kind: string(clip.KindImage), Width: 957, Height: 262},
+		{Kind: string(clip.KindText), Text: "私密🙂"},
+		{Kind: string(clip.KindFiles), FileName: "secret.txt"},
+		{Kind: "unknown-kind", Text: "X"},
+	}
+	for len(entries) < 9 {
+		entries = append(entries, history.Entry{Kind: string(clip.KindText), Text: "A"})
+	}
+	got := a.pickerOpenBreadcrumb("tray_icon", 366, 626, entries)
+	want := "打开快速历史 source=tray_icon requestedSize=366x626 rows=9 firstTitles(kind:utf8Bytes/utf16Units)=image:16/11,text:10/4,files:10/10,other:1/1," +
+		"text:1/1,text:1/1,text:1/1,text:1/1"
+	if got != want {
+		t.Fatalf("breadcrumb = %q, want %q", got, want)
+	}
+}
+
 func TestPickerKeyboardSelection(t *testing.T) {
 	a := &app{pickSel: 0}
 	a.pickList.Selected = &a.pickSel

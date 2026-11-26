@@ -89,19 +89,34 @@ func Install(dir string) (string, error) {
 // Breadcrumb never waits for storage. A full queue drops diagnostic lines
 // rather than blocking clipboard capture or retaining unbounded strings.
 func Breadcrumb(msg string) {
+	queueBreadcrumb(msg, nil)
+}
+
+// QueueRecord returns a channel closed after the write and sync attempt.
+// A nil channel means the record could not be queued.
+func QueueRecord(msg string) <-chan struct{} {
+	done := make(chan struct{})
+	if !queueBreadcrumb(msg, done) {
+		return nil
+	}
+	return done
+}
+
+func queueBreadcrumb(msg string, done chan struct{}) bool {
 	msg = oneLine(msg)
 	if msg == "" {
-		return
+		return false
 	}
 	mu.Lock()
-	w := sink
-	if w != nil {
+	defer mu.Unlock()
+	if w := sink; w != nil {
 		select {
-		case w.events <- event{text: time.Now().Format(time.RFC3339) + " " + msg + "\n"}:
+		case w.events <- event{text: time.Now().Format(time.RFC3339) + " " + msg + "\n", done: done}:
+			return true
 		default:
 		}
 	}
-	mu.Unlock()
+	return false
 }
 
 // Record writes one diagnostic line and waits until it reaches disk.

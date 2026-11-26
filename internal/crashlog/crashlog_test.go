@@ -98,6 +98,27 @@ func TestBreadcrumbDoesNotWaitForBlockedWriter(t *testing.T) {
 	if len(blocked.events) != 1 {
 		t.Fatal("queue exceeded its capacity")
 	}
+	if QueueRecord("queue is full") != nil {
+		t.Fatal("full queue accepted a record")
+	}
+}
+
+func TestQueuedRecordAcknowledgesWrite(t *testing.T) {
+	resetForTest()
+	t.Cleanup(resetForTest)
+	path, err := Install(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-QueueRecord("opening picker"):
+	case <-time.After(time.Second):
+		t.Fatal("record was not written")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), "opening picker\n") {
+		t.Fatalf("acknowledged record missing from log: %v", err)
+	}
 }
 
 func TestCrashLogRotatesWhileRunning(t *testing.T) {

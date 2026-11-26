@@ -48,7 +48,16 @@ func (MyGoBoard) Sequence() (uint64, error) { return platformSequence() }
 // OwnsSequence checks a tiny representation, never the image. The second
 // sequence read prevents a new external copy from inheriting an old marker.
 func (MyGoBoard) OwnsSequence(seq uint64) bool {
-	marker, err := readClipboardData(remoteFormat)
+	return ownsMarkedSequence(seq, remoteFormat)
+}
+
+// OwnsLocalSequence confirms that a history write still owns the clipboard.
+func (MyGoBoard) OwnsLocalSequence(seq uint64) bool {
+	return ownsMarkedSequence(seq, localFormat)
+}
+
+func ownsMarkedSequence(seq uint64, format transfer.Format) bool {
+	marker, err := readClipboardData(format)
 	if err != nil || strings.TrimRight(string(marker), "\x00") != string(remoteMarker) {
 		return false
 	}

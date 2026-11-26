@@ -16,6 +16,11 @@ const (
 	caretTimeout   = 40 * time.Millisecond
 )
 
+func setAXTimeout(element uintptr, deadline time.Time) bool {
+	left := time.Until(deadline)
+	return left > 0 && axSetTimeout(element, float32(left.Seconds())) == 0
+}
+
 // CaretBounds reads the focused text element before the picker takes focus.
 // Call it on the main thread. Apps without text accessibility return false.
 func (t Target) CaretBounds() (Rectangle, bool) {
@@ -30,11 +35,7 @@ func (t Target) CaretBounds() (Rectangle, bool) {
 	// Timeouts belong to individual AX objects, not their descendants.
 	// Share one budget across all three messages before showing the picker.
 	deadline := time.Now().Add(caretTimeout)
-	setTimeout := func(element uintptr) bool {
-		left := time.Until(deadline)
-		return left > 0 && axSetTimeout(element, float32(left.Seconds())) == 0
-	}
-	if !setTimeout(app) {
+	if !setAXTimeout(app, deadline) {
 		return Rectangle{}, false
 	}
 	var element uintptr
@@ -42,7 +43,7 @@ func (t Target) CaretBounds() (Rectangle, bool) {
 		return Rectangle{}, false
 	}
 	defer axRelease(element)
-	if !setTimeout(element) {
+	if !setAXTimeout(element, deadline) {
 		return Rectangle{}, false
 	}
 	var selected uintptr
@@ -60,7 +61,7 @@ func (t Target) CaretBounds() (Rectangle, bool) {
 		return Rectangle{}, false
 	}
 	defer axRelease(rangeValue)
-	if !setTimeout(element) {
+	if !setAXTimeout(element, deadline) {
 		return Rectangle{}, false
 	}
 	var bounds uintptr

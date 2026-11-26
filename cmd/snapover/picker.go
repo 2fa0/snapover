@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/2fa0/snapover/internal/clip"
+	"github.com/2fa0/snapover/internal/crashlog"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/paste"
 	"github.com/2fa0/snapover/internal/settings"
@@ -22,12 +25,15 @@ func pickerShortcuts() []string {
 	return []string{"Alt+V"}
 }
 
-func (a *app) togglePicker() {
-	a.openPicker(false)
-}
-
-func (a *app) openPicker(atPointer bool) {
-	a.pasteSerial.Add(1)
+func (a *app) openPicker(atPointer bool, source string) {
+	serial := a.pasteSerial.Add(1)
+	if a.pasteNotice != nil {
+		a.pasteNotice.Close()
+	}
+	if a.pickerOpening {
+		a.pickerOpening = false
+		return
+	}
 	if a.picker != nil {
 		a.picker.Close()
 		return
@@ -49,11 +55,40 @@ func (a *app) openPicker(atPointer bool) {
 	a.pickRestore = false
 	a.pickMutationPending = false
 	a.pickSel = -1
-	if len(a.filtered("")) > 0 {
+	shown := a.filtered("")
+	if len(shown) > 0 {
 		a.pickSel = 0
 	}
 	a.pickList.ScrollTo(0, ui.Start)
 	width, height := a.pickerSize()
+	if runtime.GOOS == "darwin" {
+		if written := crashlog.QueueRecord(a.pickerOpenBreadcrumb(source, width, height, shown)); written != nil {
+			a.pickerOpening = true
+			go func() {
+				// Give the log a chance to reach disk before Core Text's first layout.
+				timer := time.NewTimer(35 * time.Millisecond)
+				defer timer.Stop()
+				select {
+				case <-written:
+				case <-timer.C:
+				}
+				mygo.RunOnMain(func() {
+					if a.pasteSerial.Load() != serial || !a.pickerOpening {
+						return
+					}
+					a.pickerOpening = false
+					if !a.quitting {
+						a.openPickerWindow(atPointer, width, height)
+					}
+				})
+			}()
+			return
+		}
+	}
+	a.openPickerWindow(atPointer, width, height)
+}
+
+func (a *app) openPickerWindow(atPointer bool, width, height int) {
 	a.pickSizeW, a.pickSizeH = width, height
 	a.pickDragW, a.pickDragH = float32(width), float32(height)
 	a.pickResizing = false
@@ -124,6 +159,35 @@ func (a *app) openPicker(atPointer bool) {
 	// A tray flyout is placed by the platform: read where it landed so a drag
 	// or a resize moves it from there. The pointer flyout is already recorded.
 	a.syncPickerPlacement()
+}
+
+// Core Text can fail during the initial layout, so record the first rows
+// before creating the flyout. Lengths can be matched to the shaping stack.
+func (a *app) pickerOpenBreadcrumb(source string, width, height int, shown []history.Entry) string {
+	const maxRows = 8
+	var msg strings.Builder
+	fmt.Fprintf(&msg, "打开快速历史 source=%s requestedSize=%dx%d rows=%d firstTitles(kind:utf8Bytes/utf16Units)=", source, width, height, len(shown))
+	for i, entry := range shown[:min(len(shown), maxRows)] {
+		if i > 0 {
+			msg.WriteByte(',')
+		}
+		kind := clip.Kind(entry.Kind)
+		switch kind {
+		case clip.KindText, clip.KindImage, clip.KindFiles:
+		default:
+			kind = "other"
+		}
+		title := a.entryTitle(entry)
+		units := 0
+		for _, r := range title {
+			units++
+			if r >= 0x10000 {
+				units++
+			}
+		}
+		fmt.Fprintf(&msg, "%s:%d/%d", kind, len(title), units)
+	}
+	return msg.String()
 }
 
 func pickerBounds(anchor, area mygo.Rectangle, width, height int) mygo.Rectangle {
@@ -424,6 +488,7 @@ func (a *app) pollPasteTarget(ctx context.Context) {
 }
 
 func (a *app) closePicker() {
+	a.pickerOpening = false
 	a.pickerSearch.reset()
 	if a.picker != nil {
 		a.picker.Close()
@@ -648,8 +713,7 @@ func (a *app) pastePicked() {
 	a.startHistoryPaste(shown[a.pickSel].ID, a.picker)
 }
 
-func (a *app) deliverPaste(target paste.Target) {
-	serial := a.pasteSerial.Add(1)
+func (a *app) deliverPaste(serial, sequence uint64, target paste.Target, isFiles bool) {
 	ctx := a.root
 	if ctx == nil {
 		ctx = context.Background()
@@ -676,22 +740,65 @@ func (a *app) deliverPaste(target paste.Target) {
 	if err == nil && wait(60*time.Millisecond) {
 		mygo.RunOnMain(func() {
 			if ctx.Err() == nil && a.pasteSerial.Load() == serial {
-				err = target.SendPaste()
+				err = sendHistoryPaste(a.board, sequence, func() error {
+					return target.CheckPasteTarget(isFiles)
+				}, target.SendPaste)
 			}
 		})
 	}
 	if err == nil {
 		return
 	}
-	a.notePaste(pasteFailure(err))
+	show := errors.Is(err, errPasteClipboardChanged) || errors.Is(err, paste.ErrNonTextTarget) || errors.Is(err, paste.ErrUnknownFocus)
+	a.notePaste(serial, pasteFailure(err), show)
 }
 
-func (a *app) notePaste(msg string) {
+func (a *app) notePaste(serial uint64, msg string, show bool) {
 	a.update(func() {
+		if a.quitting || a.pasteSerial.Load() != serial {
+			return
+		}
+		if show {
+			a.showPasteNotice(msg)
+			return
+		}
 		a.status = msg
 		a.flash = msg
 		a.refreshTray()
 	})
+}
+
+func (a *app) showPasteNotice(msg string) {
+	if a.pasteNotice != nil {
+		a.pasteNotice.Close()
+	}
+	win := mygo.NewWindow(a.placeHUDOnWorkingDisplay(mygo.WindowOptions{
+		Title: "Snapover", Width: 360, Height: 76,
+		Frameless: true, Hidden: true, AlwaysOnTop: true, SkipTaskbar: true,
+		IgnoreMouseEvents: true, CornerRadius: 10,
+		Content: appView(func(c *ui.Context) {
+			t := c.Theme()
+			ui.Column(c).Fill().Padding(12, 16).Justify(ui.Center).Background(t.Surface).Children(func() {
+				ui.Text(c, a.tr(msg)).FontSize(13).TextColor(t.Text).MaxLines(3)
+			})
+		}),
+	}))
+	a.pasteNotice = win
+	timer := time.AfterFunc(3*time.Second, func() {
+		mygo.RunOnMain(func() {
+			if a.pasteNotice == win {
+				win.Close()
+			}
+		})
+	})
+	win.OnClosed(func() {
+		timer.Stop()
+		if a.pasteNotice == win {
+			a.pasteNotice = nil
+		}
+	})
+	win.SetVisibleOnAllWorkspaces(true)
+	win.ShowInactive()
 }
 
 func pasteFailure(err error) string {
@@ -700,6 +807,12 @@ func pasteFailure(err error) string {
 		return "已复制。要直接粘贴，请在系统设置 → 隐私与安全性 → 辅助功能里允许 Snapover，然后再试一次"
 	case errors.Is(err, paste.ErrNoTarget):
 		return "已复制。刚才的窗口已经不在了，请再按一次粘贴"
+	case errors.Is(err, paste.ErrNonTextTarget):
+		return "已复制到剪贴板，未粘贴到 Finder 文件区域"
+	case errors.Is(err, paste.ErrUnknownFocus):
+		return "已复制到剪贴板，无法确认 Finder 的输入焦点"
+	case errors.Is(err, errPasteClipboardChanged):
+		return "无法确认剪贴板内容，已取消自动粘贴"
 	default:
 		return "已复制，但没能把焦点还给刚才的窗口"
 	}

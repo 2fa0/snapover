@@ -20,11 +20,7 @@ func (t Target) WindowBounds() (Rectangle, bool) {
 	}
 	defer axRelease(app)
 	deadline := time.Now().Add(caretTimeout)
-	setTimeout := func(element uintptr) bool {
-		left := time.Until(deadline)
-		return left > 0 && axSetTimeout(element, float32(left.Seconds())) == 0
-	}
-	if !setTimeout(app) {
+	if !setAXTimeout(app, deadline) {
 		return Rectangle{}, false
 	}
 	var win uintptr
@@ -34,7 +30,7 @@ func (t Target) WindowBounds() (Rectangle, bool) {
 		}
 	}
 	defer axRelease(win)
-	if !setTimeout(win) {
+	if !setAXTimeout(win, deadline) {
 		return Rectangle{}, false
 	}
 	return axWindowFrame(win)

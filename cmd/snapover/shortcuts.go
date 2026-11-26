@@ -185,7 +185,7 @@ func (a *app) registerPickerShortcut() {
 	for _, key := range keys {
 		if err := mygo.GlobalShortcut.Register(key, func() {
 			if !a.captureRegisteredShortcut(key) {
-				a.openPicker(true)
+				a.openPicker(true, "shortcut")
 			}
 		}); err != nil {
 			a.shortcutError = "快捷键无法注册：" + displayPickerShortcut(key) + "。请在设置中更换，也可从托盘打开快速历史"
@@ -213,7 +213,7 @@ func (a *app) savePickerShortcut(value string) {
 		func(key string) error {
 			return mygo.GlobalShortcut.Register(key, func() {
 				if !a.captureRegisteredShortcut(key) {
-					a.openPicker(true)
+					a.openPicker(true, "shortcut")
 				}
 			})
 		},
