@@ -111,4 +111,4 @@ Windows 目前没有代码签名，SmartScreen 可能提示「Windows 已保护�
 那是给应用内更新器用的。Mac 手动升级用 `.dmg`。Windows 手动升级优先用 ZIP；只有手头只有 `.tar.gz` 时，再解压后覆盖 `Snapover.exe` 和旁边的资源文件。
 
 **发布页上的 Source code 要不要下。**  
-不要。那是 GitHub 自动附带的源码包，不是安装包；源码本身不公开，只提供预编译包。
+不用。那是 GitHub 自动附带的源码归档，不是可直接运行的应用安装包。

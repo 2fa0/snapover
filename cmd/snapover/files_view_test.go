@@ -27,10 +27,10 @@ func TestFilesViewFollowsTransferState(t *testing.T) {
 	}
 
 	a.filePaths, a.fileSize = []string{"报告.pdf"}, 1024
-	a.fileBusy, a.fileRecipient = true, "doze-mac"
+	a.fileBusy, a.fileRecipient = true, "office-mac"
 	a.fileMessage = "已传输 512 B / 1 KB"
 	tt.Frame()
-	if !tt.HasText("发送到 doze-mac") || !tt.HasText("文件发送进度") || !tt.HasText(a.fileMessage) {
+	if !tt.HasText("发送到 office-mac") || !tt.HasText("文件发送进度") || !tt.HasText(a.fileMessage) {
 		t.Fatal("active transfer lost its recipient or progress")
 	}
 	for _, label := range []string{"更换…", "发送", "连接设备", "完成"} {
@@ -42,7 +42,7 @@ func TestFilesViewFollowsTransferState(t *testing.T) {
 	// The success receipt still names the recipient even after it disconnects.
 	a.fileBusy, a.fileSent, a.fileMessage = false, true, "已发送"
 	tt.Frame()
-	if !tt.HasText("发送到 doze-mac") || !tt.HasText("已发送") || !tt.HasText("完成") {
+	if !tt.HasText("发送到 office-mac") || !tt.HasText("已发送") || !tt.HasText("完成") {
 		t.Fatal("completed transfer lost its receipt")
 	}
 	if tt.HasText("连接设备") || tt.HasText("文件发送进度") {

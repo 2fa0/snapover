@@ -5,4 +5,10 @@ dist/
 .DS_Store
 resources/windows-*/snapover-cli.exe
 resources/darwin-*/snapover-cli
-mygo-update.key
+*.key
+*.pem
+*.p12
+AGENTS.md
+docs/*-plan.md
+docs/maccy-interaction-notes.md
+docs/performance-2026-10-16.md
