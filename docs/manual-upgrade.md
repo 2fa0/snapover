@@ -69,7 +69,7 @@ Finder「服务 → Snapover 发送文件」一般会随新版 Info.plist 重新
 
 1. 完全退出 Snapover：托盘图标 → 退出。任务管理器里也不该再看到 `Snapover.exe`。
 2. 记下现在的安装位置。常见是自己解压出来的文件夹，例如 `C:\Apps\Snapover`。便携版看这个目录里有没有 `portable.flag`。
-3. 解压新的 ZIP。里面应有 `Snapover.exe`，旁边通常还有 `snapover-cli.exe`、`app.png`、`bird.png`。把这些文件拷进原来的安装目录，覆盖旧文件。
+3. 解压新的 ZIP。里面应有 `Snapover.exe`，旁边通常还有 `snapover-cli.exe`、`app.png`。把这些文件拷进原来的安装目录，覆盖旧文件。
 4. 不要删：
    - 同目录的 `portable.flag`、`data/`
    - 你自己放进去的其他文件

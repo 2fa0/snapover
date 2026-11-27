@@ -1,6 +1,6 @@
 # Features and behaviour
 
-This document expands the [README](../README_en.md). It is organised by topic and
+This document expands the [README](../README.md). It is organised by topic and
 reflects the current code and real-device testing. UI entry points and
 shortcuts are described in the README.
 
