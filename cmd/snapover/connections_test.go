@@ -293,10 +293,16 @@ func TestTailscaleControlsAndSavedAddressesAreAvailableInNativeUI(t *testing.T) 
 	if !tt.HasText("连接方式") || !tt.HasText("对端地址") {
 		t.Fatal("manual route selection missing")
 	}
-	a.page = pageSettings
-	tt.Frame()
 	if !tt.HasText("允许通过 Tailscale 连接") {
-		t.Fatal("Tailscale setting missing")
+		t.Fatal("Tailscale setting missing on devices page")
+	}
+	a.page = pageSettings
+	for _, tab := range []int{settingsTabSync, settingsTabStorage, settingsTabGeneral} {
+		a.settingsTab = tab
+		tt.Frame()
+		if tt.HasText("允许通过 Tailscale 连接") {
+			t.Fatalf("Tailscale setting still appears on settings tab %d", tab)
+		}
 	}
 }
 

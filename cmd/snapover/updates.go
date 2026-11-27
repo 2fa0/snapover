@@ -130,13 +130,16 @@ func (a *app) updateSettings(c *ui.Context) {
 		// while the user reads it is worse than a second line.
 		ui.Text(c, a.tr(a.updateStateText())).FontSize(12).TextColor(c.Theme().TextMuted)
 	}
-	if !a.updatesEnabled {
-		return
+	if a.updatesEnabled {
+		cardDivider(c)
+		if settingSwitchHelp(c, &a.autoUpdate, a.tr("自动检查更新"), a.tr("每 24 小时在后台检查一次，有新版本时提示。")) {
+			updater.SetAutomaticChecks(a.autoUpdate)
+		}
 	}
 	cardDivider(c)
-	if settingSwitch(c, &a.autoUpdate, a.tr("自动检查更新"), a.tr("每 24 小时在后台检查一次，有新版本时提示。")) {
-		updater.SetAutomaticChecks(a.autoUpdate)
-	}
+	settingRow(c, a.tr("项目主页"), "", func() {
+		ui.Link(c, "github.com/"+updateRepo, "https://github.com/"+updateRepo).FontSize(13)
+	})
 }
 
 // updateStateText explains what the update row shows: why this build cannot

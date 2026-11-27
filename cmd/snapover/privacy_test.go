@@ -142,3 +142,26 @@ func TestRunningAppMenuAddsTheAppOnce(t *testing.T) {
 		t.Fatalf("duplicate row: %+v", a.cfg.Values.ExcludedApps)
 	}
 }
+
+func TestApplicationListSummary(t *testing.T) {
+	a := interfaceTestApp(t)
+	if got := a.applicationListSummary(); got != "" {
+		t.Fatalf("empty exclusion summary = %q, want empty", got)
+	}
+	a.cfg.Values.ExcludedApps = settings.ExcludedApps{
+		{Name: "Safari"},
+		{Name: "Notes"},
+		{Name: "Disabled", Off: true},
+	}
+	if got := a.applicationListSummary(); got != "已排除 2 个" {
+		t.Fatalf("excluded summary = %q, want 已排除 2 个", got)
+	}
+	a.excludedWhitelist = true
+	if got := a.applicationListSummary(); got != "白名单 · 2 个" {
+		t.Fatalf("whitelist summary = %q, want 白名单 · 2 个", got)
+	}
+	a.cfg.Values.ExcludedApps = nil
+	if got := a.applicationListSummary(); got != "白名单 · 空" {
+		t.Fatalf("empty whitelist summary = %q, want 白名单 · 空", got)
+	}
+}

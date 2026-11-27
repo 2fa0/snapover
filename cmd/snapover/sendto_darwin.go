@@ -45,13 +45,14 @@ func (a *app) receiveFinderFiles(paths []string, cold bool) error {
 
 func (a *app) sendToSettings(c *ui.Context) {
 	on := !a.cfg.Values.DisableSendTo
-	if ui.Checkbox(c, &on, a.tr("允许从 Finder 发送文件")).
-		Tooltip(a.tr("右键文件 → 服务 → Snapover 发送文件。菜单是否显示可在系统设置的「服务」中调整。")).Disabled(a.sendToBusy).Changed() {
-		a.setSendTo(on, true)
-	}
-	ui.Row(c).Children(func() {
-		if ui.Button(c, a.tr("刷新 Finder 服务")).Disabled(a.sendToBusy || !on).Clicked() {
+	title := a.tr("允许从 Finder 发送文件")
+	help := a.tr("右键文件 → 服务 → Snapover 发送文件。菜单是否显示可在系统设置的「服务」中调整。")
+	settingRowHelp(c, title, "", help, func() {
+		if ui.Button(c, a.tr("刷新服务")).Label(a.tr("刷新 Finder 服务")).Disabled(a.sendToBusy || !on).Clicked() {
 			a.setSendTo(true, true)
+		}
+		if ui.Switch(c, &on).Label(switchLabel(title)).Disabled(a.sendToBusy).Changed() {
+			a.setSendTo(on, true)
 		}
 	})
 }

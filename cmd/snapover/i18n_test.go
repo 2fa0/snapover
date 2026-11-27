@@ -42,16 +42,20 @@ func TestLanguageSettingsSwitchAndPersist(t *testing.T) {
 	a := interfaceTestApp(t)
 	a.systemLang = settings.LangEN
 	a.page = pageSettings
+	a.settingsTab = settingsTabGeneral
 
 	tester := ui.NewTester(a.view, 960, 1500)
 	tester.Frame()
 
 	// Follow system (systemLang = en) renders in English
-	if _, ok := tester.Find("Clipboard Sync"); !ok {
+	if _, ok := tester.Find("General & Appearance"); !ok {
 		t.Fatal("expected English settings heading when following English system locale")
 	}
 	if _, ok := tester.Find("Interface Language"); !ok {
 		t.Fatal("expected Interface Language setting")
+	}
+	if _, ok := tester.Find("Project Homepage"); !ok {
+		t.Fatal("expected Project Homepage setting")
 	}
 
 	// Switch to 简体中文 manually
@@ -59,8 +63,11 @@ func TestLanguageSettingsSwitchAndPersist(t *testing.T) {
 	if a.cfg.Values.Language != settings.LangZH {
 		t.Fatalf("language = %q, want %q", a.cfg.Values.Language, settings.LangZH)
 	}
-	if _, ok := tester.Find("剪贴板同步"); !ok {
+	if _, ok := tester.Find("通用与外观"); !ok {
 		t.Fatal("expected Chinese settings heading after selecting 简体中文")
+	}
+	if _, ok := tester.Find("项目主页"); !ok {
+		t.Fatal("expected Chinese Project Homepage setting")
 	}
 
 	// Reload settings from disk to verify persistence
@@ -72,14 +79,22 @@ func TestLanguageSettingsSwitchAndPersist(t *testing.T) {
 		t.Fatalf("persisted language = %q, want %q", saved.Values.Language, settings.LangZH)
 	}
 
-	// Switch to English manually
+	// Switch to English manually and verify Sync tab uses "Sync" (not "Synced")
 	clickInterface(t, tester, "English")
 	if a.cfg.Values.Language != settings.LangEN {
 		t.Fatalf("language = %q, want %q", a.cfg.Values.Language, settings.LangEN)
 	}
-	if _, ok := tester.Find("Clipboard Sync"); !ok {
+	if _, ok := tester.Find("General & Appearance"); !ok {
 		t.Fatal("expected English settings heading after selecting English")
 	}
+	clickInterface(t, tester, "Sync")
+	if _, ok := tester.Find("Clipboard Sync"); !ok {
+		t.Fatal("expected Clipboard Sync heading on Sync tab")
+	}
+	if tester.HasText("Synced") {
+		t.Fatal("Sync tab label collided with Synced translation")
+	}
+	clickInterface(t, tester, "General")
 
 	// Switch back to Follow System while systemLang is zh
 	a.systemLang = settings.LangZH
@@ -87,7 +102,7 @@ func TestLanguageSettingsSwitchAndPersist(t *testing.T) {
 	if a.cfg.Values.Language != settings.LangAuto {
 		t.Fatalf("language = %q, want %q", a.cfg.Values.Language, settings.LangAuto)
 	}
-	if _, ok := tester.Find("剪贴板同步"); !ok {
+	if _, ok := tester.Find("通用与外观"); !ok {
 		t.Fatal("expected Chinese UI when Follow System is selected and systemLang is zh")
 	}
 }

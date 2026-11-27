@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -364,42 +365,54 @@ func (a *app) shellResult(err error) {
 	}
 }
 
+func (a *app) fileTransferSettings(c *ui.Context) {
+	a.receiveSettings(c)
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		cardDivider(c)
+		a.sendToSettings(c)
+	}
+}
+
 func (a *app) receiveSettings(c *ui.Context) {
-	ui.Text(c, a.engine.ReceiveDir()).Selectable().TextColor(c.Theme().TextMuted).MaxLines(2)
-	ui.Row(c).Gap(8).Children(func() {
-		if ui.Button(c, a.tr("更改接收文件夹…")).Clicked() {
-			parent := a.win
-			title := a.tr("选择接收文件夹")
-			go func() {
-				paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: parent, Title: title, Directory: true})
-				if err == nil && len(paths) > 0 {
-					err = filetransfer.CheckReceiveDir(paths[0])
-				}
-				a.updateFiles(func() {
-					if err != nil {
-						a.reportStatusError("选择接收文件夹失败：" + err.Error())
-						return
+	ui.Row(c).Gap(12).AlignItems(ui.Center).AlignSelf(ui.Stretch).Children(func() {
+		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(4).Children(func() {
+			ui.Text(c, a.tr("接收文件夹")).FontSize(14).FontWeight(500)
+			ui.Text(c, a.engine.ReceiveDir()).Selectable().FontSize(12).TextColor(c.Theme().TextMuted).MaxLines(2)
+		})
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
+			if ui.Button(c, a.tr("打开")).Label(a.tr("打开接收文件夹")).Clicked() {
+				a.openReceiveFolder()
+			}
+			if ui.Button(c, a.tr("更改…")).Label(a.tr("更改接收文件夹…")).Clicked() {
+				parent := a.win
+				title := a.tr("选择接收文件夹")
+				go func() {
+					paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: parent, Title: title, Directory: true})
+					if err == nil && len(paths) > 0 {
+						err = filetransfer.CheckReceiveDir(paths[0])
 					}
-					if len(paths) == 0 {
-						return
-					}
-					old := a.cfg.Values.ReceiveDir
-					a.cfg.Values.ReceiveDir = paths[0]
-					if err := a.cfg.Save(); err != nil {
-						a.cfg.Values.ReceiveDir = old
-						a.reportStatusError("保存接收位置失败：" + err.Error())
-						return
-					}
-					a.engine.SetReceiveDir(paths[0])
-					a.status = "已更改接收文件夹，下一次接收生效"
-				})
-			}()
-		}
-		if ui.Button(c, a.tr("打开文件夹")).Clicked() {
-			a.openReceiveFolder()
-		}
+					a.updateFiles(func() {
+						if err != nil {
+							a.reportStatusError("选择接收文件夹失败：" + err.Error())
+							return
+						}
+						if len(paths) == 0 {
+							return
+						}
+						old := a.cfg.Values.ReceiveDir
+						a.cfg.Values.ReceiveDir = paths[0]
+						if err := a.cfg.Save(); err != nil {
+							a.cfg.Values.ReceiveDir = old
+							a.reportStatusError("保存接收位置失败：" + err.Error())
+							return
+						}
+						a.engine.SetReceiveDir(paths[0])
+						a.status = "已更改接收文件夹，下一次接收生效"
+					})
+				}()
+			}
+		})
 	})
-	a.sendToSettings(c)
 }
 
 func (a *app) saveFileLimit() {

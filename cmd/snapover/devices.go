@@ -189,6 +189,8 @@ func (a *app) devicesPage(c *ui.Context) {
 	settingCardDisclosure(c, a.tr("广播网段与配对管理"), &a.showNetwork, func() {
 		ui.Column(c).Gap(14).Children(func() {
 			a.broadcastSection(c)
+			cardDivider(c)
+			a.tailscaleSettings(c)
 			if len(a.devices) > 0 {
 				cardDivider(c)
 				settingRow(c, a.tr("全部配对"), "", func() {

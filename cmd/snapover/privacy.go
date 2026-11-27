@@ -63,9 +63,23 @@ func (a *app) privacySettings(c *ui.Context) {
 	}
 	// 排除名单独立于隐私模式生效，与其它折叠项同级，不挂在开关下面。
 	cardDivider(c)
-	settingDisclosure(c, a.tr("应用程序"), &a.showPrivacy, func() {
+	settingDisclosureSummary(c, a.tr("应用程序"), a.applicationListSummary(), &a.showPrivacy, func() {
 		a.applicationList(c)
 	})
+}
+
+func (a *app) applicationListSummary() string {
+	active := len(a.cfg.Values.ExcludedApps.Active())
+	if a.excludedWhitelist {
+		if active == 0 {
+			return a.tr("白名单 · 空")
+		}
+		return a.trf("白名单 · %d 个", "Allowlist · %d", active)
+	}
+	if active == 0 {
+		return ""
+	}
+	return a.trf("已排除 %d 个", "%d excluded", active)
 }
 
 // applicationList is the list of applications the rules are about: which ones
@@ -81,7 +95,7 @@ func (a *app) applicationList(c *ui.Context) {
 	// after it.
 	remove, toggle := -1, -1
 	toggledOn := false
-	ui.Column(c).Padding(12, 0).Gap(10).Children(func() {
+	ui.Column(c).Gap(10).Children(func() {
 		if len(entries) == 0 {
 			ui.Text(c, a.tr(a.emptyListNote())).FontSize(13).TextColor(t.TextMuted)
 		}

@@ -45,6 +45,7 @@ func TestUpdateStateText(t *testing.T) {
 func TestSettingsPageShowsUpdateGroup(t *testing.T) {
 	a := interfaceTestApp(t)
 	a.page = pageSettings
+	a.settingsTab = settingsTabGeneral
 	tt := ui.NewTester(a.view, 960, 640)
 	if !tt.HasText("关于与更新") {
 		t.Fatal("settings page has no update group")
@@ -54,6 +55,9 @@ func TestSettingsPageShowsUpdateGroup(t *testing.T) {
 	}
 	if !tt.HasText("这个版本不能自动更新") {
 		t.Fatal("update group does not explain why a test build cannot update")
+	}
+	if !tt.HasText("项目主页") || !tt.HasText("github.com/"+updateRepo) {
+		t.Fatal("update group does not show the GitHub repository link")
 	}
 	// A build that cannot update itself explains it instead of opening the
 	// update window, which needs the plugin that only main registers.
@@ -69,9 +73,13 @@ func TestUpdateGroupHidesAutomaticChecksWhenUnsupported(t *testing.T) {
 	a := interfaceTestApp(t)
 	a.updatesEnabled = true
 	a.page = pageSettings
+	a.settingsTab = settingsTabGeneral
 	tt := ui.NewTester(a.view, 960, 640)
 	if !tt.HasText("自动检查更新") {
 		t.Fatal("supported build does not offer automatic checks")
+	}
+	if tt.HasText("每 24 小时在后台检查一次，有新版本时提示。") {
+		t.Fatal("automatic checks row should use help tooltip instead of permanent subtitle")
 	}
 
 	a.updatesEnabled = false
@@ -89,6 +97,7 @@ func TestUpdateGroupShowsAFailedCheck(t *testing.T) {
 	a.updatesEnabled = true
 	a.updateCheckFailed = true
 	a.page = pageSettings
+	a.settingsTab = settingsTabGeneral
 	tt := ui.NewTester(a.view, 960, 640)
 	if !tt.HasText("这次检查没有完成") {
 		t.Fatal("settings page does not show a check that failed")

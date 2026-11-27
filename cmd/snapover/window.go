@@ -32,6 +32,12 @@ const (
 	pageHistory  = "history"
 )
 
+const (
+	settingsTabSync    = 0
+	settingsTabStorage = 1
+	settingsTabGeneral = 2
+)
+
 type app struct {
 	engine *clipsync.Engine
 	hist   *history.Store
@@ -129,8 +135,8 @@ type app struct {
 	showNetwork         bool
 	showIgnoredSegments bool
 	showAddress         bool
+	settingsTab         int
 	showSyncLimits      bool
-	showReceiveFolder   bool
 	historyKind         int
 	shownEntries        []history.Entry
 	shownSource         []history.Entry
@@ -304,8 +310,6 @@ func newApp(engine *clipsync.Engine, hist *history.Store, cfg *settings.File, id
 		peer:                peer,
 		startupPeerExplicit: explicitPeer,
 		status:              "未连接",
-		showSyncLimits:      true,
-		showReceiveFolder:   true,
 		histSel:             -1,
 		pickSel:             -1,
 
@@ -784,113 +788,120 @@ func (a *app) view(c *ui.Context) {
 
 func (a *app) settingsPage(c *ui.Context) {
 	t := c.Theme()
-	settingsGroup(c, a.tr("剪贴板同步"), func() {
-		a.privacySettings(c)
-		cardDivider(c)
-		a.syncModeSettings(c)
-		cardDivider(c)
-		if settingSwitch(c, &a.paused, a.tr("暂停同步"), "") {
-			a.saveSettings()
+	ui.Row(c).Children(func() {
+		if ui.Segmented(c, &a.settingsTab, a.trf("同步", "Sync"), a.tr("存储与文件"), a.tr("通用")).Label(a.tr("设置分类")).Changed() {
+			a.cancelShortcutRecording()
 		}
-		cardDivider(c)
-		if settingSwitch(c, &a.textOnly, a.tr("只同步文本"), "") {
-			a.saveSettings()
-		}
-		cardDivider(c)
-		settingDisclosure(c, a.tr("大小限制"), &a.showSyncLimits, func() {
-			ui.Column(c).Gap(14).Padding(12, 0).Children(func() {
-				settingRow(c, a.tr("文本大小上限"), "", func() {
-					if a.numberInput(c.Key("maxtextmb"), &a.maxTextText, a.tr("文本大小上限，MB"), 1, settings.MaxTextMB, 88).Submitted() {
-						a.saveTextLimit()
-					}
-					ui.Text(c, "MB").TextColor(t.TextMuted)
-					if ui.Button(c, a.tr("应用")).Label(a.tr("应用文本上限")).Clicked() {
-						a.saveTextLimit()
-					}
-				})
-				if a.maxTextError != "" {
-					errorMessage(c, a.tr(a.maxTextError))
-				}
+	})
+	switch a.settingsTab {
+	case settingsTabStorage:
+		settingsGroup(c, a.tr("历史存储"), func() { a.historyStorageSettings(c) })
+		settingsGroup(c, a.tr("文件传输"), func() { a.fileTransferSettings(c) })
+	case settingsTabGeneral:
+		settingsGroup(c, a.tr("通用与外观"), func() {
+			if settingSwitch(c, &a.openAtLogin, a.tr("开机启动"), "") {
+				a.setOpenAtLogin(a.openAtLogin)
+			}
+			cardDivider(c)
+			a.languageSettings(c)
+			if keepawake.Supported {
 				cardDivider(c)
-				settingRow(c, a.tr("图片大小上限"), "", func() {
-					if a.numberInput(c.Key("maxmb"), &a.maxImageText, a.tr("图片大小上限，MB"), 1, settings.DefaultMaxImageMB, 88).Submitted() {
-						a.saveSettings()
-					}
-					ui.Text(c, "MB").TextColor(t.TextMuted)
-					if ui.Button(c, a.tr("应用")).Clicked() {
-						a.saveSettings()
-					}
-				})
+				a.keepAwakeSettings(c)
+			}
+			cardDivider(c)
+			a.themeSettings(c)
+			if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
 				cardDivider(c)
-				settingRow(c, a.tr("文件复制同步上限"), "", func() {
-					if a.numberInput(c.Key("maxfilemb"), &a.maxFileText, a.tr("文件复制同步上限，MB"), 1, settings.MaxFileMB, 152).Submitted() {
-						a.saveFileLimit()
+				a.menuBarIconSettings(c)
+			}
+		})
+		settingsGroup(c, a.tr("关于与更新"), func() { a.updateSettings(c) })
+		settingsGroup(c, a.tr("本机与诊断"), func() {
+			settingDisclosure(c, a.tr("设备信息"), &a.showIdentity, func() {
+				ui.Column(c).Gap(10).Children(func() {
+					kv(c, a.tr("名称"), a.name)
+					kv(c, a.tr("设备 ID"), a.deviceID)
+					ui.Text(c, a.tr("证书指纹")).FontSize(12).TextColor(t.TextMuted)
+					ui.Text(c, a.fingerprint).Selectable().FontSize(12).FontFeatures("tnum")
+					if len(a.addrs) == 0 {
+						kv(c, a.tr("地址"), a.tr("没有可用的局域网 IPv4"))
 					}
-					ui.Text(c, "MB").TextColor(t.TextMuted)
-					if ui.Button(c, a.tr("应用")).Label(a.tr("应用文件复制同步上限")).Clicked() {
-						a.saveFileLimit()
+					for _, addr := range a.addrs {
+						kv(c, a.tr("地址"), addr)
+					}
+					for _, addr := range lan.IPv4() {
+						if lan.TailscaleInterface(addr) {
+							kv(c, "Tailscale IPv4", addr.IP.String())
+						}
 					}
 				})
-				if a.maxFileError != "" {
-					errorMessage(c, a.tr(a.maxFileError))
-				}
+			})
+			cardDivider(c)
+			settingDisclosure(c, a.tr("连接诊断"), &a.showDiagnostics, func() {
+				ui.Column(c).Gap(10).Children(func() { a.diagnosticSettings(c) })
 			})
 		})
-		cardDivider(c)
-		settingDisclosure(c, a.tr("接收文件夹"), &a.showReceiveFolder, func() {
-			ui.Column(c).Padding(12, 0).Gap(10).Children(func() { a.receiveSettings(c) })
-		})
-	})
-	settingsGroup(c, a.tr("快捷键"), func() {
-		a.copyShortcutSettings(c)
-		cardDivider(c)
-		a.shortcutSettings(c)
-	})
-	settingsGroup(c, a.tr("历史存储"), func() { a.historyStorageSettings(c) })
-	settingsGroup(c, a.tr("通用与外观"), func() {
-		if settingSwitch(c, &a.openAtLogin, a.tr("开机启动"), "") {
-			a.setOpenAtLogin(a.openAtLogin)
-		}
-		cardDivider(c)
-		a.languageSettings(c)
-		if keepawake.Supported {
+	default:
+		settingsGroup(c, a.tr("剪贴板同步"), func() {
+			a.privacySettings(c)
 			cardDivider(c)
-			a.keepAwakeSettings(c)
-		}
-		cardDivider(c)
-		a.themeSettings(c)
-		if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+			a.syncModeSettings(c)
 			cardDivider(c)
-			a.menuBarIconSettings(c)
-		}
-	})
-	settingsGroup(c, a.tr("本机与诊断"), func() {
-		a.tailscaleSettings(c)
-		cardDivider(c)
-		settingDisclosure(c, a.tr("设备信息"), &a.showIdentity, func() {
-			ui.Column(c).Padding(12, 0).Gap(10).Children(func() {
-				kv(c, a.tr("名称"), a.name)
-				kv(c, a.tr("设备 ID"), a.deviceID)
-				ui.Text(c, a.tr("证书指纹")).FontSize(12).TextColor(t.TextMuted)
-				ui.Text(c, a.fingerprint).Selectable().FontSize(12).FontFeatures("tnum")
-				if len(a.addrs) == 0 {
-					kv(c, a.tr("地址"), a.tr("没有可用的局域网 IPv4"))
-				}
-				for _, addr := range a.addrs {
-					kv(c, a.tr("地址"), addr)
-				}
-				for _, addr := range lan.IPv4() {
-					if lan.TailscaleInterface(addr) {
-						kv(c, "Tailscale IPv4", addr.IP.String())
+			if settingSwitch(c, &a.paused, a.tr("暂停同步"), "") {
+				a.saveSettings()
+			}
+			cardDivider(c)
+			if settingSwitch(c, &a.textOnly, a.tr("只同步文本"), "") {
+				a.saveSettings()
+			}
+			cardDivider(c)
+			limitSummary := fmt.Sprintf("%d / %d / %d MB", a.cfg.Values.MaxTextMB, a.cfg.Values.MaxImageMB, a.cfg.Values.MaxFileMB)
+			settingDisclosureSummary(c, a.tr("大小限制"), limitSummary, &a.showSyncLimits, func() {
+				ui.Column(c).Gap(12).Children(func() {
+					settingRow(c, a.tr("文本大小上限"), "", func() {
+						if a.numberInput(c.Key("maxtextmb"), &a.maxTextText, a.tr("文本大小上限，MB"), 1, settings.MaxTextMB, 96).Submitted() {
+							a.saveTextLimit()
+						}
+						ui.Text(c, "MB").TextColor(t.TextMuted)
+						if ui.Button(c, a.tr("应用")).Label(a.tr("应用文本上限")).Clicked() {
+							a.saveTextLimit()
+						}
+					})
+					if a.maxTextError != "" {
+						errorMessage(c, a.tr(a.maxTextError))
 					}
-				}
+					cardDivider(c)
+					settingRow(c, a.tr("图片大小上限"), "", func() {
+						if a.numberInput(c.Key("maxmb"), &a.maxImageText, a.tr("图片大小上限，MB"), 1, settings.DefaultMaxImageMB, 96).Submitted() {
+							a.saveSettings()
+						}
+						ui.Text(c, "MB").TextColor(t.TextMuted)
+						if ui.Button(c, a.tr("应用")).Clicked() {
+							a.saveSettings()
+						}
+					})
+					cardDivider(c)
+					settingRow(c, a.tr("文件复制同步上限"), "", func() {
+						if a.numberInput(c.Key("maxfilemb"), &a.maxFileText, a.tr("文件复制同步上限，MB"), 1, settings.MaxFileMB, 96).Submitted() {
+							a.saveFileLimit()
+						}
+						ui.Text(c, "MB").TextColor(t.TextMuted)
+						if ui.Button(c, a.tr("应用")).Label(a.tr("应用文件复制同步上限")).Clicked() {
+							a.saveFileLimit()
+						}
+					})
+					if a.maxFileError != "" {
+						errorMessage(c, a.tr(a.maxFileError))
+					}
+				})
 			})
 		})
-		settingDisclosure(c, a.tr("连接诊断"), &a.showDiagnostics, func() {
-			ui.Column(c).Padding(12, 0).Gap(10).Children(func() { a.diagnosticSettings(c) })
+		settingsGroup(c, a.tr("快捷键"), func() {
+			a.copyShortcutSettings(c)
+			cardDivider(c)
+			a.shortcutSettings(c)
 		})
-	})
-	settingsGroup(c, a.tr("关于与更新"), func() { a.updateSettings(c) })
+	}
 }
 
 func (a *app) historyPage(c *ui.Context) {

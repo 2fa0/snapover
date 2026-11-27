@@ -385,8 +385,8 @@ updated.
 
 Files are saved to the peer's receiving folder without changing the clipboard
 and without tracking later edits to the original. The default is the system
-"Downloads / Snapover" folder, changeable under Settings → File sync →
-Receiving folder. Choosing a folder and starting a receive both check that it
+"Downloads / Snapover" folder, changeable under Settings → Storage & Files →
+File Transfer. Choosing a folder and starting a receive both check that it
 can be saved safely, and a filesystem without that support asks for another
 folder; a receive already under way keeps writing to the folder it started in.
 Name collisions get a numeric suffix instead of overwriting.
@@ -394,8 +394,8 @@ Name collisions get a numeric suffix instead of overwriting.
 The send window shows progress, and success only appears after the peer confirms
 the save. Closing the send window keeps the transfer going, with notifications
 for completion or failure (when notifications are allowed); the receiver shows
-its own notification and can open the folder from Settings → File sync →
-Receiving folder. Text and image sync keep working, and sending ignores pause
+its own notification and can open the folder from Settings → Storage & Files →
+File Transfer. Text and image sync keep working, and sending ignores pause
 and text-only mode.
 
 Transfers reuse the trusted device's TLS connection, write chunks to a temporary
@@ -448,8 +448,8 @@ different device, the files stay in the send window with a prompt to connect or
 confirm, rather than waiting indefinitely and sending later.
 
 Multiple ordinary files are sent in order; folders or an in-flight transfer are
-reported instead of overwriting what is being sent. Settings → File sync →
-Receiving folder can disable the entry, and enabling it again or moving the
+reported instead of overwriting what is being sent. Settings → Storage & Files →
+File Transfer can disable the entry, and enabling it again or moving the
 executable updates the shortcut target on the next launch. The shortcut is
 created directly through the Windows Shell Link API without PowerShell; if that
 fails the window shows the error and `logs/snapover.log` records the reason.
@@ -480,7 +480,7 @@ window opens with a prompt to connect or confirm. As on Windows, several
 ordinary files are supported, and folders or a second request while sending are
 reported.
 
-Settings → File sync → Receiving folder can disable the service or "Refresh
+Settings → Storage & Files → File Transfer can disable the service or "Refresh
 Finder service". macOS owns the menu: if the entry is missing or should be
 hidden, search for "Services" in System Settings and adjust "Snapover send
 file", noting the location differs between macOS versions. Running from source
@@ -499,7 +499,7 @@ The app's own executable can also be called directly:
 1. Install and connect Tailscale on both computers, and let them reach
    Snapover's inbound TCP port, `47821` by default — use your custom port if you
    changed it.
-2. On both sides open Snapover → Settings → This device & diagnostics and enable
+2. On both sides open Snapover → Devices → Broadcast Subnets & Pairing and enable
    "Allow connections over Tailscale", off by default.
 3. When adding for the first time, press "Add device" on both sides. The
    initiating side expands "Connect by address", chooses "Tailscale" and enters

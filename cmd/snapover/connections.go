@@ -232,7 +232,7 @@ func (a *app) saveTailscaleSetting() {
 		}
 	}
 	if a.allowTailscale {
-		a.status = "已允许 Tailscale 连接，可在连接设备页添加地址"
+		a.status = "已允许 Tailscale 连接，可在本页添加地址"
 	} else {
 		a.status = "已关闭 Tailscale 连接，已保存的地址仍保留"
 	}
@@ -267,7 +267,7 @@ func (a *app) tailscaleDeviceAddress(c *ui.Context, dev clipsync.Device, waiting
 			}
 			btn := ui.Button(c, label).Disabled(waiting || !a.allowTailscale)
 			if !a.allowTailscale {
-				btn.Tooltip(a.tr("在设置中开启 Tailscale 连接后，可添加或使用此地址。"))
+				btn.Tooltip(a.tr("在本页下方开启 Tailscale 连接后，可添加或使用此地址。"))
 			}
 			if btn.Clicked() {
 				a.editTailscaleID, a.editTailscaleAddr = dev.ID, dev.Peer.TailscaleAddr

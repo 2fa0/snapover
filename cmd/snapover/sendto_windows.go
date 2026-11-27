@@ -12,7 +12,10 @@ func (a *app) initSendTo() { a.setSendTo(!a.cfg.Values.DisableSendTo, false) }
 
 func (a *app) sendToSettings(c *ui.Context) {
 	on := !a.cfg.Values.DisableSendTo
-	if ui.Checkbox(c, &on, a.tr("在 Windows「发送到」菜单中显示 Snapover")).Disabled(a.sendToBusy).Changed() {
-		a.setSendTo(on, true)
-	}
+	title := a.tr("在 Windows「发送到」菜单中显示 Snapover")
+	settingRow(c, title, "", func() {
+		if ui.Switch(c, &on).Label(switchLabel(title)).Disabled(a.sendToBusy).Changed() {
+			a.setSendTo(on, true)
+		}
+	})
 }

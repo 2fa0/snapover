@@ -24,7 +24,7 @@ type Endpoint struct {
 }
 
 var (
-	ErrTailscaleDisabled = errors.New("尚未允许 Tailscale 连接，请在两台电脑的设置中开启")
+	ErrTailscaleDisabled = errors.New("尚未允许 Tailscale 连接，请在两台电脑的连接设备页开启")
 	ErrNoTailscale       = errors.New("没有可用的 Tailscale IPv4 隧道，请先连接 Tailscale")
 )
 

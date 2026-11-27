@@ -114,7 +114,7 @@ func (a *app) startDiskUsage() {
 
 func (a *app) otherDiskUsageSettings(c *ui.Context) {
 	settingDisclosure(c, a.tr("占用明细"), &a.showDiskUsage, func() {
-		ui.Column(c).Padding(12, 0).Gap(12).Children(func() {
+		ui.Column(c).Gap(10).Children(func() {
 			if a.historyUsageValid && a.historyUsageError == "" {
 				a.storageUsageLine(c, "其中置顶内容", a.historyUsage.PinnedBytes, nil)
 				a.storageUsageLine(c, "历史目录", a.historyUsage.TotalBytes, nil)

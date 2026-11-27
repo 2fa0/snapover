@@ -59,9 +59,9 @@ func appVersionLabel() string {
 func settingsGroup(c *ui.Context, title string, contents func()) ui.Element {
 	t := c.Theme()
 	return ui.Column(c.Key(title)).AlignSelf(ui.Stretch).Radius(12).Border(1, t.Border).Background(t.Surface).Children(func() {
-		ui.Text(c, title).FontSize(16).FontWeight(600).Padding(16)
+		ui.Text(c, title).FontSize(16).FontWeight(600).Padding(12, 16)
 		cardDivider(c)
-		ui.Column(c).Padding(16).Gap(14).Grow(1).MinWidth(0).Children(contents)
+		ui.Column(c).Padding(12, 16).Gap(12).Grow(1).MinWidth(0).Children(contents)
 	})
 }
 
@@ -142,6 +142,12 @@ func settingSwitchHelp(c *ui.Context, value *bool, title, help string) bool {
 // reads as the rows beside it rather than a level below them: the title at a
 // setting's size, at the row's left edge, with the arrow at the far end.
 func settingDisclosure(c *ui.Context, title string, open *bool, contents func()) ui.Element {
+	return settingDisclosureSummary(c, title, "", open, contents)
+}
+
+// settingDisclosureSummary is settingDisclosure with an optional muted summary
+// shown on the right when the section is collapsed.
+func settingDisclosureSummary(c *ui.Context, title, summary string, open *bool, contents func()) ui.Element {
 	t := c.Theme()
 	return ui.Column(c.Key(title)).AlignSelf(ui.Stretch).Children(func() {
 		p := ui.CollapsibleBase(c.Key("section"), open)
@@ -152,11 +158,14 @@ func settingDisclosure(c *ui.Context, title string, open *bool, contents func())
 		}
 		tr.Children(func() {
 			ui.Text(c, title).FontSize(14).FontWeight(500).Grow(1).MinWidth(0).SingleLine()
+			if summary != "" && open != nil && !*open {
+				ui.Text(c, summary).FontSize(12).TextColor(t.TextMuted).SingleLine().FontFeatures("tnum").Shrink(0)
+			}
 			ui.Icon(c, chevronIcon).FontSize(16).TextColor(t.TextMuted).Shrink(0).
 				Rotate(180 * p.Progress())
 		})
 		if panel := p.Panel(contents); panel.Valid() {
-			panel.Padding(8, 0)
+			panel.Padding(8, 0, 2, 0)
 		}
 	})
 }

@@ -699,8 +699,12 @@ var enStrings = map[string]string{
 	"开机启动没改成":                          "Failed to change launch at login",
 
 	// Settings Page
+	"设置分类":        "Settings section",
+	"存储与文件":       "Storage & Files",
+	"通用":          "General",
 	"通用与外观":       "General & Appearance",
 	"剪贴板同步":       "Clipboard Sync",
+	"白名单 · 空":     "Allowlist · Empty",
 	"只同步文本":       "Text Only",
 	"大小限制":        "Size Limits",
 	"文本大小上限":      "Max Text Size",
@@ -720,6 +724,8 @@ var enStrings = map[string]string{
 	"快捷键":           "Shortcuts",
 	"复制并同步":         "Copy & Sync",
 	"历史存储":          "History Storage",
+	"文件传输":          "File Transfer",
+	"打开":            "Open",
 	"防止自动锁屏":        "Prevent Lock Screen",
 	"跨网络连接":         "Cross-Network Connection",
 	"文件同步":          "File Sync",
@@ -734,6 +740,7 @@ var enStrings = map[string]string{
 	"连接诊断":          "Connection Diagnostics",
 	"测试连接":          "Test Connection",
 	"关于与更新":         "About & Updates",
+	"项目主页":          "Project Homepage",
 
 	// Sync Mode & Copy Shortcut
 	"同步方式": "Sync Mode",
@@ -875,8 +882,9 @@ var enStrings = map[string]string{
 	"请填写对端地址，端口可省略":                        "Enter peer address (port optional)",
 	"允许通过 Tailscale 连接":                    "Allow Tailscale Connections",
 	"保存 Tailscale 设置失败，设置未生效，请检查数据目录权限后重试": "Failed to save Tailscale setting; check data directory permissions and try again",
-	"已允许 Tailscale 连接，可在连接设备页添加地址":         "Tailscale connection enabled; add an address on the Devices page",
+	"已允许 Tailscale 连接，可在本页添加地址":            "Tailscale connection enabled; add an address on this page",
 	"已关闭 Tailscale 连接，已保存的地址仍保留":           "Tailscale connection disabled; saved addresses are retained",
+	"尚未允许 Tailscale 连接，请在两台电脑的连接设备页开启":     "Tailscale connections are disabled; enable them on the Devices page on both computers",
 	"局域网地址":        "LAN Address",
 	"Tailscale 地址": "Tailscale Address",
 	"当前连接":         "Current Route",
@@ -887,10 +895,10 @@ var enStrings = map[string]string{
 	"添加 Tailscale 地址":   "Add Tailscale Address",
 	"修改 Tailscale 地址":   "Edit Tailscale Address",
 	"删除 Tailscale 地址":   "Remove Tailscale Address",
-	"在设置中开启 Tailscale 连接后，可添加或使用此地址。": "Enable Tailscale connection in Settings to add or use this address.",
-	"设备已解除配对，请重新添加设备":                 "Device has been unpaired; please add the device again",
-	"删除 Tailscale 地址失败，请检查数据目录权限后重试":  "Failed to remove Tailscale address; check data directory permissions and try again",
-	"已删除 Tailscale 地址，设备配对仍保留":        "Removed Tailscale address; device pairing is retained",
+	"在本页下方开启 Tailscale 连接后，可添加或使用此地址。": "Enable Tailscale connection below on this page to add or use this address.",
+	"设备已解除配对，请重新添加设备":                  "Device has been unpaired; please add the device again",
+	"删除 Tailscale 地址失败，请检查数据目录权限后重试":   "Failed to remove Tailscale address; check data directory permissions and try again",
+	"已删除 Tailscale 地址，设备配对仍保留":         "Removed Tailscale address; device pairing is retained",
 	"先填写对端地址": "Enter peer address first",
 	"TCP 端口已连通，尚未验证设备身份；同步前仍需完成双方配对确认": "TCP port is reachable (device identity not yet verified; pairing confirmation is still required)",
 
@@ -1112,7 +1120,8 @@ var enStrings = map[string]string{
 	"请在 Snapover 设置中启用 Finder 发送文件服务": "Enable the Finder Send File service in Snapover Settings first",
 	"允许从 Finder 发送文件":                 "Allow Sending Files from Finder",
 	"右键文件 → 服务 → Snapover 发送文件。菜单是否显示可在系统设置的「服务」中调整。": "Right-click file → Services → Send with Snapover. Visibility can be managed in System Settings → Services.",
-	"刷新 Finder 服务":                 "Refresh Finder Service",
+	"刷新服务":         "Refresh Service",
+	"刷新 Finder 服务": "Refresh Finder Service",
 	"在 Windows「发送到」菜单中显示 Snapover": "Show Snapover in Windows \"Send to\" menu",
 
 	// Internal discovery / lan / sync / filetransfer messages

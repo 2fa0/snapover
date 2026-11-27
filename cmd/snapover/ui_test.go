@@ -12,6 +12,7 @@ import (
 	"github.com/2fa0/snapover/internal/clip"
 	"github.com/2fa0/snapover/internal/history"
 	"github.com/2fa0/snapover/internal/identity"
+	"github.com/2fa0/snapover/internal/lan"
 	"github.com/2fa0/snapover/internal/settings"
 	clipsync "github.com/2fa0/snapover/internal/sync"
 	"github.com/egoist/mygo"
@@ -99,13 +100,15 @@ func TestMainNavigationRemainsImmediateDuringMotion(t *testing.T) {
 		if tt.HasText("测试电脑") {
 			t.Fatal("sidebar still shows the local device name")
 		}
-		// 版本号只在设置页的「关于与更新」里出现，不进入侧栏。
-		if !tt.HasText(appVersionLabel()) {
-			t.Fatal("settings page does not show the app version")
-		}
 		tt.Key(0, ui.KeyDown)
 		if a.page != pageDevices {
 			t.Fatal("sidebar keyboard navigation stopped working")
+		}
+		clickInterface(t, tt, "设置")
+		clickInterface(t, tt, "通用")
+		// 版本号只在设置页的「关于与更新」里出现，不进入侧栏。
+		if !tt.HasText(appVersionLabel()) {
+			t.Fatal("settings page does not show the app version")
 		}
 	}
 }
@@ -122,7 +125,7 @@ func TestOperationErrorsRemainVisibleWithoutRoutineStatuses(t *testing.T) {
 	a.peer, a.addressRoute = "100.65.1.20", 1
 	a.connectAddress()
 	tt.Frame()
-	if !tt.HasText("尚未允许 Tailscale 连接，请在两台电脑的设置中开启") {
+	if !tt.HasText(lan.ErrTailscaleDisabled.Error()) {
 		t.Fatal("disabled route failure disappeared from the window")
 	}
 	a.status = "正在添加设备"
@@ -240,8 +243,12 @@ func TestSettingsControlsPersistPolicy(t *testing.T) {
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
 	clickInterface(t, tt, "暂停同步开关")
 	clickInterface(t, tt, "只同步文本开关")
-	if !tt.HasText("图片大小上限，MB") || !tt.HasText("文本大小上限，MB") || !tt.HasText("更改接收文件夹…") {
-		t.Fatal("size limits and receive folder should be visible without expanding")
+	if !tt.HasText("1 / 20 / 20 MB") || tt.HasText("图片大小上限，MB") {
+		t.Fatal("size limits should be collapsed by default with summary visible")
+	}
+	clickInterface(t, tt, "大小限制")
+	if !tt.HasText("图片大小上限，MB") || !tt.HasText("文本大小上限，MB") {
+		t.Fatal("size limits should be visible after expanding")
 	}
 	clickInterface(t, tt, "图片大小上限，MB")
 	tt.Key(ui.Cmd, ui.KeyA)
@@ -254,12 +261,17 @@ func TestSettingsControlsPersistPolicy(t *testing.T) {
 	if !got.Values.Paused || !got.Values.TextOnly || got.Values.MaxImageMB != 8 {
 		t.Fatalf("settings were not saved: %+v", got.Values)
 	}
+	clickInterface(t, tt, "存储与文件")
+	if !tt.HasText("接收文件夹") || !tt.HasText("更改接收文件夹…") {
+		t.Fatal("receive folder should be visible in storage & files tab")
+	}
 }
 
 func TestTextLimitInputAppliesAndRejectsInvalidValues(t *testing.T) {
 	a := interfaceTestApp(t)
 	tt := ui.NewTester(a.settingsPage, 960, 1200)
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	clickInterface(t, tt, "大小限制")
 	clickInterface(t, tt, "文本大小上限，MB")
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("8")
